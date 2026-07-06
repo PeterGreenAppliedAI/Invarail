@@ -66,6 +66,28 @@ export interface CronJob {
   lastRunAt?: string;
 }
 
+// --- SSE events emitted by /console/api/chat (backend: src/console/handlers/chat.ts) ---
+export type ChatSseEvent =
+  | { type: 'status'; message: string }
+  | {
+      type: 'done';
+      answer: string;
+      category?: string;
+      iterations?: number;
+      images?: string[];
+      files?: { path: string; name?: string }[];
+    }
+  | { type: 'error'; error: string };
+
+// --- SSE events emitted by /api/voice (backend: src/channels/web/adapter.ts onProgress) ---
+export type VoiceSseEvent =
+  | { stage: 'stt'; transcript?: string }
+  | { stage: 'thinking' }
+  | { stage: 'tts' }
+  | { stage: 'audio-chunk'; data?: string }
+  | { stage: 'audio-done' }
+  | { stage: 'done'; response?: string; audio?: { data: string; mimeType: string } };
+
 export interface FactEntry {
   id: string;
   text: string;

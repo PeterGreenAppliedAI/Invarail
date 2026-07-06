@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useCronJobs, useRunCronJob, useToggleCronJob, useEditCronJob, useDeleteCronJob } from '../api/hooks';
+import Skeleton from '../components/shared/Skeleton';
 import type { CronJob } from '../types';
 
 function EditModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
@@ -12,17 +13,15 @@ function EditModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
   const [target, setTarget] = useState(job.delivery.target ?? '');
 
   const handleSave = () => {
-    editJob.mutate(
-      {
-        id: job.id,
-        name,
-        schedule,
-        category,
-        message,
-        delivery: { channel, target },
-      } as any,
-      { onSuccess: onClose },
-    );
+    const changes: { id: string } & Partial<CronJob> = {
+      id: job.id,
+      name,
+      schedule,
+      category,
+      message,
+      delivery: { channel, target },
+    };
+    editJob.mutate(changes, { onSuccess: onClose });
   };
 
   return (
@@ -161,7 +160,7 @@ export default function Cron() {
     <div>
       <h2 className="text-2xl font-bold mb-6">Cron & Heartbeats</h2>
 
-      {isLoading && <p className="text-zinc-500">Loading...</p>}
+      {isLoading && <Skeleton rows={4} className="max-w-2xl" />}
 
       {cronJobs.length > 0 && (
         <div className="mb-8">

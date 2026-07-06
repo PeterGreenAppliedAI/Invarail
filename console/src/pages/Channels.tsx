@@ -1,4 +1,5 @@
 import { useChannels, useReconnectChannel } from '../api/hooks';
+import Skeleton from '../components/shared/Skeleton';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
   connected: { bg: 'bg-green-900/30', text: 'text-green-400', dot: 'bg-green-400' },
@@ -15,7 +16,7 @@ export default function Channels() {
     <div>
       <h2 className="text-2xl font-bold mb-6">Channels</h2>
 
-      {isLoading && <p className="text-zinc-500">Loading...</p>}
+      {isLoading && <Skeleton rows={4} className="max-w-2xl" />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channels.map(ch => {

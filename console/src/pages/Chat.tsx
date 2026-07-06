@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getToken, fetchApi } from '../api/client';
 import { useStatus } from '../api/hooks';
+import ErrorBanner from '../components/shared/ErrorBanner';
+import type { ChatSseEvent, VoiceSseEvent } from '../types';
 
 interface ChatMessage {
   id: string;
@@ -29,6 +31,15 @@ function isImageType(mime: string): boolean {
   return mime.startsWith('image/');
 }
 
+/** Parse an SSE `data: {...}` line into a typed event. Returns null for malformed payloads. */
+function parseSseData<T extends object>(line: string): T | null {
+  try {
+    const parsed: unknown = JSON.parse(line.slice(6));
+    if (parsed && typeof parsed === 'object') return parsed as T;
+  } catch { /* malformed line — skip */ }
+  return null;
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -49,6 +60,7 @@ export default function Chat() {
   const [voiceMode, setVoiceMode] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Get the default senderId from system status (primary user identity)
   const { data: sysStatus } = useStatus();
@@ -75,7 +87,9 @@ export default function Chat() {
           id: `hist-${i}-${m.timestamp}`,
         })));
       })
-      .catch(() => { /* empty chat is fine */ });
+      .catch(err => {
+        setHistoryError(`Failed to load chat history: ${err instanceof Error ? err.message : String(err)}`);
+      });
   }, [sysStatus, senderId]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -252,14 +266,14 @@ export default function Chat() {
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
-          try {
-            const event = JSON.parse(line.slice(6));
-            if (event.type === 'done' && event.answer) {
-              addMessage({ role: 'assistant', content: event.answer, images: event.images });
-            } else if (event.type === 'error') {
-              addMessage({ role: 'assistant', content: `Error: ${event.error}` });
-            }
-          } catch { /* skip malformed */ }
+          const event = parseSseData<ChatSseEvent>(line);
+          if (!event) continue;
+          if (event.type === 'done' && event.answer) {
+            addMessage({ role: 'assistant', content: event.answer, images: event.images });
+          } else if (event.type === 'error') {
+            addMessage({ role: 'assistant', content: `Error: ${event.error}` });
+          }
+          // 'status' and unknown event types are ignored here
         }
       }
     } catch (err) {
@@ -404,8 +418,8 @@ export default function Chat() {
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
-          let event: any;
-          try { event = JSON.parse(line.slice(6)); } catch { continue; }
+          const event = parseSseData<VoiceSseEvent>(line);
+          if (!event) continue;
 
           if (event.stage === 'stt' && event.transcript) {
             addMessage({ role: 'user', content: event.transcript });
@@ -567,6 +581,9 @@ export default function Chat() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {historyError && (
+          <ErrorBanner message={historyError} onDismiss={() => setHistoryError(null)} />
+        )}
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-zinc-500">
