@@ -127,7 +127,7 @@ High-confidence patterns that the router model gets wrong often enough to warran
 
 | Pattern | Routes To | Why It Exists |
 |---------|-----------|---------------|
-| Message contains a URL | `website` | Model classified bare URLs as `web_search` (searched for the URL instead of fetching it) |
+| Message IS a bare URL (or a short "check this" wrapper with no other intent) | `website` | Model classified bare URLs as `web_search`. Narrowed July 2026: the original any-URL-anywhere rule hijacked "research X, start from <url>" into a page summary — a URL inside a larger request now lets the model see the full intent |
 | Email/calendar + time words | `personal` | Model classified "check my calendar" as `chat` |
 | "Make a PDF report" | `research` | Model classified report generation as `multi` or `chat` |
 | "Go to [site]" + domain | `multi` | Model didn't recognize browser navigation intent |
@@ -162,8 +162,9 @@ If pre-overrides and sticky routing don't apply, the router model classifies the
 
 **Model:** phi4:14b
 **Temperature:** 0.1 (very low — same message should always produce the same category)
-**Output:** Single word — just the category name
-**Latency:** ~50ms
+**Output:** Single word — enum-grammar-constrained via `format` when the backend supports it (the model physically cannot emit an invalid category); plain generation + sanitize otherwise
+**Latency:** ~200ms warm; up to several seconds when the gateway has evicted the model
+**Timeout:** `router.timeout` is ENFORCED (July 2026) — a hung/dead backend costs exactly the configured budget before keyword fallback, not the HTTP client's retry loop (~12s). The abandoned request's result is discarded.
 
 The prompt is intentionally minimal. It lists the 15 categories with one-line descriptions and asks for exactly one word back. The model doesn't see conversation history, tools, or system context — just the message and the category list.
 
@@ -213,7 +214,7 @@ Priority order (first match wins):
   12. Search (google, look up, news) → web_search  ← broadest, last
 ```
 
-**What we removed from keywords:** "what is" and "who is" used to trigger `web_search`. But "what is the meaning of life?" is a chat question. Removing these broad patterns reduced false keyword matches significantly.
+**What we removed from keywords:** "what is" and "who is" used to trigger `web_search`. But "what is the meaning of life?" is a chat question. Removing these broad patterns reduced false keyword matches significantly. Also removed (July 2026): bare `workspace` from the config pattern — it captured exec requests like "run ls in the workspace". Added: `ls`/`pwd`/`chmod` to exec hints, and live-value lookups ("current price of X") → `web_search` (previously fell to the chat default, answering stale).
 
 ---
 
@@ -247,8 +248,12 @@ Layer 5: restrictedTools
   └── Untrusted users on this channel lose these specific tools.
 
 Layer 6: confirmTools
-  └── Preview before execution. User must confirm before the tool runs.
-      "⚠️ About to run exec[rm -rf /tmp/old] — confirm?"
+  └── Preview before execution. The previewed call is recorded in the
+      pending-action ledger; "confirm" executes the STORED params —
+      sender-bound, single-use, 10-min expiry. Never a model-regenerated
+      call. Applies to pipeline dispatches too (was a bypass until July 2026).
+      Effective set = channel confirmTools ∪ tools whose autonomy metadata
+      declares propose_confirm − channel autoApproveTools (promotion lever).
 ```
 
 **The owner-only gate is critical.** It's not a prompt telling the model "don't use exec for non-owners." The tools are stripped from the model's vocabulary entirely. The model can't use what it can't see. You can't prompt-inject past a code gate.
@@ -333,7 +338,7 @@ When the Chrome extension is connected, console channel messages get special tre
 
 ### Cron Jobs
 
-Cron jobs dispatch with an explicit category override and `cronMode: true`. Cron mode strips write tools (write_file, task_add, memory_save) so automated tasks can't modify state without human approval.
+Cron jobs dispatch with an explicit category override and `cronMode: true`. Cron mode strips write tools (write_file, task_add, memory_save) so automated tasks can't modify state without human approval. Additionally (July 2026): `exec` and `send_message` are only available when the job was explicitly scheduled as that category — the owner-authored schedule is the code gate. A web_search cron job whose fetched page contains an injected "run this / message X" instruction has no tool to reach for.
 
 ### Smart Model Routing
 

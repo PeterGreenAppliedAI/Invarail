@@ -4,6 +4,68 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Small-Model Hardening + Bounded-Autonomy Gates (July 5-6 2026)
+
+A full-codebase assessment (four parallel research passes: tool-loop, router/pipelines, memory/context, autonomy surface) concluded the architecture was sound and the gaps were implementation-level: tolerant layers with bugs, gates that existed but weren't applied uniformly, budgets computed against the wrong numbers. One session, 9 commits (b54742f..be5fe4a), each independently revertable. 451 tests after (was 389).
+
+### One tool-calling convention per model (`toolStyle`)
+**Decision:** Specialists get `toolStyle: 'native' | 'text'` (schema.ts, default native). Native passes tools via the API field ONLY — no tool text block, no `Action:` format rules in the prompt. Text is the inverse: prompt-described tools, nothing passed natively. Never both.
+**Why:** The prompt previously taught the text `Action: tool[{json}]` convention *while* native tools were also active — two contradictory formats, and small models mixed them mid-loop. It also doubled tool overhead (~5K tokens of tool text on a full set, duplicated by the native template). Measured live: text mode costs ~950 more prompt tokens than native *with one tool*.
+**Kept:** ALL fallback parser dialects (DSML, `<invoke>`, `Action:`, JSON5 ladder) stay active in both modes — they're the safety net that keeps arbitrary models usable, not part of the convention choice.
+**Status:** Active, default native. Verified live on qwen3.6:35b in both modes (tools called, params well-formed). Watch item: native-mode qwen3.6 sometimes writes its deliberation into the final answer instead of the requested format.
+
+### Grammar-constrained decoding (`format`) with automatic fallback
+**Decision:** Structured tasks pass a JSON schema via Ollama `format` / vLLM `guided_json`: param extraction, `llm_branch`, router classification (enum of valid categories), research claim extraction (`CLAIMS_JSON_SCHEMA`). Every call site falls back to prompt-only on backend rejection; the extractor caches the rejection in a module flag so only the first call pays the failed round-trip.
+**Why:** Kills the malformed-JSON failure class at the token level instead of repairing after the fact — the single biggest "raise the floor for 7-14B models" lever available.
+**Gotcha — the gateway silently swallows it:** the custom FastAPI gateway types `format: str`, so schema objects 422 and even `format: "json"` is accepted-then-discarded (proof: phi4 returned markdown-fenced output, impossible under real JSON mode). Root cause per the gateway team's own review: their internal normalization layer drops any field it doesn't model — same bug family also hardcodes `num_ctx: 32768` (silently clamping our 131K → system prompt truncates first) and discards `keep_alive` (models go cold between calls; observed 0.2s-8s latency swings on phi4 in one sequential run). Fix is theirs: "normalize what you police, pass through what you don't." See GATEWAY-REQUIREMENTS.md for the contract + acceptance tests. Until it lands, constrained decoding is dormant and the fallbacks carry.
+**Status:** Active in code, blocked on gateway for effect. Re-run GATEWAY-REQUIREMENTS acceptance tests 1a/1b when their passthrough refactor lands.
+
+### Extraction: degrade-not-abort
+**Decision:** `extractParams` parses with JSON5 before burning a repair call (trailing commas/single quotes are free now); validates required/enum/coercion post-parse and feeds specific errors into the repair prompt; prefers best-effort params over throwing; `ExtractStage` gained an optional deterministic `fallback(ctx)` (web_search falls back to the raw message as the query). Cron expressions are validated with croner in `cron_add`/`cron_edit` BEFORE persisting.
+**Why:** Extraction failure previously aborted the entire pipeline (`executor.ts` converted any stage error into a full abort). Invalid cron expressions were stored and silently never ran.
+**Status:** Active.
+
+### Research correction: code-driven sentence splice (whole-report rewrite removed)
+**Decision:** `locateClaimSentence` (token-overlap fuzzy locate; skips Sources/headings/chart placeholders; ≥0.5 threshold — skip rather than splice the wrong sentence) finds each flagged claim's sentence; the model rewrites ONE sentence; code splices it back with sanity bounds. The whole-report `correctionPrompt`, its 0.7-length guard, and the strikethrough-stripping band-aid on the output path are gone.
+**Why:** "Edit these sentences, preserve 3000 other words verbatim" was the hardest task in the system for a small model — the strikethrough hack and length guard existed *because* it kept misbehaving. Now the report body is never handed to a model for wholesale rewriting.
+**Status:** Active. Needs a live research run for end-to-end confirmation.
+
+### Pending-action ledger — confirmations execute stored params
+**Decision:** `src/security/pending-actions.ts`: confirmTools previews record `{id, tool, params, sender, channel, agentId, sessionKey, expiresAt}` to a file-backed ledger. "Confirm" executes the STORED call — sender-bound, single-use, 10-minute expiry. Wired into both dispatch paths' previews, the orchestrator confirm handler, and console `chat.ts`. The old `confirmed: true` re-dispatch arming is removed.
+**Why (three real holes):** (1) confirmation previously set a flag for the *entire* re-dispatch and the model *regenerated* params — nothing guaranteed the executed call matched the preview; "go ahead" in any context armed whatever the model decided next. (2) Pipelines built their executor with NO confirm wrapper — the `message` pipeline could send with the gate configured. (3) The console path had no confirm detection at all: on Web the gate was a dead-end that could never release.
+**Status:** Active, Tier-3 test coverage (sender binding, single-use, expiry, exact-params). Live channel walkthrough still pending. Known gap: ledger-confirmed actions aren't written to the session transcript.
+
+### Tool autonomy metadata + `autoApproveTools` promotion lever
+**Decision:** `LocalClawTool.autonomy?: {tier: silent|act_then_notify|propose_confirm, reversible, blastRadius: self|owner|external}`. Effective confirm set = channel `confirmTools` ∪ metadata `propose_confirm` tools − channel `autoApproveTools` (explicit confirmTools always wins over a promotion). `send_message` starts at propose_confirm/external — the ladder's rule that anything visible to others starts gated. Cron pre-authorization: an owner-scheduled exec/message job waives the metadata gate for its category tool only (the schedule IS the approval; nobody is present to confirm at run time).
+**Why:** Tier assignment was per-channel name lists — a new tool defaulted to *ungated*. Now the ladder is structural and per-channel promotion (`autoApproveTools`) is the earned-leash mechanism, backed by `logAutonomousAction` metrics (every heartbeat auto-action, cron run, stale-fact proposal, and ledger confirmation logs action/tier/source/reversible/outcome — the track record promotions cite).
+**Also:** cron dispatches only get `exec`/`send_message` when the job's category is exec/message — a web_search cron job whose fetched page contains an injected "run this / message X" has no tool to reach for. Heartbeat stale-fact deletion (model-judged, 40-char prefix match, un-itemized) demoted to propose-and-confirm via the existing `!heartbeat yes/no` review file.
+**Status:** Active. ~29 tools still need annotations (pattern in send-message.ts). Promotion tooling (metrics reader) not built yet.
+
+### Memory injection: relevance floor
+**Decision:** Vector KNN injection requires raw cosine similarity ≥ 0.55; contextual facts capped at 3; multi-hop traversal only fires when ≥1 result passed the floor but results are sparse.
+**Why:** Multi-signal scoring (`sim*0.5 + recency*0.2 + imp*0.3`) only ORDERS results — a fresh imp-5 fact scored 0.5 with zero query relevance, so identity facts injected on every turn regardless of topic (small-model topic-drift trap). Multi-hop previously fired exactly when KNN found *nothing* relevant — adding tangential facts when they'd be most distracting.
+**Rejected for now:** reranker/cross-encoder — monitor the floor first (per the standing "no complexity before evidence" stance).
+**Status:** Active. Floor value untested against real recall feel — tune in `buildUserPriming` before adding anything smarter.
+
+### Context budget: charge the real prompt
+**Decision:** `computeBudget` accepts `extraSections` (serialized tool defs, statePreamble, userPriming); dispatch re-budgets AFTER classification with the actual specialist prompt and trims oldest history turns to fit (`trimHistoryToFit`). `estimateTokens` uses ~3 chars/token for punctuation-dense segments (JSON/URLs).
+**Why:** The pre-classification budget used an empty system prompt and ignored tool definitions entirely — historyBudget was overestimated by 3-6K tokens for exactly the tool-using calls that matter, starving 8-16K models. The old 4-chars/token estimate *under*-counted JSON-heavy tool observations, risking silent prompt-head truncation.
+**Status:** Active.
+
+### Router: enforced timeout + fallback fixes
+**Decision:** `config.router.timeout` is now actually enforced (Promise race → keyword fallback; the abandoned request's result is discarded). Config raised 2000→8000ms. Keyword fixes: bare `workspace` removed from the config pattern (it captured "run ls in the workspace"), ls/pwd/chmod added to exec hints, live-value lookups ("current price of X") fall back to web_search. Blanket URL→website override narrowed to bare-URL-only (short remainder, no other intent verbs) — "research X, start from <url>" no longer hijacked to a page summary.
+**Why the config bump:** the 2000ms was FICTION — never enforced, so nobody knew phi4 actually takes 0.2-8s through the gateway (variance from the keep_alive drop above). Enforcing 2s for real would have starved the model path entirely. Lesson: enforcing a previously-advisory limit requires re-measuring reality first.
+**Status:** Active. Live: 15/16 on real phi4 (`scripts/router-live-check.ts`; the miss is "turn this analysis into a PDF report" → multi instead of document — judgment call, logged not chased).
+
+### The EHOSTUNREACH saga — two wrong theories, then macOS TCC
+**Symptom:** Live checks "flapped": node got connection failures against the gateway mid-run, repeatedly, while curl probes succeeded moments later.
+**False starts (both disproven):** (1) "gateway drops connections under sequential load" — reported to the gateway team, later retracted. (2) "big-model cold load crashes the gateway" — disproven when a small warm model failed identically. The kill shot: **simultaneous** curl → 200 and node → `EHOSTUNREACH`, same literal IP, same box; then the matrix (node LAN ✗ / node internet ✓ / python LAN ✓ / curl LAN ✓).
+**Actual root cause:** macOS Local Network privacy silently denies LAN access to third-party binaries (homebrew node) spawned from SSH sessions (incl. VS Code Remote) — there's no GUI app to attribute a prompt to, so it's deny-with-no-error, presenting as a routing failure. Apple-signed binaries and already-permitted apps pass, which is why every counter-probe "worked."
+**Fix:** tmux server started once from local Terminal.app (which has the permission); everything spawned inside inherits it. `tmux send-keys -t lab '…' Enter` + `capture-pane` gives sessions like this one full live-test access. Recreate after reboot.
+**Lessons:** (1) When probes contradict each other, run them *simultaneously from the same context* before theorizing — the same lesson as the BLS 403 entry below, relearned at the network layer. (2) An intermittent failure that only hits one binary is a permissions/attribution problem, not a load problem. (3) Don't ship a bug report to another team until the failing client and a working client have been diffed.
+
+---
+
 ## Coding Agent Swap: OpenCode → Pi/picoder (June 26 2026)
 
 ### Replaced OpenCode with the Pi coding agent for `code_gen`

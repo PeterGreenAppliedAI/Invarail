@@ -1,6 +1,6 @@
 # LocalClaw Roadmap
 
-LocalClaw is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, WhatsApp, and Web with a Router + Specialist architecture. Foreground reasoning runs on DeepSeek-V4-Flash via **vLLM** (a swappable foreground slot — was MiniMax-M2.7 before); small/modality models run on an Ollama-compatible gateway, routed by a `MultiBackendClient`. 39 tools, 12 pipelines, FalkorDB graph memory, autonomous heartbeats and briefings. 416 tests.
+LocalClaw is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, WhatsApp, and Web with a Router + Specialist architecture. Foreground reasoning runs on DeepSeek-V4-Flash via **vLLM** (a swappable foreground slot — was MiniMax-M2.7 before); small/modality models run on an Ollama-compatible gateway, routed by a `MultiBackendClient`. 39 tools, 12 pipelines, FalkorDB graph memory, autonomous heartbeats and briefings. 451 tests.
 
 ---
 
@@ -29,6 +29,8 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 - **Multi-Backend Inference (vLLM)** — MultiBackendClient routes by model id; DeepSeek-V4-Flash on vLLM (OpenAI-compatible) for foreground reasoning, Ollama gateway for small/modality models. OpenAICompatClient handles the format translation (incl. reserving reasoning headroom on max_tokens so short stages don't return empty). Per-specialist contextSize; 256K context. Foreground model is a swappable config slot — was MiniMax-M2.7 before.
 - **Memory Integrity** — Importance-aware FactStore char bound (never evicts imp 4-5), graph provenance edges (EXTRACTED_FROM + SUPERSEDES) wired.
 - **Search Source Buckets** — Topic→curated-domain buckets with anchors; real_estate + civic (NYC/NY Open Data); web_search freshness forcing + recency-aware quality judge; over-trigger fix.
+- **Small-Model Hardening (July 2026)** — One tool-calling convention per model (`toolStyle`, native default — halves fixed prompt overhead); grammar-constrained decoding (`format`/guided_json) for extraction, branching, router, claim extraction with automatic fallback; extraction degrade-not-abort (JSON5, post-parse validation, deterministic fallbacks); research correction as code-driven sentence splice; memory injection relevance floor (0.55) + caps; real-prompt context budgeting; enforced router timeout; tool-loop bug batch (scaffolding leak, sanitizer corruption, dedup double-push, empty-completion retry, hallucination false-positives). Live-verified on real phi4 + qwen3.6:35b (`scripts/*-live-check.ts`). See DECISIONS.md July 5-6.
+- **Bounded-Autonomy Gates (July 2026)** — Pending-action ledger (confirmations execute the exact previewed call: sender-bound, single-use, expiring; closes the pipeline + console bypasses); tool `autonomy {tier, reversible, blastRadius}` metadata with `autoApproveTools` per-channel promotion; cron category-conditional exec/send_message; heartbeat stale-fact deletion demoted to propose-and-confirm; `autonomous_action` metrics as the promotion track record. First rungs of the autonomy ladder — structural, code-enforced.
 
 ---
 
@@ -39,7 +41,8 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 | Next | **SearXNG integration** | Self-hosted meta-search engine replacing paid Brave API. Zero cost, no rate limits |
 | Next | **Firecrawl integration** | Self-hosted web fetching between web_fetch (basic) and browser (heavy). Handles JS rendering without full Chromium |
 | ✅ Done | **Provider abstraction** | MultiBackendClient + OpenAICompatClient — routes by model id across Ollama gateway + vLLM. Adding LM Studio / other OpenAI-compatible endpoints is now config-only (`inference.backends[]`) |
-| Planned | **Proactive actions** | Agent initiates actions based on observations (heartbeat findings, memory patterns) instead of just reporting. Human-in-the-loop confirmation gate |
+| Planned | **Proactive actions** | Agent initiates actions based on observations (heartbeat findings, memory patterns) instead of just reporting. Foundation landed July 2026 (ledger, autonomy metadata, action metrics); next rungs: intake/clarification flow, promotion tooling reading the metrics, remaining tool annotations |
+| Blocked | **Gateway passthrough** | Constrained decoding + keep_alive + full num_ctx blocked on the gateway's normalization-layer refactor (GATEWAY-REQUIREMENTS.md has the contract + acceptance tests) |
 | Planned | **Cross-channel sessions** | Map user IDs across Discord/Telegram/WhatsApp to shared sessions. Continue conversations across platforms |
 | Planned | **Rebrand** | Rename from LocalClaw to new identity (plan exists, 357 references mapped across 80 files) |
 

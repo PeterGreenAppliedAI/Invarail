@@ -33,7 +33,7 @@
 8. **Confidence threshold:** Quality review checks for source citations, structure, and completeness. Score < 3 triggers revision pass.
 9. **Human escalation:** None — web search is low-risk.
 10. **Known failures:** "what is" and "who is" used to trigger web_search from keywords — removed because they're questions, not search actions. Quality review sometimes suggests infrastructure changes the revision LLM takes literally.
-11. **Pipeline:** web_search — extract → search → pick URLs → parallel fetch → synthesize → quality review → [revision].
+11. **Pipeline:** web_search — extract → search → pick URLs → parallel fetch → synthesize → quality review → [revision]. Extraction failure no longer aborts: deterministic fallback uses the raw message as the query (July 2026). Live-value lookups ("current price of X") added to keyword fallback.
 12. **Test cases:** "search for the latest AI news" → web_search (keyword), "google quantum computing" → web_search (keyword), "look up the weather in NYC" → web_search (keyword).
 
 ---
@@ -65,7 +65,7 @@
 6. **Acceptance criteria:** Completes the multi-step task, produces artifacts if requested, reports what was done.
 7. **Edge cases:** "Find and save" triggers multi via keyword compound. "Go to amazon.com" triggers multi via pre-model override. Browser control mode overrides to qwen3.6:35b with guided ReAct.
 8. **Confidence threshold:** Plan pipeline has self-reflection stage. Skill matching reuses successful past plans.
-9. **Human escalation:** Destructive tools (exec, write_file) can be in confirmTools set.
+9. **Human escalation:** Destructive tools (exec, write_file) can be in confirmTools set. Since July 2026 the confirm gate is backed by the pending-action ledger (confirmation executes the exact previewed call) and applies to pipeline dispatches too; tools with `autonomy.tier: propose_confirm` metadata (send_message) are gated on every channel unless promoted via `autoApproveTools`.
 10. **Known failures:** Plan pipeline matched wrong skills (inflated success count) — fixed with threshold + ratio + cap. Browser control pipeline failed (replaced with guided ReAct). Model hallucinated actions in plan.
 11. **Pipeline:** plan — LLM plan → self-reflect → execute loop (sub-dispatches) → summarize → skill save.
 12. **Test cases:** "go to eventbrite.com and find events" → multi (override), "make me a spreadsheet of expenses" → multi (keyword), "find and save the best flight deals" → multi (keyword).
@@ -80,7 +80,7 @@
 4. **Data requirements:** Docker sandbox or command allowlist. Workspace file access.
 5. **Tools:** exec, code_session, read_file, write_file.
 6. **Acceptance criteria:** Command executed, output returned, errors explained. Doesn't over-explore (ls data → just ls, not find + chmod + which).
-7. **Edge cases:** "read the contents of config.json" routes to config instead of exec due to keyword order (KNOWN ISSUE). Model used 8 steps for simple `ls data` in ReAct — pipeline restored.
+7. **Edge cases:** "read the contents of config.json" routes to config instead of exec due to keyword order (KNOWN ISSUE — the word "config" in the filename). Fixed July 2026: bare "workspace" no longer hijacks exec requests to config ("run ls -la in the workspace" → exec); ls/pwd/chmod added to exec keyword hints. Model used 8 steps for simple `ls data` in ReAct — pipeline restored.
 8. **Confidence threshold:** N/A — deterministic tool execution.
 9. **Human escalation:** exec tool can be in confirmTools. Cron mode strips write tools.
 10. **Known failures:** ReAct loop massive over-exploration for simple commands — exec pipeline restored. Code session required action:'start' before action:'run'. Exec tool doubled workspace paths (cwd path issue).

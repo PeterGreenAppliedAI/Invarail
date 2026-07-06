@@ -16,11 +16,11 @@ Channel (Discord/Telegram/Slack/Web/Gmail/WhatsApp/MS Graph/iMessage/Chrome Exte
 **Inference backends (additive multi-backend):** A `MultiBackendClient` (`src/ollama/multi-backend.ts`, extends `OllamaClient`) routes each `chat`/`chatStream` call by model id. Foreground reasoning models (currently DeepSeek-V4-Flash — the swappable foreground slot) route to an **OpenAI-compatible vLLM** endpoint via `OpenAICompatClient` (`src/ollama/openai-client.ts`); everything else (router phi4, NER phi4-mini, embedding, vision qwen3.6:27b) stays on the **Ollama gateway**. `embed()` always uses Ollama. Configured via `inference.backends[]` in config. The OpenAI client translates Ollama↔OpenAI shapes: `options.*`→top-level params (reserving reasoning headroom on `max_tokens` so a small `num_predict` can't starve a reasoning model into an empty completion), tool-call `arguments` string→object, `tool_call_id` stitching, SSE streaming, `usage`→`eval_count`/`prompt_eval_count`. Purely additive — the Ollama path is unchanged.
 
 **Key components:**
-- **Router** — phi4:14b, single-word classification into categories: `chat`, `web_search`, `memory`, `exec`, `cron`, `message`, `website`, `multi`, `config`, `task`, `research`, `personal`. Pre-model overrides for high-confidence patterns (PDF reports, calendar queries, bare URLs → website). Fallback to `defaultCategory` on timeout/parse failure. Implemented in `src/router/classifier.ts`.
-- **Pipeline engine** — `src/pipeline/executor.ts`. Deterministic stage-based workflows: extract, tool, parallel_tool, llm, code, branch, llm_branch, loop. Most categories use pipelines instead of letting the model decide the workflow.
+- **Router** — phi4:14b, single-word classification into categories: `chat`, `web_search`, `memory`, `exec`, `cron`, `message`, `website`, `multi`, `config`, `task`, `research`, `personal`. Pre-model overrides for high-confidence patterns (PDF reports, calendar queries; bare URLs → website — a URL inside a larger request does NOT hijack routing). Model output is enum-grammar-constrained via `format` when the backend supports it. `config.router.timeout` is ENFORCED (Promise race → keyword fallback; the client's connection-retry loop no longer stalls messages past the budget). Fallback to `defaultCategory` on timeout/parse failure. Implemented in `src/router/classifier.ts`.
+- **Pipeline engine** — `src/pipeline/executor.ts`. Deterministic stage-based workflows: extract, tool, parallel_tool, llm, code, branch, llm_branch, loop. Most categories use pipelines instead of letting the model decide the workflow. Extraction (`src/pipeline/extractor.ts`) uses grammar-constrained decoding (`format` JSON schema, auto-fallback if the backend rejects it), JSON5-tolerant parsing, post-parse required/enum/coercion validation feeding the repair prompt, and best-effort params over aborting; `ExtractStage.fallback(ctx)` provides deterministic degrade-not-abort per stage. `llm_branch` output is enum-constrained.
 - **Plan pipeline** — `src/pipeline/definitions/plan.ts`. LLM decomposes goals into specialist sub-tasks, self-reflects, executes via foreman handoffs with write-through artifacts. Used by `multi` category.
 - **Research pipeline** — `src/pipeline/definitions/research.ts`. Decompose → per-facet parallel search + fetch + synthesis → analytical markdown report → **evidence verification** → deterministic markdown→HTML→PDF render with charts.
-- **Evidence verification** — `src/pipeline/verification.ts` + stages in research.ts. After the draft, extract atomic claims (fast model), check each against the **cached pages that actually mention it** (`pickRelevantSources` ranks all cached sources by token overlap — no independent search), and **attribute/qualify (never remove)** overstated or single-sourced claims via a foreground-model correction pass (concise hedging, one qualifier per sentence). A **Tier-1 cross-check** then escalates a bounded set of high-impact, falsifiable claims (corporate events / financials / market-share, capped at `maxCrossChecks`) to ONE independent search each — CONTRADICTED → `correct` the wrong detail (this is what catches the Groq-date class of error); CONFIRMED → un-hedge; SILENT → leave. Publishes with a `## Verification` appendix + auditable `verification.json`. Config-gated via `verification` block (`enabled`, `crossCheck`, both default on).
+- **Evidence verification** — `src/pipeline/verification.ts` + stages in research.ts. After the draft, extract atomic claims (fast model, grammar-constrained via `CLAIMS_JSON_SCHEMA`), check each against the **cached pages that actually mention it** (`pickRelevantSources` ranks all cached sources by token overlap — no independent search), and **attribute/qualify (never remove)** overstated or single-sourced claims. Corrections are **code-driven sentence splices**: `locateClaimSentence` fuzzy-locates the claim's sentence by token overlap (skips Sources/headings/charts; skips rather than splicing a wrong match), the model rewrites ONE sentence, code splices it back with sanity bounds — the report body is never handed to a model for wholesale rewriting. A **Tier-1 cross-check** then escalates a bounded set of high-impact, falsifiable claims (corporate events / financials / market-share, capped at `maxCrossChecks`) to ONE independent search each — CONTRADICTED → `correct` the wrong detail (this is what catches the Groq-date class of error); CONFIRMED → un-hedge; SILENT → leave. Publishes with a `## Verification` appendix + auditable `verification.json`. Config-gated via `verification` block (`enabled`, `crossCheck`, both default on).
 - **Analytics pipeline** — `src/pipeline/definitions/analytics.ts`. File upload → pandas report (code) → matplotlib charts (code) → LLM executive interpretation. Code computes all numbers; model only interprets. Auto-routed when data files (.csv, .xlsx, .json) are uploaded.
 - **Tool-loop engine** — `runToolLoop()` in `src/tool-loop/engine.ts`. ReAct-style loop with native Ollama tool calls + regex fallback parser. Includes hallucination detection, drift detection, error learning hints.
 - **Dispatch pipeline** — `src/dispatch.ts` routes classified messages to specialists/pipelines. Handles 6-layer security enforcement, tool stripping, context isolation.
@@ -42,8 +42,8 @@ Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primar
 - FalkorDB (GraphBLAS-based graph database, Docker on Mac Mini, Redis wire protocol)
 - Native HNSW vector search (4096-dim embeddings via qwen3-embedding:8b)
 - Semantic dedup on write (cosine distance < 0.15 rejected)
-- Multi-signal search scoring: `similarity * 0.5 + recency * 0.2 + importance * 0.3`
-- Auto-injection: vector KNN + multi-hop entity traversal, silently injected into specialist context
+- Multi-signal search scoring: `similarity * 0.5 + recency * 0.2 + importance * 0.3` — plus a **relevance floor**: injection requires raw cosine ≥ 0.55 (scoring only orders; the floor rejects), contextual facts capped at 3
+- Auto-injection: vector KNN + multi-hop entity traversal, silently injected into specialist context. Multi-hop only fires when ≥1 KNN result passed the floor but results are sparse
 
 **Graph schema:**
 ```
@@ -130,14 +130,16 @@ Channel security is enforced in `src/dispatch.ts` via 6 layered filters applied 
 3. `ownerOnlyTools` — stripped for everyone except `config.ownerId` (code gate, not model-level)
 4. `blockedTools` — stripped for everyone on this channel
 5. `restrictedTools` — stripped for untrusted users
-6. `confirmTools` — preview before execution, requires user confirmation
+6. `confirmTools` — preview before execution, requires user confirmation. Backed by the **pending-action ledger** (`src/security/pending-actions.ts`): previews record `{id, tool, params, sender, expiresAt}`; a "confirm" reply executes the STORED call — sender-bound, single-use, 10-min expiry, never model-regenerated params. Applies to pipeline dispatches AND the ReAct loop, on orchestrator channels AND the console path. Effective confirm set = channel `confirmTools` ∪ tools whose `autonomy.tier` metadata is `propose_confirm` − channel `autoApproveTools` (per-channel promotion; explicit confirmTools always wins).
+
+**Autonomy ladder (structural):** tools may declare `autonomy: {tier: silent|act_then_notify|propose_confirm, reversible, blastRadius: self|owner|external}` (`src/tools/types.ts`). New externally-visible tools should declare `propose_confirm`. Every autonomous action (heartbeat auto-complete/cancel, cron runs, stale-fact proposals, ledger confirmations) logs via `logAutonomousAction()` in metrics.ts — the track record that justifies promoting an action type up the ladder via `autoApproveTools`. Bounds are code gates, never model judgment.
 
 **Owner-only tier:** `ownerId` in config is a single string (not a list). Tools in `ownerOnlyTools` are completely invisible to non-owners — the model never sees them in the tool list. This is a **code gate** checked before any model involvement.
 
 Additional security:
 - SSRF protection in `src/tools/ssrf.ts` — all URL-fetching tools must use it.
 - Exec security: Docker sandbox or command allowlist, configured per `config.tools.exec.security`.
-- Cron safety: `cronMode` strips write tools. Jobs retry 2x with exponential backoff + notify on final failure.
+- Cron safety: `cronMode` strips write tools; `exec`/`send_message` are only available when the job was explicitly scheduled as that category (`filterCronTools` — the owner-authored schedule is the code gate). Jobs retry 2x with exponential backoff + notify on final failure. Cron expressions are croner-validated in `cron_add`/`cron_edit` BEFORE persisting.
 - Pipeline isolation: all pipeline dispatches get fresh context (no parent session history).
 
 ### SOLID / DRY / YAGNI / KISS
@@ -166,6 +168,7 @@ Additional security:
     parameters?: ToolParameterSchema;  // structured params for native tool calling
     example?: string;
     category: string;
+    autonomy?: ToolAutonomy;           // {tier, reversible, blastRadius} — ladder position; propose_confirm tools are confirm-gated everywhere
     execute: (params: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
   }
   ```
@@ -406,8 +409,11 @@ All pipeline dispatches get fresh context — no parent session history. Prevent
 Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + LEARNINGS.md) to preserve token budget. Chat gets `full` context.
 
 ### Tool-loop guardrails (`src/tool-loop/engine.ts`)
-- **Hallucination detection** — catches models claiming actions without tool calls. Repair prompt sent once.
+- **One calling convention per model** — `toolStyle: 'native' | 'text'` (specialist config, default native). Native passes tools via the API field only; text describes them in the prompt with `Action:` format. Never both — mixing taught small models two contradictory formats. Fallback parsers (DSML/`<invoke>`/`Action:`/JSON5) stay active in both modes.
+- **Hallucination detection** — catches models claiming actions without tool calls. Action-claims and data-claims are separate pattern sets: data claims ("the current price is...") are legitimate once a real tool has run. Repair prompt sent once.
 - **Drift detection** — catches repeating tool calls, hedging language, growing responses. Re-anchor prompt after 3+ iterations.
+- **Repairs don't burn budget** — each one-shot repair (hallucination, refusal, empty-completion retry, drift re-anchor) extends the loop by one iteration instead of consuming maxIterations.
+- **Answer hygiene** — ReAct scaffolding (`Thought:`/`Final Answer:`) is stripped from the answer path; empty completions get one retry. Thinking blocks are left intact here (dispatch strips at delivery boundaries).
 - **Error learning** — records failures, hints before execution, enriches observations with tool-specific recovery guidance.
 - **Observation summarization** — optional LLM-based summarization for old tool observations (>1000 chars) when context budget is tight. Preserves key data vs hard truncation. Config: `session.summarizeToolObservations`.
 - **Param validation** — runtime type coercion (string→number, string→boolean) + enum + required field checks before execution.
@@ -461,7 +467,8 @@ System operations (heartbeat, cron) should never match or save user-facing skill
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + build on every push/PR to main
-- **Current:** 389 tests across 26 files
+- **Current:** 451 tests across 33 files
+- **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`. NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)
   - Networking (Ollama client, web fetch, SSRF checks)
