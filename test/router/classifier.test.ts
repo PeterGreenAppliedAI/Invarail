@@ -38,6 +38,24 @@ const defaultConfig: RouterConfig = {
 };
 
 describe('classifyMessage', () => {
+  it('enforces config.timeout — a hung model call falls back within the budget', async () => {
+    // generate never resolves — simulates a dead/hanging gateway where the
+    // client's internal retry loop would otherwise stall for ~12s
+    const client = {
+      generate: vi.fn().mockImplementation(() => new Promise(() => {})),
+      chat: vi.fn(),
+      listModels: vi.fn(),
+      isAvailable: vi.fn(),
+    } as unknown as OllamaClient;
+
+    const start = Date.now();
+    const result = await classifyMessage(client, { ...defaultConfig, timeout: 100 }, 'What is the latest AI news?');
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(1000); // bounded by timeout, not the client's retries
+    expect(result.confidence).not.toBe('model'); // fell through to keyword/fallback
+  });
+
   it('returns model category when valid', async () => {
     const client = createMockClient('web_search');
     const result = await classifyMessage(client, defaultConfig, 'What is the latest AI news?');

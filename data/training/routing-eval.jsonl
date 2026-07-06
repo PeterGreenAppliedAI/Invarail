@@ -71,3 +71,5 @@
 {"message": "clean it up and generate a better PDF", "expected": "document", "layer": "keyword", "note": "document-format request \u2192 document pipeline (code-driven render)"}
 {"message": "turn this into a pdf", "expected": "document", "layer": "keyword", "note": "document-format request \u2192 document pipeline (code-driven render)"}
 {"message": "generate a PDF report on the EV market", "expected": "research", "layer": "model", "note": "pdf REPORT \u2192 research wins (ordered before the generic pdf\u2192multi override) [now a capability decision for the model \u2014 overrides removed]"}
+{"message":"run ls -la in the workspace","expected":"exec","layer":"keyword","note":"bare workspace keyword must not hijack exec requests to config"}
+{"message":"what's the current price of bitcoin","expected":"web_search","layer":"keyword","note":"live-value lookup falls back to search, not chat default"}
