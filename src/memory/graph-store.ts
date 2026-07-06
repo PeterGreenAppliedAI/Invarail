@@ -18,6 +18,9 @@ export interface GraphSearchResult {
   category: string;
   confidence: number;
   score: number;
+  /** Raw cosine similarity to the query (0-1) — before recency/importance weighting.
+   *  Only set by vector search paths; absent for stable-fact / traversal results. */
+  similarity?: number;
   createdAt: string;
   entities: string[];
 }
@@ -327,6 +330,10 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
     minImportance?: number;
     categories?: string[];
     maxAgeDays?: number;
+    /** Drop results whose raw cosine similarity is below this floor. Multi-signal
+     *  scoring only ORDERS results — without a floor, a fresh high-importance fact
+     *  passes with zero relevance to the query. */
+    minSimilarity?: number;
   }): Promise<GraphSearchResult[]> {
     if (!this.graph) await this.connect();
 
@@ -376,10 +383,12 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
         category: row['node.category'] ?? 'stable',
         confidence: row['node.confidence'] ?? 0.8,
         score: multiScore,
+        similarity,
         createdAt: row['node.createdAt'] ?? '',
         entities: [],
       };
-    });
+    }).filter((r: GraphSearchResult) =>
+      filters?.minSimilarity === undefined || (r.similarity ?? 0) >= filters.minSimilarity);
 
     // Fetch entities for top results
     const topResults = scored.sort((a, b) => b.score - a.score).slice(0, topK);
