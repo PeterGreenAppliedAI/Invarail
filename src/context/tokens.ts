@@ -37,8 +37,12 @@ export function estimateTokens(text: string): number {
     } else if (len <= 14) {
       tokens += 3;
     } else {
-      // Long strings: ~4 chars per token
-      tokens += Math.ceil(len / 4);
+      // Long strings: ~4 chars/token for prose, ~3 for punctuation/digit-dense
+      // content (JSON, URLs, code — the dominant content in tool observations,
+      // where underestimation risks silent prompt-head truncation).
+      const nonAlpha = seg.match(/[^a-zA-Z]/g)?.length ?? 0;
+      const dense = nonAlpha / len > 0.25;
+      tokens += Math.ceil(len / (dense ? 3 : 4));
     }
   }
 
