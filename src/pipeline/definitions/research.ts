@@ -5,9 +5,9 @@ import { markdownToHtml } from '../../utils/markdown-to-html.js';
 import type { VerificationConfig } from '../../config/types.js';
 import {
   type Claim, type VerificationResult,
-  extractClaimsPrompt, parseClaims, pickRelevantSources, entailmentPrompt, parseVerdict,
+  extractClaimsPrompt, parseClaims, CLAIMS_JSON_SCHEMA, pickRelevantSources, entailmentPrompt, parseVerdict,
   shouldEscalate, tier1Query, tier1JudgePrompt, parseTier1, applyTier1,
-  buildPatchSet, correctionPrompt, verificationSection, needsCorrection, stripStrikethrough,
+  buildPatchSet, locateClaimSentence, sentenceCorrectionPrompt, verificationSection, needsCorrection, stripStrikethrough,
 } from '../verification.js';
 
 /**
@@ -354,11 +354,18 @@ export const researchPipeline: PipelineDefinition = {
         const model = vcfg?.extractorModel || ctx.routerModel || ctx.model;
         try {
           const { system, user } = extractClaimsPrompt(ctx.params._reportMarkdown as string, maxClaims);
-          const resp = await ctx.client.chat({
+          const chatParams = {
             model,
-            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+            messages: [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }],
             options: { temperature: 0.1, num_predict: 2000 },
-          });
+          };
+          let resp;
+          try {
+            // Grammar-constrained: output must match the claims array schema
+            resp = await ctx.client.chat({ ...chatParams, format: CLAIMS_JSON_SCHEMA });
+          } catch {
+            resp = await ctx.client.chat(chatParams);
+          }
           const claims = parseClaims(resp.message?.content ?? '', maxClaims);
           ctx.params._claims = claims;
           console.log(`[Verify] extracted ${claims.length} checkable claim(s)`);
@@ -477,7 +484,9 @@ export const researchPipeline: PipelineDefinition = {
       },
     },
 
-    // 7d. Correction pass — only runs when claims need hedging/attribution/correction
+    // 7d. Correction pass — code locates each claim's sentence, the model rewrites
+    // ONE sentence, code splices it back. The report body is never handed to the
+    // model for a whole-document rewrite (mass-deletion and strikethrough risks gone).
     {
       name: 'correction_pass',
       type: 'code',
@@ -486,28 +495,43 @@ export const researchPipeline: PipelineDefinition = {
         const results = ctx.params._verifications as VerificationResult[];
         const claims = ctx.params._claims as Claim[];
         const vcfg = ctx.params._verification as VerificationConfig | undefined;
-        const md = ctx.params._reportMarkdown as string;
+        let md = ctx.params._reportMarkdown as string;
         const patch = buildPatchSet(results);
         const claimText: Record<string, string> = {};
         for (const c of claims) claimText[c.claim_id] = c.claim;
-        try {
-          const { system, user } = correctionPrompt(md, patch, claimText);
-          const resp = await ctx.client.chat({
-            model: vcfg?.judgeModel || ctx.model,
-            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-            options: { temperature: 0.3, num_predict: 8192, ...(ctx.contextSize ? { num_ctx: ctx.contextSize } : {}) },
-          });
-          const corrected = stripThinking(resp.message?.content ?? '').trim();
-          // Guard: only accept a revision that preserves the bulk of the report (no mass deletion)
-          if (corrected.length > md.length * 0.7) {
-            ctx.params._reportMarkdown = corrected;
-            console.log(`[Verify] applied ${Object.keys(patch).length} correction(s)`);
-          } else {
-            console.warn('[Verify] correction output too short — keeping original draft');
+
+        let applied = 0;
+        for (const [id, p] of Object.entries(patch)) {
+          const claim = claimText[id];
+          if (!claim) continue;
+          // Re-locate against the CURRENT md — earlier splices shift offsets
+          const loc = locateClaimSentence(md, claim);
+          if (!loc) {
+            console.warn(`[Verify] no sentence match for ${id} — skipping correction`);
+            continue;
           }
-        } catch (err) {
-          console.warn('[Verify] correction pass failed (keeping original):', err instanceof Error ? err.message : err);
+          try {
+            const { system, user } = sentenceCorrectionPrompt(loc.sentence, p.instruction);
+            const resp = await ctx.client.chat({
+              model: vcfg?.judgeModel || ctx.model,
+              messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+              options: { temperature: 0.2, num_predict: 400 },
+            });
+            let rewritten = stripStrikethrough(stripThinking(resp.message?.content ?? '')).trim()
+              .replace(/^["'`]+|["'`]+$/g, '');
+            // Sanity: non-empty, single paragraph, bounded growth
+            if (!rewritten || rewritten.includes('\n\n') || rewritten.length > loc.sentence.length * 4 + 200) {
+              console.warn(`[Verify] rejected rewrite for ${id} (empty/multi-paragraph/oversized)`);
+              continue;
+            }
+            md = md.slice(0, loc.start) + rewritten + md.slice(loc.end);
+            applied++;
+          } catch (err) {
+            console.warn(`[Verify] sentence correction failed for ${id}:`, err instanceof Error ? err.message : err);
+          }
         }
+        ctx.params._reportMarkdown = md;
+        console.log(`[Verify] applied ${applied}/${Object.keys(patch).length} sentence correction(s)`);
       },
     },
 

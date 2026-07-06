@@ -8,6 +8,7 @@ import {
   buildPatchSet,
   pickRelevantSources,
   stripStrikethrough,
+  locateClaimSentence,
   verificationSection,
   shouldEscalate,
   tier1Query,
@@ -222,6 +223,46 @@ describe('buildPatchSet', () => {
     const claim: Claim = { claim_id: 'x', claim: 'Some unsupported claim', claim_type: 'financial', time_sensitive: true, entities: [], requires_verification: true };
     const v = parseVerdict(JSON.stringify({ verdict: 'UNSUPPORTED', recommended_action: 'remove' }), claim);
     expect(v.recommended_action).toBe('qualify');
+  });
+});
+
+describe('locateClaimSentence', () => {
+  const report = [
+    '# AI Chip Market Report',
+    '',
+    'The market grew substantially in 2025. NVIDIA acquired Groq for $20 billion in March 2025 [3]. Analysts expect consolidation to continue.',
+    '',
+    '{{chart:market-share}}',
+    '',
+    '## Sources',
+    '1. NVIDIA acquired Groq for $20 billion — example.com',
+  ].join('\n');
+
+  it('locates the sentence carrying a claim by token overlap', () => {
+    const loc = locateClaimSentence(report, 'NVIDIA acquired Groq for $20 billion in March 2025');
+    expect(loc).not.toBeNull();
+    expect(loc!.sentence).toContain('NVIDIA acquired Groq');
+    expect(report.slice(loc!.start, loc!.end)).toBe(loc!.sentence);
+  });
+
+  it('never matches inside the Sources section', () => {
+    const loc = locateClaimSentence(report, 'NVIDIA acquired Groq for $20 billion in March 2025');
+    expect(loc!.start).toBeLessThan(report.indexOf('## Sources'));
+  });
+
+  it('returns null when no sentence matches well enough', () => {
+    expect(locateClaimSentence(report, 'Apple released a quantum laptop in Antarctica')).toBeNull();
+  });
+
+  it('splicing a rewritten sentence preserves the rest of the report', () => {
+    const loc = locateClaimSentence(report, 'NVIDIA acquired Groq for $20 billion in March 2025')!;
+    const rewritten = 'According to secondary reporting, NVIDIA licensed Groq IP in a deal announced in March 2025 [3].';
+    const patched = report.slice(0, loc.start) + rewritten + report.slice(loc.end);
+    expect(patched).toContain('The market grew substantially in 2025.');
+    expect(patched).toContain('Analysts expect consolidation to continue.');
+    expect(patched).toContain('{{chart:market-share}}');
+    expect(patched).toContain(rewritten);
+    expect(patched).not.toContain('NVIDIA acquired Groq for $20 billion in March 2025 [3]');
   });
 });
 
