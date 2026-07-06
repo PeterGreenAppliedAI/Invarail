@@ -26,8 +26,15 @@ export interface PendingAction {
 const TTL_MS = 10 * 60 * 1000;
 const STORE_PATH = 'data/pending-actions.json';
 
-/** Matches a bare confirmation message ("confirm", "yes do it", "go ahead", ...). */
-export const CONFIRMATION_PATTERN = /^(confirm|yes,?\s*do it|approved?|go ahead|proceed)\s*[.!]?$/i;
+/** Matches a confirmation message: bare ("confirm", "yes do it", "go ahead")
+ *  or id-targeted ("confirm 3fa2c1b9") for multi-proposal flows (briefing prep). */
+export const CONFIRMATION_PATTERN = /^(?:confirm|yes,?\s*do it|approved?|go ahead|proceed)(?:\s+([a-f0-9]{6,12}))?\s*[.!]?$/i;
+
+/** Extract the optional action id from a confirmation message (null = bare confirm). */
+export function parseConfirmationId(message: string): string | null {
+  const m = message.trim().match(CONFIRMATION_PATTERN);
+  return m?.[1]?.toLowerCase() ?? null;
+}
 
 export class PendingActionStore {
   constructor(private readonly path: string = STORE_PATH) {}
@@ -52,14 +59,16 @@ export class PendingActionStore {
     }
   }
 
-  /** Record a previewed action. Returns the entry (with id) for display. */
-  record(entry: Omit<PendingAction, 'id' | 'createdAt' | 'expiresAt'>): PendingAction {
+  /** Record a previewed action. Returns the entry (with id) for display.
+   *  ttlMs defaults to 10 min (interactive confirms); briefing prep proposals
+   *  pass a longer TTL since the user may read the briefing much later. */
+  record(entry: Omit<PendingAction, 'id' | 'createdAt' | 'expiresAt'>, ttlMs = TTL_MS): PendingAction {
     const now = Date.now();
     const action: PendingAction = {
       ...entry,
       id: randomBytes(4).toString('hex'),
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + TTL_MS).toISOString(),
+      expiresAt: new Date(now + ttlMs).toISOString(),
     };
     const actions = this.load();
     actions.push(action);
@@ -68,10 +77,24 @@ export class PendingActionStore {
     return action;
   }
 
-  /** Most recent unexpired action for a sender (sender-bound lookup). */
-  latestFor(sender: string): PendingAction | null {
-    const actions = this.load().filter(a => a.sender === sender);
+  /** Most recent unexpired action for a sender (sender-bound; optionally channel-bound).
+   *  Channel binding prevents cross-channel confirmation when generic sender ids
+   *  (e.g. "console-user") could collide across channels. */
+  latestFor(sender: string, channel?: string): PendingAction | null {
+    const actions = this.load().filter(a =>
+      a.sender === sender && (channel === undefined || a.channel === channel));
     return actions.length > 0 ? actions[actions.length - 1] : null;
+  }
+
+  /** Find a specific pending action by id — still sender-bound (the confirmer
+   *  must be the person the proposal was addressed to). */
+  findById(id: string, sender: string): PendingAction | null {
+    return this.load().find(a => a.id === id && a.sender === sender) ?? null;
+  }
+
+  /** All unexpired actions for a sender — for listing open proposals. */
+  listFor(sender: string): PendingAction[] {
+    return this.load().filter(a => a.sender === sender);
   }
 
   /** Remove and return an entry — single-use semantics. */

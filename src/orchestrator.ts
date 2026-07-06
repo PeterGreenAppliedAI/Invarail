@@ -13,7 +13,8 @@ import { CronService } from './cron/service.js';
 import { TaskStore } from './tasks/store.js';
 import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
-import { pendingActions, CONFIRMATION_PATTERN } from './security/pending-actions.js';
+import { pendingActions, CONFIRMATION_PATTERN, parseConfirmationId } from './security/pending-actions.js';
+import { buildAutonomyReport } from './metrics/autonomy-report.js';
 import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
 import { bootstrapWorkspace } from './agents/workspace.js';
@@ -948,6 +949,26 @@ export class Orchestrator {
       return;
     }
 
+    if (trimmed.startsWith('!autonomy')) {
+      const args = trimmed.slice('!autonomy'.length).trim();
+      const sinceDays = /^\d+$/.test(args) ? parseInt(args) : 30;
+      const openProposals = pendingActions.listFor(msg.senderId);
+      let replyText = buildAutonomyReport(undefined, sinceDays);
+      if (openProposals.length > 0) {
+        const openList = openProposals
+          .map(p => `- \`${p.id}\` **${p.tool}** ${JSON.stringify(p.params).slice(0, 80)}`)
+          .join('\n');
+        replyText += `\n\n⏳ **Open proposals** (reply \`confirm <id>\`):\n${openList}`;
+      }
+      await this.channelRegistry.send(
+        { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+        { text: replyText },
+      ).catch((err) => {
+        console.warn('[Orchestrator] Failed to send autonomy report:', err instanceof Error ? err.message : err);
+      });
+      return;
+    }
+
     if (trimmed.startsWith('!forget')) {
       const query = msg.content.trim().slice('!forget'.length).trim();
       if (!query || query.length < 3) {
@@ -1183,9 +1204,21 @@ export class Orchestrator {
 
       // Confirmation follow-up: execute the STORED pending action (exact previewed
       // params — never a model-regenerated call). Sender-bound, single-use, expiring.
+      // "confirm <id>" targets a specific proposal (briefings propose several);
+      // bare "confirm" takes the latest for this sender+channel.
       // A confirmation with no pending entry falls through as a normal message.
       if (CONFIRMATION_PATTERN.test(trimmed)) {
-        const pending = pendingActions.latestFor(msg.senderId);
+        const targetId = parseConfirmationId(trimmed);
+        const pending = targetId
+          ? pendingActions.findById(targetId, msg.senderId)
+          : pendingActions.latestFor(msg.senderId, msg.channel);
+        if (targetId && !pending) {
+          await this.channelRegistry.send(
+            { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
+            { text: `No pending action with id \`${targetId}\` — it may have expired (10 min) or already run.` },
+          );
+          return;
+        }
         if (pending) {
           pendingActions.consume(pending.id);
           let replyText: string;
@@ -1205,6 +1238,14 @@ export class Orchestrator {
             const errMsg = err instanceof Error ? err.message : String(err);
             logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: errMsg.slice(0, 120) });
             replyText = `❌ **${pending.tool}** failed: ${errMsg}`;
+          }
+          // Record the exchange in the session transcript so the conversation
+          // history reflects what actually ran
+          try {
+            this.sessionStore.appendTurn(pending.agentId, pending.sessionKey, { role: 'user', content: trimmed, timestamp: new Date().toISOString() });
+            this.sessionStore.appendTurn(pending.agentId, pending.sessionKey, { role: 'assistant', content: replyText, timestamp: new Date().toISOString() });
+          } catch (err) {
+            console.warn('[Orchestrator] Failed to record confirm exchange in transcript:', err instanceof Error ? err.message : err);
           }
           await this.channelRegistry.send(
             { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },

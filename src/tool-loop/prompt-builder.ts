@@ -120,6 +120,14 @@ Action: ${exampleTool2.name}[{"param": "value"}]
 Thought: I now have enough information to answer.
 Final Answer: [your complete response to the user]
 
+### Worked example (REAL tool, real format — yours must look exactly like this):
+
+Thought: I need to use ${exampleTool.name} to get this information.
+Action: ${exampleTool.example ?? `${exampleTool.name}[{"input": "example value"}]`}
+Observation: (the real result appears here — STOP after Action and wait for it; NEVER write the Observation yourself)
+Thought: The result gives me what I need.
+Final Answer: Here is what I found: …
+
 ## CRITICAL RULES — FOLLOW EXACTLY
 
 1. ALWAYS start your response with "Thought:"

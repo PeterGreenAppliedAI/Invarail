@@ -19,6 +19,7 @@ export function createCronAddTool(cronService: CronService): LocalClawTool {
         message: { type: 'string', description: 'The prompt to run when triggered' },
         channel: { type: 'string', description: 'Delivery channel (e.g., "discord")' },
         target: { type: 'string', description: 'Channel ID for results' },
+        once: { type: 'boolean', description: 'One-shot: run once at the next matching time, then auto-disable. Use for reminders ("remind me tomorrow at 9am").' },
       },
       required: ['name', 'schedule', 'category', 'message', 'channel', 'target'],
     },
@@ -49,15 +50,17 @@ export function createCronAddTool(cronService: CronService): LocalClawTool {
         return `Error: Invalid cron expression "${schedule}" — ${err instanceof Error ? err.message : err}. Use standard 5-field syntax, e.g. "0 9 * * *" for daily at 9am.`;
       }
 
+      const once = params.once === true || params.once === 'true';
       const job = cronService.add({
         name,
         schedule,
         category,
         message,
         delivery: { channel: channel ?? 'discord', target: target ?? '' },
+        ...(once ? { once: true } : {}),
       });
 
-      return `Scheduled job "${job.name}" (${job.id}) with schedule "${job.schedule}", category="${job.category}"`;
+      return `Scheduled ${once ? 'one-shot ' : ''}job "${job.name}" (${job.id}) with schedule "${job.schedule}", category="${job.category}"`;
     },
   };
 }
