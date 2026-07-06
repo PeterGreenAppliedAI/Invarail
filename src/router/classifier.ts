@@ -20,9 +20,10 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
   // Browser interaction → multi (plan pipeline with browser tool)
   { pattern: /\b(screenshot|browse|go to|navigate to|visit)\b.*\b(\.com|\.org|\.net|\.io|site|website|page)\b/i, category: 'multi' },
   // Specific action categories before broad ones
-  { pattern: /\b(config|configure|setting|settings|preference|edit.*cron|modify.*cron|update.*cron|change.*cron|enable|disable|workspace|tools\.md)\b/i, category: 'config' },
+  // NOTE: bare "workspace" removed — it captured exec requests like "run ls in the workspace"
+  { pattern: /\b(config|configure|setting|settings|preference|edit.*cron|modify.*cron|update.*cron|change.*cron|enable|disable|tools\.md)\b/i, category: 'config' },
   { pattern: /\b(add.*heartbeat|remove.*heartbeat|list.*heartbeat|periodic check|periodic task|autonomous check)\b/i, category: 'cron' },
-  { pattern: /\b(execute|compile|deploy|install|sudo|npm|pip|git|mkdir|rm)\b/i, category: 'exec' },
+  { pattern: /\b(execute|compile|deploy|install|sudo|npm|pip|git|mkdir|rm|ls|pwd|chmod)\b/i, category: 'exec' },
   { pattern: /\b(run|build)\b.*\b(command|script|code|program|server|docker|container)\b/i, category: 'exec' },
   { pattern: /\b(list|show|ls)\b.*\b(files|directory|folder|dir)\b/i, category: 'exec' },
   { pattern: /\b(read|cat|open)\b.*\b(file|contents)\b/i, category: 'exec' },
@@ -34,6 +35,8 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
   // web_search last — require search INTENT, not mere mention. Bare "search"/"latest"/"news"
   // dropped: they match conversational text ("uses brave for search", "latest version of node").
   { pattern: /\b(search (for|the web|online)|web search|google|look up|find out about)\b/i, category: 'web_search' },
+  // Live-value lookups ("current price of bitcoin") need fresh data — chat default would answer stale
+  { pattern: /\b(current|latest|live|today'?s)\s+(price|value|rate)\b|\bprice of\b/i, category: 'web_search' },
 ];
 
 const VALID_CATEGORIES = new Set([
@@ -209,7 +212,11 @@ export async function classifyMessage(
     }
   }
 
-  // Try model classification (on the capped text — never the full blob)
+  // Try model classification (on the capped text — never the full blob).
+  // The configured timeout is enforced HERE: the underlying client retries
+  // connection failures with sleeps (~12s against a dead gateway), which would
+  // otherwise stall every message far past config.timeout before the keyword
+  // fallback kicks in.
   try {
     const prompt = buildRouterPrompt(matchText, config);
     const generateParams = {
@@ -221,17 +228,19 @@ export async function classifyMessage(
       },
     };
 
-    let response;
-    try {
-      // Grammar-constrained: the model can ONLY emit a valid category name
-      response = await client.generate({
-        ...generateParams,
-        format: { type: 'string', enum: [...validCategories] },
-      });
-    } catch {
-      // Backend may not support format — plain generation, validated below
-      response = await client.generate(generateParams);
-    }
+    const attempt = async () => {
+      try {
+        // Grammar-constrained: the model can ONLY emit a valid category name
+        return await client.generate({
+          ...generateParams,
+          format: { type: 'string', enum: [...validCategories] },
+        });
+      } catch {
+        // Backend may not support format — plain generation, validated below
+        return client.generate(generateParams);
+      }
+    };
+    const response = await withTimeout(attempt(), config.timeout);
 
     const raw = response.response.trim().toLowerCase().replace(/[^a-z_]/g, '');
 
@@ -252,6 +261,19 @@ export async function classifyMessage(
   }
 
   return { category: config.defaultCategory, confidence: 'fallback' };
+}
+
+/** Bound a promise by the router timeout — rejects with ROUTER_TIMEOUT so the
+ *  caller's catch falls through to keyword classification. The underlying
+ *  request may still complete in the background; its result is discarded. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(routerTimeout(ms)), ms);
+    promise.then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); },
+    );
+  });
 }
 
 function getValidCategories(config: RouterConfig): Set<string> {
