@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from '../api/hooks';
+import Skeleton from '../components/shared/Skeleton';
 import type { Task } from '../types';
 
 const COLUMNS: { status: Task['status']; label: string; color: string }[] = [
@@ -28,6 +29,14 @@ function EditTaskModal({ task, onClose }: { task: Task; onClose: () => void }) {
   const [status, setStatus] = useState(task.status);
   const [dueDate, setDueDate] = useState(task.dueDate ?? '');
 
+  // Unsaved edits? Background-click dismiss is only allowed while the form is pristine.
+  const isDirty =
+    title !== task.title ||
+    details !== (task.details ?? '') ||
+    priority !== task.priority ||
+    status !== task.status ||
+    dueDate !== (task.dueDate ?? '');
+
   const handleSave = () => {
     updateTask.mutate(
       {
@@ -43,7 +52,10 @@ function EditTaskModal({ task, onClose }: { task: Task; onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      onClick={() => { if (!isDirty) onClose(); }}
+    >
       <div className="bg-zinc-800 border border-zinc-600 rounded-lg p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
         <h3 className="text-lg font-semibold">Edit Task</h3>
 
@@ -159,7 +171,7 @@ export default function Tasks() {
         </div>
       )}
 
-      {isLoading && <p className="text-zinc-500">Loading...</p>}
+      {isLoading && <Skeleton rows={4} className="max-w-2xl mb-4" />}
 
       <div className="grid grid-cols-4 gap-4">
         {COLUMNS.map(col => {

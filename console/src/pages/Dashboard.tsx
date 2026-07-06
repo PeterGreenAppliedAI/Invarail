@@ -1,12 +1,13 @@
 import { useStatus, useChannels } from '../api/hooks';
 import Card from '../components/shared/Card';
 import Badge from '../components/shared/Badge';
+import Skeleton from '../components/shared/Skeleton';
 
 export default function Dashboard() {
   const { data: status, isLoading } = useStatus();
   const { data: channels } = useChannels();
 
-  if (isLoading) return <p className="text-zinc-400">Loading...</p>;
+  if (isLoading) return <Skeleton rows={6} className="max-w-2xl" />;
   if (!status) return <p className="text-zinc-400">Failed to load status</p>;
 
   return (

@@ -4,6 +4,22 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Calendar Prep Proposals — First Proactive Autonomy Rung (July 6 2026)
+
+### The briefing now proposes executable actions, not just insight text
+**Decision:** A structured prep stage after the briefing CoT (`src/services/prep-proposals.ts`, config: `briefing.prepProposals`, default on): per upcoming event (48h window) the model chooses from a CLOSED action set — `question` (ask the user for context: "your 2pm with John — what's it about? I can prep notes or a reminder"), `reminder` (one-shot cron), `task` (task_add), or `none`. Code validates against the registry, does ALL date math (ISO→one-shot cron in `isoToOneShotCron` — the model only names a moment), builds the exact tool params, and records proposals in the pending-action ledger with a 12h TTL. The briefing lists them with `confirm <id>` handles. NOTHING executes unconfirmed.
+**Why this shape:** Peter's stated flow — "the agent can be like: hey, there isn't enough information, is there anything you want to tell me that I can help preparing?" The question action IS the intake/clarification flow, applied to calendar first. Model fills bounded slots; code owns the envelope — same inversion of control as everything else.
+**Supporting changes:** ledger got id-targeted confirmation (`confirm 3fa2c1b9` — briefings propose several), channel binding on bare confirms (generic sender ids like "console-user" could collide across channels), per-entry TTL (10min interactive / 12h briefing), and confirmed actions now write to the session transcript. `!autonomy` command renders the per-action track record + promotion candidates (≥20 decided outcomes at ≥95%) + open proposals.
+**Gotcha — one-shot cron didn't exist:** a 5-field expression like `30 8 7 7 *` fires EVERY YEAR. Any "remind me tomorrow" reminder would have haunted the owner annually — a pre-existing bug in every reminder flow, exposed by this feature. Added `once: true` to CronJob: the service disables the job after its first successful run. cron_add accepts it; prep reminders always set it.
+**Gotcha — briefing prompt says "NEVER ask questions":** deliberate for the one-way insight; the prep section is a separate structured call so questions live there without softening the main update's rules.
+**Deferred to next rungs:** gmail in the briefing context (needs a slice decision), research/agenda-doc prep offers, promotion application from the command (kept manual by design — the bot should not edit its own security config), reply-context threading (v1: the user's answer is a normal message; the briefing text above it carries the context).
+**Status:** Built + unit-tested (472 tests). Needs a live briefing run to validate end-to-end.
+
+### Memory floor tuned on real data + a fragmentation finding
+**Decision:** Injection floor 0.55 → 0.52. Measured on the real corpus (`scripts/memory-floor-check.ts`): noise clusters ≤0.49, genuine signal starts ~0.546 on qwen3-embedding — 0.55 was clipping the best fact in a relevant query (sim 0.546, imp 4).
+**Finding (evidence for the cross-channel sessions roadmap item):** facts are fragmented across channel sender ids — 55 of 64 live under the Telegram id, 5 under Discord, rest scattered. On Discord, memory search sees 8% of the owner's knowledge. Identity mapping is now measurably the biggest memory-quality lever, bigger than any scoring change.
+**Status:** Floor active. Fragmentation unaddressed (roadmap: cross-channel sessions).
+
 ## Small-Model Hardening + Bounded-Autonomy Gates (July 5-6 2026)
 
 A full-codebase assessment (four parallel research passes: tool-loop, router/pipelines, memory/context, autonomy surface) concluded the architecture was sound and the gaps were implementation-level: tolerant layers with bugs, gates that existed but weren't applied uniformly, budgets computed against the wrong numbers. One session, 9 commits (b54742f..be5fe4a), each independently revertable. 451 tests after (was 389).

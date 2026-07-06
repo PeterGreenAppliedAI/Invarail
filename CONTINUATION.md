@@ -163,35 +163,33 @@ New test files: `test/pipeline/extractor.test.ts`,
 plus additions in `test/tool-loop/parser.test.ts`,
 `test/integration/react-loop.test.ts`, `test/pipeline/verification.test.ts`.
 
-## 4. Remaining roadmap (in rough priority order)
+## 4. Remaining roadmap (updated after the July 6 second session)
 
-1. **Live verification pass** of the five behavior changes above — before any
-   new feature work.
-2. **Complete autonomy annotations** on the remaining ~29 tools (pattern in
-   send-message.ts). Keep annotations honest: read tools are `silent`,
-   workspace writes `act_then_notify`, anything visible externally
-   `propose_confirm`.
-3. **Intake/clarification flow** (owner's near-term autonomy goal): when a
-   request is underspecified, ask 1-3 targeted questions OR do-then-brief with
-   assumptions flagged. Frame as a dispatch-level pre-step, code-gated.
-4. **Promotion tooling**: a `!autonomy` command (or console view) that reads
-   `data/metrics.jsonl` `autonomous_action` events and shows per-action-type
-   success rates — the evidence base for adding `autoApproveTools` entries.
-5. **Per-model context profiles**: for `contextSize ≤ 16k`, auto-switch
-   workspace to `progressive` mode and cap stable facts at 3 (workspace.ts
-   already supports progressive).
-6. **Few-shot for text-mode models**: one worked example with a REAL tool's
-   real params in the text-format block (small models copy literally).
-7. **Plan pipeline**: split `generate_plan` (enum-constrained specialist pick,
+DONE since first writing: autonomy annotations (all 35 factories), `!autonomy`
+promotion report command, few-shot text-mode example, ledger transcript writes
++ channel binding + id-targeted confirms, memory floor tuned on real data
+(0.52), **calendar prep proposals** (the first intake/clarification rung —
+see DECISIONS.md July 6). Console frontend error-UX pass done (error banner,
+typed SSE events, skeletons, modal guard).
+
+1. **Live briefing run** — the prep-proposal loop is unit-tested but has never
+   produced a real briefing. Validate: proposals render with confirm ids,
+   `confirm <id>` creates the one-shot cron, the reminder fires ONCE.
+2. **Cross-channel identity mapping** — now evidence-backed: 55/64 facts live
+   under the Telegram sender id; Discord sees 8% of the owner's memory
+   (scripts/memory-floor-check.ts + graph-diag.ts). Biggest memory lever.
+3. **Prep proposals next rungs**: gmail slice in briefing context;
+   research/agenda-doc offers; reply-context threading (v1 relies on the
+   briefing text being adjacent in the conversation).
+4. **Per-model context profiles**: for `contextSize ≤ 16k`, auto-switch
+   workspace to `progressive` mode and cap stable facts (workspace.ts already
+   supports progressive).
+5. **Plan pipeline**: split `generate_plan` (enum-constrained specialist pick,
    then per-step messages); skip `reflect` for ≤2-step plans; replace LLM
    `check_progress` done-detection with plan-index arithmetic.
-8. **Deterministic citation numbering** in research `parse_final` (code
-   assigns/renumbers `[n]`, model stops being trusted for it).
-9. **Ledger-confirmed actions** aren't written to the session transcript —
-   append a turn pair so the conversation history reflects what ran.
-10. **Session-key binding for pending actions**: ledger lookups are
-    sender-bound; consider also binding to channel to prevent cross-channel
-    confirms if multiple channels share a sender id.
+6. **Deterministic citation numbering** in research `parse_final`.
+7. **Gmail compose tool** (backlog promotion candidate: prep proposals will
+   eventually want draft_reply → actual send; it must be propose_confirm).
 
 ## 5. Anti-goals — do NOT do these
 

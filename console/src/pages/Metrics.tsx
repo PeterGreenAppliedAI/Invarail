@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchApi } from '../api/client';
+import ErrorBanner from '../components/shared/ErrorBanner';
 
 interface MetricsStats {
   totalRuns: number;
@@ -117,23 +118,36 @@ export default function Metrics() {
   const [steps, setSteps] = useState<StepRecord[]>([]);
   const [days, setDays] = useState(7);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
+    setLoadError(null);
+    const failures: string[] = [];
+    const record = (label: string) => (err: unknown) => {
+      failures.push(`${label} (${err instanceof Error ? err.message : String(err)})`);
+      return null;
+    };
     Promise.all([
-      fetchApi<MetricsOverview>(`/metrics/overview?days=${days}`).catch(() => null),
-      fetchApi<MetricsStats>(`/metrics/stats?days=${days}`).catch(() => null),
-      fetchApi<PipelineRun[]>(`/metrics/runs?limit=50`).catch(() => [] as PipelineRun[]),
+      fetchApi<MetricsOverview>(`/metrics/overview?days=${days}`).catch(record('overview')),
+      fetchApi<MetricsStats>(`/metrics/stats?days=${days}`).catch(record('stats')),
+      fetchApi<PipelineRun[]>(`/metrics/runs?limit=50`).catch(record('runs')),
     ]).then(([o, s, r]) => {
       setOverview(o);
       setStats(s);
       setRuns(r ?? []);
+      if (failures.length > 0) setLoadError(`Failed to load metrics: ${failures.join(', ')}`);
     }).finally(() => setLoading(false));
   }, [days]);
 
   useEffect(() => {
     if (selectedRun === null) { setSteps([]); return; }
-    fetchApi<StepRecord[]>(`/metrics/runs/${selectedRun}/steps`).then(setSteps).catch(() => setSteps([]));
+    fetchApi<StepRecord[]>(`/metrics/runs/${selectedRun}/steps`)
+      .then(setSteps)
+      .catch(err => {
+        setSteps([]);
+        setLoadError(`Failed to load run steps: ${err instanceof Error ? err.message : String(err)}`);
+      });
   }, [selectedRun]);
 
   if (loading) return <p className="text-zinc-400">Loading metrics...</p>;
@@ -156,6 +170,8 @@ export default function Metrics() {
           <option value={90}>Last 90 days</option>
         </select>
       </div>
+
+      {loadError && <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />}
 
       {/* === Overview across ALL categories (from metrics.jsonl) === */}
       {overview && overview.totalDispatches > 0 ? (
