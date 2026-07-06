@@ -133,6 +133,12 @@ export class CronService {
           console.log(`[Cron] Job ${job.id} succeeded on retry ${attempt}`);
         }
         logAutonomousAction({ action: 'cron_job_run', tier: 'act_then_notify', source: 'cron', reversible: false, outcome: 'success', detail: job.name });
+        // One-shot jobs retire after their first successful run — a 5-field
+        // cron expression would otherwise fire again next year
+        if (job.once) {
+          this.edit(job.id, { enabled: false });
+          console.log(`[Cron] One-shot job "${job.name}" (${job.id}) completed — disabled`);
+        }
         return;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PendingActionStore, CONFIRMATION_PATTERN } from '../../src/security/pending-actions.js';
+import { PendingActionStore, CONFIRMATION_PATTERN, parseConfirmationId } from '../../src/security/pending-actions.js';
 
 let storePath: string;
 let store: PendingActionStore;
@@ -61,11 +61,45 @@ describe('PendingActionStore', () => {
   });
 });
 
+describe('id-targeted confirmation + channel binding', () => {
+  it('findById returns the action only for its own sender', () => {
+    const action = store.record(baseEntry);
+    expect(store.findById(action.id, 'user-1')?.id).toBe(action.id);
+    expect(store.findById(action.id, 'user-2')).toBeNull();
+  });
+
+  it('latestFor with channel binding ignores other channels', () => {
+    store.record({ ...baseEntry, channel: 'discord' });
+    const consoleAction = store.record({ ...baseEntry, channel: 'console' });
+    expect(store.latestFor('user-1', 'console')?.id).toBe(consoleAction.id);
+    expect(store.latestFor('user-1', 'telegram')).toBeNull();
+  });
+
+  it('listFor returns all unexpired actions for a sender', () => {
+    store.record(baseEntry);
+    store.record({ ...baseEntry, tool: 'cron_add' });
+    expect(store.listFor('user-1')).toHaveLength(2);
+    expect(store.listFor('user-2')).toHaveLength(0);
+  });
+
+  it('parseConfirmationId extracts ids and returns null for bare confirms', () => {
+    expect(parseConfirmationId('confirm 3fa2c1b9')).toBe('3fa2c1b9');
+    expect(parseConfirmationId('Confirm 3FA2C1B9')).toBe('3fa2c1b9');
+    expect(parseConfirmationId('confirm')).toBeNull();
+    expect(parseConfirmationId('go ahead')).toBeNull();
+  });
+});
+
 describe('CONFIRMATION_PATTERN', () => {
   it('matches bare confirmations', () => {
     for (const msg of ['confirm', 'Confirm!', 'yes do it', 'yes, do it', 'approved', 'go ahead', 'proceed.']) {
       expect(CONFIRMATION_PATTERN.test(msg)).toBe(true);
     }
+  });
+
+  it('matches id-targeted confirmations', () => {
+    expect(CONFIRMATION_PATTERN.test('confirm 3fa2c1b9')).toBe(true);
+    expect(CONFIRMATION_PATTERN.test('confirm abc123')).toBe(true);
   });
 
   it('does not match confirmations embedded in other requests', () => {

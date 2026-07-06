@@ -359,6 +359,10 @@ export const HeartbeatConfigSchema = z.object({
 /** Briefing reasoning config. Timing is fixed (8am/1:15pm/5pm); model is configurable. */
 export const BriefingConfigSchema = z.object({
   model: z.string().default('qwen3.6:35b'),
+  /** Calendar prep proposals: per upcoming event, the briefing asks a targeted
+   *  question or proposes an executable prep action (reminder/task) that runs
+   *  on "confirm <id>". First rung of proactive autonomy — everything proposes. */
+  prepProposals: z.boolean().default(true),
 });
 
 // --- Fact / Memory schemas ---

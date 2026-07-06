@@ -5,6 +5,7 @@
 import type { LocalClawConfig } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
+import { buildPrepSection } from './prep-proposals.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { TaskStore } from '../tasks/store.js';
@@ -157,10 +158,31 @@ Write a useful ${timeOfDay} update:
     }
     console.log(`[Briefing] ${timeOfDay} complete (${insight.length} chars)`);
 
-    if (insight) {
+    // Calendar prep proposals — questions + confirmable actions (reminder/task).
+    // Separate structured call; the main insight above stays a one-way update.
+    let prepSection = '';
+    if (config.briefing.prepProposals) {
+      try {
+        prepSection = await buildPrepSection({
+          client,
+          model: briefingModel,
+          calendar,
+          memory,
+          sender: hb.delivery.target,
+          channel: hb.delivery.channel,
+          target: hb.delivery.target,
+          agentId: config.agents.default,
+        });
+        if (prepSection) console.log(`[Briefing] Prep proposals attached (${prepSection.split('\n').length - 3} item(s))`);
+      } catch (err) {
+        console.warn('[Briefing] Prep stage failed (skipping):', err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (insight || prepSection) {
       await channelRegistry.send(
         { channel: hb.delivery.channel, channelId: hb.delivery.target },
-        { text: insight },
+        { text: `${insight}${prepSection}` },
       );
     }
   } catch (err) {
