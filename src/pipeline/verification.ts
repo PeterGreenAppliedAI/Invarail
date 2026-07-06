@@ -32,6 +32,25 @@ export const VERIFIABLE_TYPES = new Set([
   'benchmark',
 ]);
 
+/** JSON schema for grammar-constrained claim extraction (Ollama format / vLLM guided_json). */
+export const CLAIMS_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      claim_id: { type: 'string' },
+      claim: { type: 'string' },
+      claim_type: { type: 'string', enum: [...VERIFIABLE_TYPES] },
+      time_sensitive: { type: 'boolean' },
+      entities: { type: 'array', items: { type: 'string' } },
+      date_scope: { type: 'string' },
+      requires_verification: { type: 'boolean' },
+      citation: { type: 'number' },
+    },
+    required: ['claim', 'claim_type'],
+  },
+};
+
 export interface Claim {
   claim_id: string;
   claim: string;
@@ -372,20 +391,59 @@ export function stripStrikethrough(md: string): string {
     .replace(/ ([.,;:)])/g, '$1');
 }
 
-export function correctionPrompt(reportMarkdown: string, patch: PatchSet, claimText: Record<string, string>): { system: string; user: string } {
-  const items = Object.entries(patch)
-    .map(([id, p]) => `- [${p.verdict}] "${claimText[id] ?? id}"\n  → ${p.instruction}`)
-    .join('\n');
+/**
+ * Fuzzy-locate the sentence in the report that carries a claim, by token overlap.
+ * Skips the `## Sources` section, headings, and chart placeholders. Returns null
+ * when no sentence matches at least half the claim's tokens — better to skip a
+ * correction than to splice the wrong sentence.
+ */
+export function locateClaimSentence(md: string, claim: string): { start: number; end: number; sentence: string } | null {
+  const targetTokens = claimTokens(claim);
+  if (targetTokens.size === 0) return null;
+
+  const sourcesIdx = md.search(/^## Sources/m);
+  const searchable = sourcesIdx === -1 ? md.length : sourcesIdx;
+
+  let best: { start: number; end: number; sentence: string; score: number } | null = null;
+  // Candidate sentences: runs ending in ./!/? or at end-of-line
+  const re = /[^.!?\n]+[.!?]+|[^.!?\n]+(?=\n|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md)) !== null) {
+    if (m.index >= searchable) break;
+    const sentence = m[0];
+    const trimmed = sentence.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.includes('{{chart:')) continue;
+
+    const toks = claimTokens(sentence);
+    let overlap = 0;
+    for (const t of targetTokens) if (toks.has(t)) overlap++;
+    const score = overlap / targetTokens.size;
+    if (score > (best?.score ?? 0)) {
+      best = { start: m.index, end: m.index + sentence.length, sentence, score };
+    }
+  }
+
+  return best && best.score >= 0.5
+    ? { start: best.start, end: best.end, sentence: best.sentence }
+    : null;
+}
+
+/**
+ * Prompt for rewriting ONE located sentence. Code finds the sentence and splices
+ * the result — the model never touches the rest of the report. (The previous
+ * whole-report rewrite was the single hardest task in the system for a small
+ * model: "edit these sentences, preserve 3000 other words verbatim".)
+ */
+export function sentenceCorrectionPrompt(sentence: string, instruction: string): { system: string; user: string } {
   return {
     system: [
-      'You are revising a research report to fix overstated or unsupported claims.',
-      'Edit ONLY the sentences affected by the instructions below. Preserve all other text, headings, the `## Sources` list, and any `{{chart:...}}` placeholders VERBATIM.',
-      'REPLACE wrong text cleanly — write the corrected sentence as final prose. NEVER use strikethrough (~~ or <del>), and NEVER leave the old/wrong text in. This is a published report, not a tracked-changes draft.',
-      'Hedge CONCISELY: use at most ONE hedge per sentence (a single "According to <source>, …" OR one "reportedly"). Never stack qualifiers or repeat "reportedly" within a sentence. Keep the prose clean and readable.',
-      'Do not add new factual claims. Do not delete claims. Do not change the structure. Keep markdown formatting and the existing [n] citation numbers.',
-      'Return the FULL corrected report in markdown. /no_think',
+      'You rewrite EXACTLY ONE sentence from a research report.',
+      'Apply the instruction to the sentence. Keep any [n] citation markers.',
+      'Hedge CONCISELY: at most ONE hedge (a single "According to <source>, …" OR one "reportedly"). Never stack qualifiers.',
+      'Return ONLY the rewritten sentence — no explanation, no quotes around it, no strikethrough, no old text.',
+      '/no_think',
     ].join('\n'),
-    user: `Fix these claims:\n${items}\n\n---\nREPORT:\n${reportMarkdown}`,
+    user: `Sentence: ${sentence}\n\nInstruction: ${instruction}`,
   };
 }
 
