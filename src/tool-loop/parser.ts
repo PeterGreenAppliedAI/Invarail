@@ -109,11 +109,27 @@ function extractJsonParams(text: string): Record<string, unknown> {
   const jsonStart = text.indexOf('{');
   if (jsonStart === -1) return {};
 
+  // Brace matching must ignore braces inside string literals — a "}" in a
+  // param value would otherwise end extraction early and yield {}.
   let depth = 0;
   let jsonEnd = -1;
+  let quote: string | null = null;
   for (let i = jsonStart; i < text.length; i++) {
-    if (text[i] === '{') depth++;
-    if (text[i] === '}') depth--;
+    const ch = text[i];
+    if (ch === '\\' && quote) {
+      i++; // skip escaped char inside a string
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '{') depth++;
+    if (ch === '}') depth--;
     if (depth === 0) {
       jsonEnd = i;
       break;
@@ -149,9 +165,28 @@ function extractJsonParams(text: string): Record<string, unknown> {
  * - Single quotes → double quotes
  */
 function sanitizeJson(raw: string): string {
-  let s = raw;
-  // Single quotes to double quotes (outside of already double-quoted strings)
-  s = s.replace(/'/g, '"');
+  // Convert single-quote string delimiters to double quotes WITHOUT touching
+  // apostrophes inside double-quoted strings ("don't" must survive).
+  let s = '';
+  let inDouble = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '\\' && i + 1 < raw.length) {
+      s += ch + raw[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = !inDouble;
+      s += ch;
+      continue;
+    }
+    if (ch === "'" && !inDouble) {
+      s += '"';
+      continue;
+    }
+    s += ch;
+  }
   // Quote unquoted keys: { key: → { "key":
   s = s.replace(/(\{|,)\s*([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
   // Remove trailing commas before } or ]

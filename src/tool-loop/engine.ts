@@ -279,6 +279,14 @@ const ACTION_CLAIM_PATTERNS = [
   /\btask\s+(?:has been|was|is now)\s+(?:updated|created|added|removed|deleted|modified|changed|completed|marked)\b/i,
   /\bhere(?:'s| is)\s+the\s+(?:updated|current|latest|result)\b/i,
   /\bthat(?:'s| is)\s+(?:been|now)\s+(?:updated|done|added|saved|fixed|changed)\b/i,
+];
+
+/**
+ * Data-claim patterns are separated from action claims: "the current price is..."
+ * is a hallucination only when NO tool ran this loop. After a real web_search /
+ * web_fetch, it's exactly what a correct answer looks like.
+ */
+const DATA_CLAIM_PATTERNS = [
   /\bbased on (?:the |my )?(?:current|latest|recent)\s+(?:stock|data|information|search|results)\b/i,
   /\b(?:the|current)\s+(?:stock |share )?price (?:is|of)\b/i,
   /\baccording to (?:the |my )?(?:latest|current|recent)\b/i,
@@ -297,22 +305,46 @@ const TOOL_ACTION_VERBS: Record<string, string[]> = {
   cron_add: ['scheduled', 'added', 'created'],
   memory_save: ['saved', 'added'],
   memory_forget: ['removed', 'deleted'],
+  web_search: ['searched', 'found', 'checked', 'looked', 'retrieved'],
+  web_fetch: ['fetched', 'retrieved', 'checked', 'looked', 'found'],
+  browser: ['checked', 'searched', 'looked', 'fetched', 'retrieved', 'found'],
+  memory_search: ['searched', 'found', 'checked', 'looked', 'retrieved'],
+  read_file: ['checked', 'looked', 'retrieved', 'found'],
+  gmail_read: ['checked', 'searched', 'looked', 'retrieved', 'found'],
+  calendar_read: ['checked', 'searched', 'looked', 'retrieved', 'found'],
 };
 
 function claimsActionWithoutToolCall(text: string, recentToolNames: string[]): boolean {
-  if (!ACTION_CLAIM_PATTERNS.some(p => p.test(text))) return false;
+  const claimsAction = ACTION_CLAIM_PATTERNS.some(p => p.test(text));
+  const claimsData = DATA_CLAIM_PATTERNS.some(p => p.test(text));
+  if (!claimsAction && !claimsData) return false;
 
-  // If tools were used, check if the claimed action matches what was actually done
-  if (recentToolNames.length > 0) {
-    const legitimateVerbs = recentToolNames.flatMap(t => TOOL_ACTION_VERBS[t] ?? []);
-    if (legitimateVerbs.length > 0) {
-      const lower = text.toLowerCase();
-      // If any claimed verb matches a tool that was actually called, it's a legitimate summary
-      if (legitimateVerbs.some(v => lower.includes(v))) return false;
-    }
-  }
+  // No tools ran this loop — any action/data claim is a hallucination
+  if (recentToolNames.length === 0) return true;
 
-  return true;
+  // Data claims are legitimate once real tools have run
+  if (claimsData && !claimsAction) return false;
+
+  const legitimateVerbs = recentToolNames.flatMap(t => TOOL_ACTION_VERBS[t] ?? []);
+  // Tools ran but none are in the verb map — assume a legitimate summary
+  // rather than false-positive on every unmapped tool
+  if (legitimateVerbs.length === 0) return false;
+
+  const lower = text.toLowerCase();
+  // If any claimed verb matches a tool that was actually called, it's a legitimate summary
+  return !legitimateVerbs.some(v => lower.includes(v));
+}
+
+/**
+ * Strip ReAct scaffolding from a final answer so "Thought: ... Final Answer: ..."
+ * never leaks verbatim to the user. Thinking blocks (<think>) are intentionally
+ * left intact — dispatch strips them at delivery boundaries and preserves them
+ * in transcripts.
+ */
+function stripReActScaffolding(text: string): string {
+  const finalMatch = text.match(/Final Answer:\s*([\s\S]+)/i);
+  if (finalMatch) return finalMatch[1].trim();
+  return text.replace(/^\s*Thought:\s*/i, '').trim();
 }
 
 /**
@@ -408,11 +440,15 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       }
     : undefined;
 
-  // Build system prompt with full ReAct format instructions, tool list, and examples
-  const systemPrompt = buildReActSystemPrompt(config.systemPrompt, tools, workspaceContext, promptContext);
+  // One tool-calling convention per model: 'native' passes tools via the API and
+  // keeps them OUT of the prompt; 'text' describes them in the prompt and passes
+  // nothing natively. Mixing both teaches contradictory formats to small models.
+  const toolStyle = config.toolStyle ?? 'native';
+  const systemPrompt = buildReActSystemPrompt(config.systemPrompt, tools, workspaceContext, promptContext, toolStyle);
 
-  // Convert tools to Ollama format
-  const ollamaTools = toOllamaTools(tools);
+  // Convert tools to Ollama format (native style only)
+  const ollamaTools = toolStyle === 'native' ? toOllamaTools(tools) : [];
+  const hasToolAccess = tools.length > 0;
   const availableToolNames = new Set(tools.map(t => t.name));
 
   // Build message history
@@ -424,8 +460,13 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
 
   const steps: ReActStep[] = [];
   const hasReasonTool = availableToolNames.has('reason');
-  let repairAttempted = false;
+  let hallucinationRepairAttempted = false;
+  let refusalRepairAttempted = false;
+  let emptyRetryAttempted = false;
   let driftRepairAttempted = false;
+  // Repair prompts don't consume tool-call budget — each one-shot repair
+  // extends the loop by one iteration (bounded: each flag fires at most once)
+  let extraIterations = 0;
   const driftTracker = new DriftTracker();
   const fileTokens: string[] = []; // Collect [FILE:] paths stripped from observations
   let lastActionHash = ''; // Action dedup: detect repeated identical tool calls
@@ -436,7 +477,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
   // Temperature lock: ≤0.3 for tool-calling specialists (ChatGPT feedback §6)
   // Exception: gemma4 needs higher temp for reasoning (best practices: 1.0, top_p=0.95)
   const isGemma4 = config.model.startsWith('gemma4');
-  const effectiveTemperature = ollamaTools.length > 0 && !isGemma4
+  const effectiveTemperature = hasToolAccess && !isGemma4
     ? Math.min(config.temperature, 0.3)
     : config.temperature;
 
@@ -472,7 +513,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     }
   }
 
-  for (let i = 0; i < config.maxIterations; i++) {
+  for (let i = 0; i < config.maxIterations + extraIterations; i++) {
     // Trim older tool observations if over budget
     if (config.contextSize) {
       await trimToolLoopMessages(messages, config.contextSize, observationSummarizer);
@@ -542,6 +583,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       const shouldRepair = drift !== 'none' && (!config.skipDriftDetection || drift === 'repeating');
       if (shouldRepair) {
         driftRepairAttempted = true;
+        extraIterations++;
         console.log(`[ReAct] Step ${i + 1}: drift detected (${drift}) — injecting re-anchor`);
         messages.push(msg);
         messages.push({
@@ -623,7 +665,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
               // Skip execution, use the block message as observation
               logToolCall({ tool: toolName, category: config.model, durationMs: 0, success: false, error: 'action_dedup' });
               steps.push({ thought: '', action: { tool: toolName, params: toolParams }, observation });
-              messages.push(msg);
+              // Assistant message was already pushed above — only append the tool result
               messages.push({ role: 'tool', content: observation });
               continue;
             }
@@ -704,13 +746,26 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     }
 
     // No tool calls — check for action hallucination before accepting as final answer
-    let answer = msg.content || '';
+    let answer = stripReActScaffolding(msg.content || '');
+
+    // Empty completion: retry once instead of returning an empty answer
+    if (!answer.trim() && !emptyRetryAttempted) {
+      emptyRetryAttempted = true;
+      extraIterations++;
+      console.log(`[ReAct] Step ${i + 1}: empty completion — requesting answer retry`);
+      messages.push(msg);
+      messages.push({
+        role: 'user',
+        content: 'Your last response was empty. Provide your final answer now as plain text.',
+      });
+      continue;
+    }
 
     // Action validator (ChatGPT feedback §3-4): if model claims it performed an action
     // but never called a tool, send a repair prompt and retry once.
     // If tools WERE called, only flag if the claimed action doesn't match what was done.
     const recentTools = steps.filter(s => s.action).map(s => s.action!.tool);
-    if (ollamaTools.length > 0 && !repairAttempted && claimsActionWithoutToolCall(answer, recentTools)) {
+    if (hasToolAccess && !hallucinationRepairAttempted && claimsActionWithoutToolCall(answer, recentTools)) {
       console.log(`[ReAct] Step ${i + 1}: action hallucination detected — "${answer.slice(0, 80)}..."`);
       messages.push(msg);
       messages.push({
@@ -719,24 +774,26 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
           + 'You MUST use the provided tools to make changes — you cannot modify data by just saying so. '
           + 'Please call the correct tool now to fulfill the request.',
       });
-      repairAttempted = true;
+      hallucinationRepairAttempted = true;
+      extraIterations++;
       continue;
     }
 
     // Premature refusal detector: if a tool-using specialist gives a final answer
     // on the first step without calling ANY tools, it's almost always wrong —
     // the model is refusing or hallucinating constraints that don't exist.
-    if (ollamaTools.length > 0 && steps.length === 0 && !repairAttempted) {
+    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted) {
       console.log(`[ReAct] Step ${i + 1}: premature answer without tool use — "${answer.slice(0, 80)}..."`);
       messages.push(msg);
       messages.push({
         role: 'user',
         content: 'You gave a final answer without using any tools. '
           + 'You MUST use your available tools to fulfill this request — do not refuse or claim you cannot. '
-          + 'You have full access to: ' + ollamaTools.map(t => t.function.name).join(', ') + '. '
+          + 'You have full access to: ' + tools.map(t => t.name).join(', ') + '. '
           + 'Start by calling the most relevant tool now.',
       });
-      repairAttempted = true;
+      refusalRepairAttempted = true;
+      extraIterations++;
       continue;
     }
 
@@ -822,7 +879,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       ? await client.chatStream(finalChatParams, onStream)
       : await client.chat(finalChatParams);
 
-    const answer = finalResponse.message?.content || 'I was unable to complete the request within the allowed steps.';
+    const answer = stripReActScaffolding(finalResponse.message?.content || '') || 'I was unable to complete the request within the allowed steps.';
     steps.push({ thought: '', finalAnswer: answer });
     return { answer: answer + fileAppend, steps, iterations: config.maxIterations, hitMaxIterations: true, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
   } catch {
