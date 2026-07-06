@@ -17,6 +17,7 @@ export function createReadFileTool(): LocalClawTool {
       required: ['path'],
     },
     category: 'exec',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const path = params.path as string;

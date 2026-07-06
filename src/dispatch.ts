@@ -250,7 +250,9 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         // Relevance floor: multi-signal scoring only orders results — without a
         // similarity floor, fresh high-importance facts inject on EVERY turn
         // regardless of relevance, a topic-drift trap for small models.
-        const MIN_SIMILARITY = 0.55;
+        // 0.52 tuned on real corpus data (scripts/memory-floor-check.ts):
+        // noise clusters ≤0.49, genuine signal starts ~0.546 on qwen3-embedding.
+        const MIN_SIMILARITY = 0.52;
         const MAX_CONTEXT_FACTS = 3;
         const results = await params.graphMemory.search(message, senderId, 5, { minSimilarity: MIN_SIMILARITY });
         contextFacts = results

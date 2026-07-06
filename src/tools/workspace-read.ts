@@ -18,6 +18,7 @@ export function createWorkspaceReadTool(): LocalClawTool {
       required: ['file'],
     },
     category: 'config',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const file = params.file as string;

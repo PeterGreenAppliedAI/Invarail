@@ -15,6 +15,7 @@ export function createHeartbeatRemoveTool(cronService: CronService): LocalClawTo
       required: ['id'],
     },
     category: 'cron',
+    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const id = params.id as string;

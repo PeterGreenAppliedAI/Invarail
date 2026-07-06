@@ -16,6 +16,7 @@ export function createTaskListTool(taskStore: TaskStore): LocalClawTool {
       },
     },
     category: 'task',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const tasks = taskStore.list({

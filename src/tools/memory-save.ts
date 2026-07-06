@@ -25,6 +25,7 @@ export function createMemorySaveTool(
       required: ['content'],
     },
     category: 'memory',
+    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>, ctx: import('./types.js').ToolContext): Promise<string> {
       const content = params.content as string;
