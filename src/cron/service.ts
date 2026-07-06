@@ -1,4 +1,5 @@
 import { Cron } from 'croner';
+import { logAutonomousAction } from '../metrics.js';
 import { CronStore } from './store.js';
 import type { CronJob, CronJobCreate, CronJobUpdate } from './types.js';
 
@@ -131,6 +132,7 @@ export class CronService {
         if (attempt > 0) {
           console.log(`[Cron] Job ${job.id} succeeded on retry ${attempt}`);
         }
+        logAutonomousAction({ action: 'cron_job_run', tier: 'act_then_notify', source: 'cron', reversible: false, outcome: 'success', detail: job.name });
         return;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -141,6 +143,7 @@ export class CronService {
           await new Promise(r => setTimeout(r, delay));
         } else {
           console.warn(`[Cron] Job ${job.id} failed after ${CronService.MAX_RETRIES + 1} attempts: ${errMsg}`);
+          logAutonomousAction({ action: 'cron_job_run', tier: 'act_then_notify', source: 'cron', reversible: false, outcome: 'failure', detail: `${job.name}: ${errMsg.slice(0, 120)}` });
           // Notify via onTrigger's delivery channel if possible
           if (this.onFailure) {
             try { await this.onFailure(job, errMsg); } catch { /* best-effort */ }

@@ -86,7 +86,8 @@ export function clearWorkspaceCache(sessionKey?: string): void {
 export function clearCompactionCache(agentId: string, sessionKey: string): void {
   compactionCache.delete(`${agentId}:${sessionKey}`);
 }
-import { computeBudget } from './context/budget.js';
+import { computeBudget, trimHistoryToFit } from './context/budget.js';
+import { pendingActions } from './security/pending-actions.js';
 import { buildCompactedHistory } from './context/compactor.js';
 import { PipelineRegistry } from './pipeline/registry.js';
 import { runPipeline } from './pipeline/executor.js';
@@ -181,6 +182,53 @@ function resolveChannelSecurity(
   return chConfig?.security ?? undefined;
 }
 
+/** Tools stripped from ALL cron dispatches — automated jobs can't mutate state. */
+const CRON_BLOCKED_TOOLS = new Set(['write_file', 'task_add', 'task_update', 'task_done', 'task_remove', 'workspace_write', 'memory_save']);
+
+/**
+ * Filter a specialist's tool list for cron mode. Beyond the always-blocked set,
+ * exec and send_message are only available when the job was explicitly scheduled
+ * as that category — owner-authored intent is the code gate. A web_search cron
+ * job whose fetched page contains an injected "run this / message X" instruction
+ * has no exec or send_message tool to reach for.
+ */
+function filterCronTools(tools: string[], category: string): string[] {
+  return tools.filter(t => {
+    if (CRON_BLOCKED_TOOLS.has(t)) return false;
+    if (t === 'exec' && category !== 'exec') return false;
+    if (t === 'send_message' && category !== 'message') return false;
+    return true;
+  });
+}
+
+/**
+ * Effective confirm set = channel confirmTools ∪ tools whose autonomy metadata
+ * declares propose_confirm, minus per-channel autoApproveTools promotions
+ * (an explicit confirmTools entry always wins over a promotion).
+ *
+ * Cron pre-authorization: an owner-scheduled exec/message job IS the approval
+ * for its category tool — nobody is present to confirm at run time. Only the
+ * metadata-derived gate is waived; explicit channel confirmTools still hold.
+ */
+function resolveConfirmSet(
+  registry: import('./tools/registry.js').ToolRegistry,
+  security: ChannelSecurity | undefined,
+  opts: { cronMode?: boolean; category: string },
+): Set<string> {
+  const explicit = new Set(security?.confirmTools ?? []);
+  const set = new Set([...explicit, ...registry.getMetadataConfirmTools()]);
+  for (const t of security?.autoApproveTools ?? []) {
+    if (!explicit.has(t)) set.delete(t);
+  }
+  if (opts.cronMode) {
+    const categoryTool = opts.category === 'message' ? 'send_message'
+      : opts.category === 'exec' ? 'exec'
+      : undefined;
+    if (categoryTool && !explicit.has(categoryTool)) set.delete(categoryTool);
+  }
+  return set;
+}
+
 /**
  * Dispatch a message through the Router → Specialist pipeline.
  * Loads session transcript for context, saves turn after completion.
@@ -199,19 +247,27 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
       stableFacts = stable.slice(0, 5).map(f => `- ${f.text}`);
 
       if (message.length > 10) {
-        const results = await params.graphMemory.search(message, senderId, 5);
+        // Relevance floor: multi-signal scoring only orders results — without a
+        // similarity floor, fresh high-importance facts inject on EVERY turn
+        // regardless of relevance, a topic-drift trap for small models.
+        const MIN_SIMILARITY = 0.55;
+        const MAX_CONTEXT_FACTS = 3;
+        const results = await params.graphMemory.search(message, senderId, 5, { minSimilarity: MIN_SIMILARITY });
         contextFacts = results
           .filter(r => !stableFacts.some(s => s.includes(r.text)))
+          .slice(0, MAX_CONTEXT_FACTS)
           .map(r => `- ${r.text}`);
 
-        // Lazy multi-hop: only if KNN returned few results
-        if (results.length < 3) {
+        // Lazy multi-hop: only when the query IS memory-relevant (some results
+        // passed the floor) but sparse. Firing on zero relevant hits would add
+        // tangentially-connected facts exactly when they'd be most distracting.
+        if (results.length > 0 && results.length < 3) {
           try {
             const hops = await params.graphMemory.findMultiHop(message, senderId, 2, 3);
             const hopFacts = hops
               .filter(h => !stableFacts.some(s => s.includes(h.text)) && !contextFacts.some(c => c.includes(h.text)))
               .map(h => `- ${h.text}`);
-            contextFacts.push(...hopFacts);
+            contextFacts.push(...hopFacts.slice(0, MAX_CONTEXT_FACTS - contextFacts.length));
           } catch { /* multi-hop optional */ }
         }
       }
@@ -776,12 +832,11 @@ async function runSpecialist(
   const { category } = classification;
 
   // Cron mode: strip write tools so automated tasks can't mutate state
-  const CRON_BLOCKED_TOOLS = new Set(['write_file', 'task_add', 'task_update', 'task_done', 'task_remove', 'workspace_write', 'memory_save']);
   const tools = params.cronMode
-    ? specialist.tools.filter(t => !CRON_BLOCKED_TOOLS.has(t))
+    ? filterCronTools(specialist.tools, category)
     : specialist.tools;
   if (params.cronMode && tools.length !== specialist.tools.length) {
-    const stripped = specialist.tools.filter(t => CRON_BLOCKED_TOOLS.has(t));
+    const stripped = specialist.tools.filter(t => !tools.includes(t));
     console.log(`[Dispatch] Cron mode: stripped [${stripped.join(', ')}] from tool set`);
   }
 
@@ -792,15 +847,25 @@ async function runSpecialist(
   const workspacePath = resolveWorkspacePath(agentId, config);
   const errorStore = new ErrorLearningStore(workspacePath);
 
-  // Confirmation gate: tools in confirmTools return a preview instead of executing
+  // Confirmation gate: tools in confirmTools return a preview instead of executing.
+  // The previewed call is recorded in the pending-action ledger — a later "confirm"
+  // executes the STORED params, never a model-regenerated call.
   const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
-  const confirmSet = new Set(channelSecurity?.confirmTools ?? []);
+  const confirmSet = resolveConfirmSet(registry, channelSecurity, { cronMode: params.cronMode, category });
   const executor: import('./tools/types.js').ToolExecutor = !params.confirmed && confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
           const preview = JSON.stringify(toolParams, null, 2);
           console.log(`[Dispatch] Confirmation required for ${toolName}`);
-          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nTell the user what you're about to do and ask them to reply "confirm" to proceed.`;
+          pendingActions.record({
+            tool: toolName,
+            params: toolParams,
+            sender: params.sourceContext?.senderId ?? 'unknown',
+            channel: params.sourceContext?.channel ?? 'unknown',
+            agentId,
+            sessionKey,
+          });
+          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nTell the user what you're about to do and ask them to reply "confirm" to proceed (expires in 10 minutes).`;
         }
         return scopedExecutor(toolName, toolParams, ctx);
       }
@@ -863,6 +928,29 @@ RULES:
       `\n\nCurrent message context: channelId="${ctx.channelId}"${ctx.guildId ? `, guildId="${ctx.guildId}"` : ''}. Use these values for delivery targets (e.g., cron job channel and target fields).`;
   }
 
+  // Re-budget against the REAL prompt. The pre-classification budget used an
+  // empty system prompt and ignored tool definitions entirely, systematically
+  // overestimating history room by 3-6k tokens for tool-using specialists —
+  // enough to starve an 8-16k model. Trim oldest turns to the refined budget.
+  if (history && history.length > 0) {
+    const toolsText = specialist.toolStyle === 'text'
+      ? toolDefs.map(t => `${t.name} ${t.description} ${t.parameterDescription} ${t.example ?? ''}`).join('\n')
+      : JSON.stringify(toolDefs.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })));
+    const refined = computeBudget({
+      contextSize: specialist.contextSize ?? config.session.contextSize,
+      systemPrompt: systemPrompt ?? '',
+      workspaceContext: workspaceContext ?? '',
+      currentMessage: message,
+      outputReserve: specialist.maxTokens,
+      extraSections: [toolsText, statePreamble ?? '', userPriming ?? ''],
+    });
+    const before = history.length;
+    history = trimHistoryToFit(history, refined.historyBudget);
+    if (history.length < before) {
+      console.log(`[Dispatch] Refined budget trimmed history ${before} → ${history.length} messages (historyBudget=${refined.historyBudget})`);
+    }
+  }
+
   const result = await runToolLoop({
     client,
     config: {
@@ -878,6 +966,7 @@ RULES:
       repeatPenalty: specialist.repeatPenalty,
       systemPrompt,
       contextSize: specialist.contextSize ?? config.session.contextSize,
+      toolStyle: specialist.toolStyle,
     },
     tools: toolDefs,
     executor,
@@ -991,9 +1080,8 @@ async function runPipelineDispatch(
   }
 
   // Cron mode: strip write tools
-  const CRON_BLOCKED_TOOLS = new Set(['write_file', 'task_add', 'task_update', 'task_done', 'task_remove', 'workspace_write', 'memory_save']);
   const tools = params.cronMode
-    ? specialist.tools.filter(t => !CRON_BLOCKED_TOOLS.has(t))
+    ? filterCronTools(specialist.tools, category)
     : specialist.tools;
 
   // Scoped executor — final enforcement gate for pipelines too
@@ -1002,10 +1090,34 @@ async function runPipelineDispatch(
   const workspacePath = resolveWorkspacePath(agentId, config);
   const errorStore = new ErrorLearningStore(workspacePath);
 
-  // Wrap scoped executor to record errors for learning
+  // Confirmation gate — same behavior as the ReAct path. Without this, routing
+  // a message to a pipeline (e.g. category "message" → send_message) silently
+  // bypassed confirmTools entirely.
+  const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
+  const confirmSet = resolveConfirmSet(registry, channelSecurity, { cronMode: params.cronMode, category });
+  const gatedExecutor: ToolExecutor = !params.confirmed && confirmSet.size > 0
+    ? async (toolName, toolParams, ctx) => {
+        if (confirmSet.has(toolName)) {
+          const preview = JSON.stringify(toolParams, null, 2);
+          console.log(`[Dispatch] Confirmation required for ${toolName} (pipeline)`);
+          pendingActions.record({
+            tool: toolName,
+            params: toolParams,
+            sender: params.sourceContext?.senderId ?? 'unknown',
+            channel: params.sourceContext?.channel ?? 'unknown',
+            agentId,
+            sessionKey,
+          });
+          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nReply "confirm" to proceed (expires in 10 minutes).`;
+        }
+        return scopedExecutor(toolName, toolParams, ctx);
+      }
+    : scopedExecutor;
+
+  // Wrap gated executor to record errors for learning
   const executor: ToolExecutor = async (toolName, toolParams, ctx) => {
     try {
-      return await scopedExecutor(toolName, toolParams, ctx);
+      return await gatedExecutor(toolName, toolParams, ctx);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       errorStore.recordError({ tool: toolName, params: toolParams, error: errMsg, step: 0, category });
@@ -1363,6 +1475,7 @@ function getDefaultSpecialist(config: LocalClawConfig, category: string): Specia
       temperature: 0.8,
       maxIterations: 1,
       tools: [],
+      toolStyle: 'native',
     };
   }
   return undefined;

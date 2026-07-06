@@ -33,6 +33,7 @@ export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBacken
       required: ['command'],
     },
     category: 'exec',
+    autonomy: { tier: 'act_then_notify', reversible: false, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const command = params.command as string;

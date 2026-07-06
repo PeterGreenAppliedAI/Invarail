@@ -51,6 +51,11 @@ export const SpecialistConfigSchema = z.object({
   contextLevel: z.enum(['full', 'minimal']).optional(),
   /** Pipeline name — if set, routes to deterministic pipeline instead of ReAct loop */
   pipeline: z.string().optional(),
+  /** Tool-calling convention. 'native' (default): tools passed via the API tools field
+   *  only — no text-format instructions in the prompt. 'text': tools described in the
+   *  prompt with Action:-format instructions, nothing passed natively — for models
+   *  whose template lacks tool support. One convention per model, never both. */
+  toolStyle: z.enum(['native', 'text']).default('native'),
 });
 
 export const ChannelAllowFromSchema = z.object({
@@ -67,6 +72,10 @@ export const ChannelSecuritySchema = z.object({
   restrictedTools: z.array(z.string()).optional(),
   /** Tools that show a preview instead of executing — user must confirm in a follow-up message */
   confirmTools: z.array(z.string()).optional(),
+  /** Promotion mechanism: tools promoted PAST their metadata-declared propose-confirm
+   *  tier on this channel (earned with an autonomous_action track record). Does not
+   *  override an explicit confirmTools entry. */
+  autoApproveTools: z.array(z.string()).optional(),
   /** Tools only accessible to the config-level ownerId — stripped for everyone else, including trusted users */
   ownerOnlyTools: z.array(z.string()).optional(),
 });

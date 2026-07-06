@@ -57,4 +57,14 @@ export class ToolRegistry {
   list(): string[] {
     return [...this.tools.keys()];
   }
+
+  /** Tools whose autonomy metadata puts them at propose-and-confirm — the
+   *  structural default for the confirm gate, independent of channel config. */
+  getMetadataConfirmTools(): Set<string> {
+    const set = new Set<string>();
+    for (const tool of this.tools.values()) {
+      if (tool.autonomy?.tier === 'propose_confirm') set.add(tool.name);
+    }
+    return set;
+  }
 }

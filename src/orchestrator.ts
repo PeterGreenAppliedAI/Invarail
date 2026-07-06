@@ -12,6 +12,8 @@ import { CronStore } from './cron/store.js';
 import { CronService } from './cron/service.js';
 import { TaskStore } from './tasks/store.js';
 import { dispatchMessage } from './dispatch.js';
+import { logAutonomousAction } from './metrics.js';
+import { pendingActions, CONFIRMATION_PATTERN } from './security/pending-actions.js';
 import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
 import { bootstrapWorkspace } from './agents/workspace.js';
@@ -876,6 +878,7 @@ export class Orchestrator {
         if (args === 'yes' || args === 'confirm') {
           for (const f of pending.facts) {
             this.factStore?.boostConfidence(f.id, pending.senderId);
+            logAutonomousAction({ action: 'fact_review', tier: 'propose_confirm', source: 'heartbeat', reversible: true, outcome: 'confirmed', detail: f.text.slice(0, 80) });
           }
           this.factStore?.rebuildFacts(pending.senderId);
           unlinkSync(reviewFile);
@@ -890,6 +893,7 @@ export class Orchestrator {
           for (const f of toRemove) {
             this.factStore?.removeFact(f.text.slice(0, 40), pending.senderId);
             this.factStore?.recordRemoval(f.text, 'user_denied', pending.senderId);
+            logAutonomousAction({ action: 'fact_review', tier: 'propose_confirm', source: 'heartbeat', reversible: false, outcome: 'rejected', detail: f.text.slice(0, 80) });
           }
           this.factStore?.rebuildFacts(pending.senderId);
 
@@ -1177,8 +1181,38 @@ export class Orchestrator {
       const mimeMap: Record<string, string> = { opus: 'audio/ogg', wav: 'audio/wav', mp3: 'audio/mpeg' };
       const audioMime = mimeMap[format] ?? 'audio/ogg';
 
-      // Detect confirmation follow-up (user confirming a pending destructive tool action)
-      const isConfirmation = /^(confirm|yes,?\s*do it|approved?|go ahead|proceed)\s*[.!]?$/i.test(trimmed);
+      // Confirmation follow-up: execute the STORED pending action (exact previewed
+      // params — never a model-regenerated call). Sender-bound, single-use, expiring.
+      // A confirmation with no pending entry falls through as a normal message.
+      if (CONFIRMATION_PATTERN.test(trimmed)) {
+        const pending = pendingActions.latestFor(msg.senderId);
+        if (pending) {
+          pendingActions.consume(pending.id);
+          let replyText: string;
+          try {
+            const executor = this.toolRegistry.createScopedExecutor(new Set([pending.tool]));
+            const wsPath = resolveWorkspacePath(pending.agentId, this.config);
+            const observation = await executor(pending.tool, pending.params, {
+              agentId: pending.agentId,
+              sessionKey: pending.sessionKey,
+              workspacePath: wsPath,
+              senderId: msg.senderId,
+              channel: msg.channel,
+            });
+            logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120) });
+            replyText = `✅ Ran **${pending.tool}**: ${observation}`;
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: errMsg.slice(0, 120) });
+            replyText = `❌ **${pending.tool}** failed: ${errMsg}`;
+          }
+          await this.channelRegistry.send(
+            { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
+            { text: replyText },
+          );
+          return;
+        }
+      }
 
       // Browser extension injects [PAGE:] context — route to chat, content is already in the message
       const fromExtension = msg.content.includes('[PAGE:');
@@ -1201,7 +1235,6 @@ export class Orchestrator {
           : hasImageAttachment ? { overrideCategory: 'chat' as const }
           : fileOverrideCategory ? { overrideCategory: fileOverrideCategory }
           : {}),
-        ...(isConfirmation ? { confirmed: true } : {}),
         sourceContext: {
           channel: msg.channel,
           channelId: msg.channelId ?? '',

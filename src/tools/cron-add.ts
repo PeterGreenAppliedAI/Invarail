@@ -1,3 +1,4 @@
+import { Cron } from 'croner';
 import type { LocalClawTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 
@@ -22,6 +23,7 @@ export function createCronAddTool(cronService: CronService): LocalClawTool {
       required: ['name', 'schedule', 'category', 'message', 'channel', 'target'],
     },
     category: 'cron',
+    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const name = params.name as string;
@@ -37,6 +39,14 @@ export function createCronAddTool(cronService: CronService): LocalClawTool {
 
       if (!VALID_CATEGORIES.includes(category as any)) {
         return `Error: Invalid category "${category}". Must be one of: ${VALID_CATEGORIES.join(', ')}`;
+      }
+
+      // Validate the cron expression BEFORE persisting — an invalid schedule
+      // would otherwise be stored and silently never run
+      try {
+        new Cron(schedule, { paused: true }).stop();
+      } catch (err) {
+        return `Error: Invalid cron expression "${schedule}" — ${err instanceof Error ? err.message : err}. Use standard 5-field syntax, e.g. "0 9 * * *" for daily at 9am.`;
       }
 
       const job = cronService.add({

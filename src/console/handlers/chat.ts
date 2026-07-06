@@ -7,6 +7,8 @@ import { resolveRoute } from '../../agents/resolve-route.js';
 import { resolveWorkspacePath } from '../../agents/scope.js';
 import { saveAttachment, isImageMime } from '../../services/attachments.js';
 import { stripThinkingTags } from '../../utils/text.js';
+import { pendingActions, CONFIRMATION_PATTERN } from '../../security/pending-actions.js';
+import { logAutonomousAction } from '../../metrics.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -128,6 +130,38 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
       .replace(/\[SELECTED:[^\]]*\]/g, '')
       .replace(/\[PAGE_CONTENT\][\s\S]*?\[\/PAGE_CONTENT\]/g, '')
       .trim();
+
+    // Confirmation follow-up: execute the STORED pending action (exact previewed
+    // params). Without this, confirmTools on the console channel was a dead-end —
+    // the preview was shown but nothing could ever release the gate.
+    if (CONFIRMATION_PATTERN.test(trimmed)) {
+      const pending = pendingActions.latestFor(senderId);
+      if (pending) {
+        pendingActions.consume(pending.id);
+        let answer: string;
+        try {
+          const executor = deps.toolRegistry.createScopedExecutor(new Set([pending.tool]));
+          const wsPath = resolveWorkspacePath(pending.agentId, deps.config);
+          const observation = await executor(pending.tool, pending.params, {
+            agentId: pending.agentId,
+            sessionKey: pending.sessionKey,
+            workspacePath: wsPath,
+            senderId,
+            channel: 'console',
+          });
+          logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120) });
+          answer = `✅ Ran **${pending.tool}**: ${observation}`;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: errMsg.slice(0, 120) });
+          answer = `❌ **${pending.tool}** failed: ${errMsg}`;
+        }
+        res.write(`data: ${JSON.stringify({ type: 'done', answer, category: 'system', iterations: 0 })}\n\n`);
+        clearInterval(keepalive);
+        res.end();
+        return;
+      }
+    }
 
     // Handle !reset / !new — clear session before it hits the router
     if (trimmed.toLowerCase() === '!reset' || trimmed.toLowerCase() === '!new') {
