@@ -17,6 +17,7 @@ export function createReasonTool(client: OllamaClient, config: ReasoningConfig):
       required: ['prompt'],
     },
     category: 'reasoning',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const prompt = params.prompt as string;

@@ -97,6 +97,7 @@ filename (optional): Output filename without extension (default: "document").`,
       required: ['action', 'format'],
     },
     category: 'exec',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
     execute: async (params: Record<string, unknown>, ctx: ToolContext): Promise<string> => {
       const action = params.action as string;
       const format = params.format as string;

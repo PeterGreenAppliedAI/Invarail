@@ -28,6 +28,7 @@ export function createCalendarListTool(): LocalClawTool {
       },
     },
     category: 'owner',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'owner' },
 
     async execute(params): Promise<string> {
       const auth = getAuth();
@@ -106,6 +107,7 @@ export function createCalendarSearchTool(): LocalClawTool {
       required: ['query'],
     },
     category: 'owner',
+    autonomy: { tier: 'silent', reversible: true, blastRadius: 'owner' },
 
     async execute(params): Promise<string> {
       const auth = getAuth();

@@ -20,6 +20,7 @@ export function createCodeSessionTool(
       required: ['action'],
     },
     category: 'exec',
+    autonomy: { tier: 'act_then_notify', reversible: false, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const action = params.action as string;
