@@ -86,3 +86,28 @@ export function logRouterClassification(data: {
     ...data,
   });
 }
+
+/**
+ * Log an action the system took (or proposed) on its own initiative.
+ * This is the track record the autonomy ladder promotes against: an action
+ * type only moves up (propose→notify→silent) with a history of good outcomes.
+ */
+export function logAutonomousAction(data: {
+  /** What was done, e.g. "task_auto_complete", "stale_fact_proposed", "cron_job_run" */
+  action: string;
+  /** Ladder rung this action executed at */
+  tier: 'silent' | 'act_then_notify' | 'propose_confirm';
+  /** What triggered it, e.g. "heartbeat", "cron", "briefing" */
+  source: string;
+  /** Whether the action can be undone */
+  reversible: boolean;
+  outcome: 'success' | 'failure' | 'proposed' | 'confirmed' | 'rejected';
+  /** Short human-readable detail (task title, fact text, job name) */
+  detail?: string;
+}): void {
+  logMetric({
+    timestamp: new Date().toISOString(),
+    type: 'autonomous_action',
+    ...data,
+  });
+}

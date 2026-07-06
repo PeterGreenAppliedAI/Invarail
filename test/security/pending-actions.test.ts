@@ -1,0 +1,76 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PendingActionStore, CONFIRMATION_PATTERN } from '../../src/security/pending-actions.js';
+
+let storePath: string;
+let store: PendingActionStore;
+
+beforeEach(() => {
+  storePath = join(mkdtempSync(join(tmpdir(), 'pending-')), 'pending.json');
+  store = new PendingActionStore(storePath);
+});
+
+const baseEntry = {
+  tool: 'send_message',
+  params: { channel: 'discord', text: 'hello' },
+  sender: 'user-1',
+  channel: 'discord',
+  agentId: 'main',
+  sessionKey: 'default',
+};
+
+describe('PendingActionStore', () => {
+  it('records and retrieves the latest action for a sender', () => {
+    store.record(baseEntry);
+    const second = store.record({ ...baseEntry, params: { channel: 'discord', text: 'second' } });
+
+    const latest = store.latestFor('user-1');
+    expect(latest?.id).toBe(second.id);
+    expect(latest?.params).toEqual({ channel: 'discord', text: 'second' });
+  });
+
+  it('is sender-bound — another sender cannot see or confirm the action', () => {
+    store.record(baseEntry);
+    expect(store.latestFor('user-2')).toBeNull();
+  });
+
+  it('consume is single-use', () => {
+    const action = store.record(baseEntry);
+    expect(store.consume(action.id)?.id).toBe(action.id);
+    expect(store.consume(action.id)).toBeNull();
+    expect(store.latestFor('user-1')).toBeNull();
+  });
+
+  it('expired entries are pruned and never returned', () => {
+    const action = store.record(baseEntry);
+    // Rewrite the file with an already-expired timestamp
+    const raw = JSON.parse(readFileSync(storePath, 'utf-8'));
+    raw[0].expiresAt = new Date(Date.now() - 1000).toISOString();
+    writeFileSync(storePath, JSON.stringify(raw));
+
+    expect(store.latestFor('user-1')).toBeNull();
+    expect(store.consume(action.id)).toBeNull();
+  });
+
+  it('stores exact params — the executed call is the previewed call', () => {
+    const params = { to: 'boss@example.com', body: "don't forget the meeting" };
+    store.record({ ...baseEntry, tool: 'send_email', params });
+    expect(store.latestFor('user-1')?.params).toEqual(params);
+  });
+});
+
+describe('CONFIRMATION_PATTERN', () => {
+  it('matches bare confirmations', () => {
+    for (const msg of ['confirm', 'Confirm!', 'yes do it', 'yes, do it', 'approved', 'go ahead', 'proceed.']) {
+      expect(CONFIRMATION_PATTERN.test(msg)).toBe(true);
+    }
+  });
+
+  it('does not match confirmations embedded in other requests', () => {
+    for (const msg of ['go ahead and delete everything', 'confirm my flight', 'can you proceed with the plan']) {
+      expect(CONFIRMATION_PATTERN.test(msg)).toBe(false);
+    }
+  });
+});

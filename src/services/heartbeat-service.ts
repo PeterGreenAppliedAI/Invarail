@@ -16,6 +16,7 @@ import type { CronService } from '../cron/service.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { enrichTasks, getAutoActions, filterForModel, formatTaskBoard } from '../temporal/urgency.js';
 import { LocalClawError } from '../errors.js';
+import { logAutonomousAction } from '../metrics.js';
 
 export interface HeartbeatDeps {
   config: LocalClawConfig;
@@ -41,6 +42,52 @@ export interface HeartbeatDeps {
   cleanupOldMedia: () => number;
   /** Get path for heartbeat pending review files */
   heartbeatPendingPath: (workspacePath: string, senderId: string) => string;
+}
+
+/**
+ * Route LLM-flagged stale facts into the pending !heartbeat review file instead
+ * of deleting them directly. Returns the proposals with their 1-based positions
+ * in the merged pending file (the positions "!heartbeat no N" indexes into).
+ */
+function proposeStaleFactsForReview(
+  staleTexts: string[],
+  factStore: FactStore,
+  senderId: string,
+  pendingPath: string,
+): Array<{ index: number; text: string; category: string }> {
+  const allFacts = factStore.loadFactsJson(senderId);
+
+  // Resolve model-provided text to actual stored facts (exact, then fuzzy prefix)
+  const matched = staleTexts
+    .map(stale => {
+      const needle = stale.slice(0, 40).toLowerCase();
+      return allFacts.find(f =>
+        f.text === stale || f.text.toLowerCase().includes(needle) || stale.toLowerCase().includes(f.text.slice(0, 40).toLowerCase()));
+    })
+    .filter((f): f is NonNullable<typeof f> => !!f);
+  if (matched.length === 0) return [];
+
+  // Merge into the pending review file (create if absent)
+  let pending: { type: string; createdAt: string; senderId: string; facts: Array<{ id: string; text: string; category: string }> };
+  try {
+    pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
+  } catch {
+    pending = { type: 'heartbeat_review', createdAt: new Date().toISOString(), senderId, facts: [] };
+  }
+
+  const proposals: Array<{ index: number; text: string; category: string }> = [];
+  for (const fact of matched) {
+    let idx = pending.facts.findIndex(f => f.id === fact.id);
+    if (idx === -1) {
+      pending.facts.push({ id: fact.id, text: fact.text, category: fact.category });
+      idx = pending.facts.length - 1;
+    }
+    proposals.push({ index: idx + 1, text: fact.text, category: fact.category });
+    console.log(`[Heartbeat] Proposed stale fact for review: "${fact.text.slice(0, 60)}"`);
+    logAutonomousAction({ action: 'stale_fact_proposed', tier: 'propose_confirm', source: 'heartbeat', reversible: true, outcome: 'proposed', detail: fact.text.slice(0, 80) });
+  }
+  writeFileSync(pendingPath, JSON.stringify(pending, null, 2));
+  return proposals;
 }
 
 export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
@@ -123,6 +170,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
         for (const task of overdue) {
           taskStore.update(task.id, { status: 'cancelled' });
           console.log(`[Heartbeat] Auto-cancelled overdue task: "${task.title}" (due: ${task.dueDate})`);
+          logAutonomousAction({ action: 'task_auto_cancel', tier: 'silent', source: 'heartbeat', reversible: true, outcome: 'success', detail: task.title });
         }
 
         const seen = new Map<string, string>();
@@ -132,6 +180,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
           if (seen.has(key)) {
             taskStore.update(task.id, { status: 'cancelled' });
             console.log(`[Heartbeat] Removed duplicate task: "${task.title}" (duplicate of ${seen.get(key)})`);
+            logAutonomousAction({ action: 'task_dedup_cancel', tier: 'silent', source: 'heartbeat', reversible: true, outcome: 'success', detail: task.title });
           } else {
             seen.set(key, task.id);
           }
@@ -195,6 +244,10 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
 
     // --- Fact diff + LLM reasoning ---
     let memorySection = '';
+    // Stale facts the LLM flagged — proposed for user review, never auto-deleted.
+    // Autonomy principle: memory deletion is destructive-ish and model-judged, so
+    // it stays at propose-and-confirm (the !heartbeat yes/no flow), not silent.
+    let staleProposals: Array<{ index: number; text: string; category: string }> = [];
     if (factStore && senderId) {
       const diff = factStore.diffFacts(senderId);
       const recentlyRemoved = factStore.loadRecentlyRemoved(senderId);
@@ -246,16 +299,13 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
               const parsed = JSON.parse(jsonMatch[0]);
               memorySection = parsed.observations ?? '';
 
-              if (Array.isArray(parsed.stale_facts)) {
-                for (const staleText of parsed.stale_facts) {
-                  if (typeof staleText === 'string' && staleText.length > 5) {
-                    const removed = factStore.removeFact(staleText.slice(0, 40), senderId);
-                    if (removed > 0) {
-                      factStore.recordRemoval(staleText, 'llm_stale', senderId);
-                      console.log(`[Heartbeat] LLM identified stale fact: "${staleText.slice(0, 60)}"`);
-                    }
-                  }
-                }
+              if (Array.isArray(parsed.stale_facts) && parsed.stale_facts.length > 0) {
+                staleProposals = proposeStaleFactsForReview(
+                  parsed.stale_facts.filter((s: unknown): s is string => typeof s === 'string' && s.length > 5),
+                  factStore,
+                  senderId,
+                  deps.heartbeatPendingPath(workspacePath, senderId),
+                );
               }
 
               if (parsed.connections) {
@@ -293,10 +343,12 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
         for (const t of actions.complete) {
           taskStore.update(t.id, { status: 'done' });
           console.log(`[Heartbeat] Auto-completed past event: "${t.title}"`);
+          logAutonomousAction({ action: 'task_auto_complete', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'success', detail: t.title });
         }
         for (const t of actions.cancel) {
           taskStore.update(t.id, { status: 'cancelled' });
           console.log(`[Heartbeat] Auto-cancelled stale task: "${t.title}"`);
+          logAutonomousAction({ action: 'task_auto_cancel', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'success', detail: t.title });
         }
 
         const forModel = filterForModel(enriched);
@@ -437,6 +489,13 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
           ? `↳ **!heartbeat yes** confirm all · **!heartbeat no** remove all · **!heartbeat no 2** remove one`
           : `↳ **!heartbeat yes** confirm · **!heartbeat no** remove`;
         reportText += `\n\n❓ **Memory check** — still accurate?\n${reviewSection}\n${reviewHint}`;
+      }
+
+      if (staleProposals.length > 0) {
+        const staleSection = staleProposals
+          .map(p => `${p.index}. \`${p.category}\` — ${p.text}`)
+          .join('\n');
+        reportText += `\n\n🕰️ **Possibly outdated** — I think these are stale, but they stay until you say so:\n${staleSection}\n↳ **!heartbeat no ${staleProposals[0].index}** to remove · **!heartbeat yes** to keep everything`;
       }
 
       await channelRegistry.send(

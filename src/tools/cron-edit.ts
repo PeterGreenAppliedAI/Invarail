@@ -1,3 +1,4 @@
+import { Cron } from 'croner';
 import type { LocalClawTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 
@@ -30,7 +31,17 @@ export function createCronEditTool(cronService: CronService): LocalClawTool {
       const changes: Record<string, unknown> = {};
 
       if (params.name !== undefined) changes.name = params.name as string;
-      if (params.schedule !== undefined) changes.schedule = params.schedule as string;
+      if (params.schedule !== undefined) {
+        const schedule = params.schedule as string;
+        // Validate the cron expression BEFORE persisting — an invalid schedule
+        // would otherwise be stored and silently never run
+        try {
+          new Cron(schedule, { paused: true }).stop();
+        } catch (err) {
+          return `Error: Invalid cron expression "${schedule}" — ${err instanceof Error ? err.message : err}. Use standard 5-field syntax, e.g. "0 9 * * *" for daily at 9am.`;
+        }
+        changes.schedule = schedule;
+      }
       if (params.message !== undefined) changes.message = params.message as string;
 
       if (params.category !== undefined) {

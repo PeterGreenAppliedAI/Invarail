@@ -20,6 +20,7 @@ export function createMemoryForgetTool(
       required: ['query'],
     },
     category: 'memory',
+    autonomy: { tier: 'act_then_notify', reversible: false, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>, ctx: import('./types.js').ToolContext): Promise<string> {
       const query = params.query as string;
