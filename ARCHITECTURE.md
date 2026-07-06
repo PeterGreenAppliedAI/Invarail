@@ -4,7 +4,7 @@
 
 LocalClaw is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on a large model (currently DeepSeek-V4-Flash) served by **vLLM**; small utility/modality models run behind an **Ollama-compatible gateway**. It uses a **Router + Specialist** architecture with **deterministic pipelines** — code controls the workflow, models only extract parameters and synthesize text.
 
-9+ models across two inference backends (vLLM + Ollama gateway), 39 tools, 12 pipelines, 15 categories, 8 channel adapters (including Chrome extension with browser control), FalkorDB graph memory with 1,000+ nodes, 389 tests across 26 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
+9+ models across two inference backends (vLLM + Ollama gateway), 39 tools, 12 pipelines, 15 categories, 8 channel adapters (including Chrome extension with browser control), FalkorDB graph memory with 1,000+ nodes, 451 tests across 33 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
 
 ## Design Principles
 
@@ -81,10 +81,22 @@ top-level params, JSON-parses tool-call arguments (vLLM returns a string, Ollama
 `tool_call_id`s onto tool-result messages, SSE streaming, `usage`→token counts. `MultiBackendClient`
 (src/ollama/multi-backend.ts) extends OllamaClient and routes by model id — a drop-in replacement.
 
+**Structured outputs (`format`):** structured tasks (param extraction, `llm_branch`, router
+classification, research claim extraction) pass a JSON schema via Ollama `format` / vLLM
+`guided_json` for grammar-constrained decoding — the backend physically cannot emit invalid JSON.
+Every call site falls back to prompt-only parsing when a backend rejects `format`, so an older
+gateway degrades gracefully instead of breaking.
+
+**Tool-calling convention (`toolStyle` per specialist):** `'native'` (default) passes tools via the
+API tools field ONLY — no tool text or `Action:` format rules in the prompt (roughly halves fixed
+prompt overhead). `'text'` is the inverse, for models whose template lacks tool support. One
+convention per model, never both; the tolerant fallback parsers (DSML, `<invoke>`, `Action:`,
+JSON5 repair) stay active in both modes as a safety net.
+
 ## Router Classification (4-tier)
 
-1. **Pre-model overrides** — URLs → website, PDFs → research, calendar/email → personal
-2. **Model** — phi4:14b classifies into 15 categories (~50ms)
+1. **Pre-model overrides** — bare URLs → website (a URL inside a larger request does NOT hijack routing), explicit task/image commands, speculative language → chat
+2. **Model** — phi4:14b classifies into 15 categories, enum-grammar-constrained when the backend supports `format`; bounded by an ENFORCED `router.timeout` (a dead backend costs the timeout, not the client's retry loop)
 3. **Keywords** — Pattern matching when model fails or times out
 4. **Default** — Falls back to `chat`
 
@@ -114,7 +126,7 @@ After the research pipeline drafts its markdown report, an evidence-verification
 1. **Extract** atomic, checkable claims (fast model), prioritizing corporate events / market-share over routine specs.
 2. **Cited-source check** — each claim is judged against the *cached* pages that actually mention it (research persists fetched page text, so zero new searches). Overstated/single-sourced claims are **hedged or attributed** ("according to X") — never deleted.
 3. **Tier-1 cross-check** — a bounded set of high-impact, falsifiable claims (corporate events, market-share; capped at `maxCrossChecks`) get ONE independent search each; an authoritative contradiction (e.g. "license" vs "acquisition") flips the claim to `CONTRADICTED → correct`.
-4. **Correction pass** (foreground model) edits only the affected sentences; strikethrough/tracked-changes artifacts are stripped at render. Publishes with a `## Verification` appendix + auditable `verification.json`.
+4. **Correction pass** — code-driven sentence splice: `locateClaimSentence` fuzzy-locates each flagged claim's sentence by token overlap, the model rewrites ONE sentence, code splices it back with sanity bounds. The report body is never handed to a model for wholesale rewriting. Publishes with a `## Verification` appendix + auditable `verification.json`.
 
 Config-gated via the `verification` block (`enabled`, `crossCheck` — both default on). Known ceiling: cited-source checking can't disprove a faithfully-cited wrong fact without the Tier-1 pass; Tier-1 itself trusts a single independent source, so disputed claims are better attributed than silently rewritten.
 
@@ -136,7 +148,7 @@ FalkorDB (Docker, localhost:6379)
   (:UserModel {communicationStyle, decisionPattern, topicInterests})
 ```
 
-**Auto-injection:** Every message triggers vector KNN + entity traversal. Relevant facts silently injected into specialist context. Multi-signal scoring: `similarity * 0.5 + recency * 0.2 + importance * 0.3`.
+**Auto-injection:** Every message triggers vector KNN + entity traversal. Relevant facts silently injected into specialist context. Multi-signal scoring: `similarity * 0.5 + recency * 0.2 + importance * 0.3` — with a **relevance floor** (raw cosine ≥ 0.55): scoring only orders results, so without the floor a fresh high-importance fact injected on every turn regardless of topic. Contextual facts capped at 3; multi-hop traversal only fires when at least one result passed the floor.
 
 **Entity extraction:** NER with typed taxonomy (person, organization, hardware, software, etc.). Bootstrapped from graph — existing typed entities injected as reference for consistent classification. Canonical normalization prevents duplicates.
 
@@ -148,9 +160,22 @@ Models that emit thinking blocks (`<think>` for Qwen, `<|channel>thought` for Ge
 
 ## Autonomous Systems
 
-- **Heartbeat** (every 2h) — Transcript review, fact extraction, learning promotion, media cleanup, memory consolidation, task urgency computation, review candidates
+- **Heartbeat** (every 2h) — Transcript review, fact extraction, learning promotion, media cleanup, memory consolidation, task urgency computation, review candidates. Model-flagged stale facts are PROPOSED into the `!heartbeat yes/no` review flow, never auto-deleted.
 - **Briefing** (8am, 1:15pm, 5pm) — Calendar + tasks + memory → CoT reasoning → contextual insights
-- **Cron** — User-defined recurring tasks with retry (2x exponential backoff) + failure notification
+- **Cron** — User-defined recurring tasks with retry (2x exponential backoff) + failure notification. Jobs only get `exec`/`send_message` when explicitly scheduled as that category (the owner-authored schedule is the code gate).
+
+### Autonomy Ladder (structural, code-enforced)
+
+Tools carry `autonomy: {tier, reversible, blastRadius}` metadata. The ladder, keyed to reversibility + blast radius:
+- **silent** — reversible, internal (draft, organize)
+- **act_then_notify** — low-risk, undoable (task auto-complete, file writes)
+- **propose_confirm** — irreversible or visible to others (send_message starts here)
+
+Effective confirm set = channel `confirmTools` ∪ metadata `propose_confirm` tools − channel `autoApproveTools` (the per-channel promotion lever). Every autonomous action logs to metrics (`autonomous_action` events: action/tier/source/reversible/outcome) — the track record promotions are earned against. Bounds are structural: code decides what may run autonomously; the model only decides whether to, inside the envelope.
+
+### Pending-Action Ledger
+
+confirmTools previews record `{id, tool, params, sender, expiresAt}` to a file-backed ledger (`src/security/pending-actions.ts`). A "confirm" reply executes the **stored** call — sender-bound, single-use, 10-minute expiry — never a model-regenerated one. Wired into both dispatch paths (ReAct + pipeline) and both confirm surfaces (orchestrator channels + Web console).
 
 ## Security (6 layers in dispatch)
 
@@ -159,7 +184,7 @@ Models that emit thinking blocks (`<think>` for Qwen, `<|channel>thought` for Ge
 3. `restrictedCategories` — blocked for untrusted users
 4. `blockedTools` — stripped for everyone on this channel
 5. `restrictedTools` — stripped for untrusted users
-6. `confirmTools` — preview before execution, requires confirmation
+6. `confirmTools` — preview + pending-action ledger; confirmation executes the exact previewed call (see Autonomy Ladder above). Applies to pipeline dispatches as well as the ReAct loop.
 
 ## Chrome Extension (Browser Companion)
 
@@ -190,7 +215,7 @@ attachment → check extension
 Isolation Layer          What It Protects              Status
 ─────────────────────────────────────────────────────────────
 Docker sandbox           Exec tool commands            Active — allowlisted commands only
-Cron mode                Automated task execution      Active — strips write tools
+Cron mode                Automated task execution      Active — strips write tools; exec/send_message only for explicitly-scheduled categories
 Pipeline isolation       Pipeline dispatches           Active — fresh context per dispatch
 Owner-only code gate     Sensitive tools               Active — tools invisible to non-owners
 6-layer security         Channel + user permissions    Active — static per config
@@ -224,4 +249,4 @@ Resource limits          CPU/memory per exec           Roadmap
 | Scheduling | croner |
 | Config | JSON5 + Zod |
 | Chrome Extension | WXT + React + TypeScript (Manifest V3) |
-| Testing | Vitest (389 tests, 26 files) |
+| Testing | Vitest (451 tests, 33 files) |

@@ -180,6 +180,8 @@ Every 2 hours, the heartbeat reviews transcripts modified since the last review.
 - Recently-removed facts shown to prevent re-extracting deleted content
 - Each fact gets a 30-day TTL in `removed.jsonl` after deletion
 
+**Deletion is never autonomous (July 2026):** the heartbeat's LLM reasoning pass used to prefix-match-DELETE facts it judged stale — model-judged, destructive, un-itemized in the report. Stale facts are now PROPOSED into the pending `!heartbeat yes/no` review file with their positions, itemized in the heartbeat report under "Possibly outdated," and only removed when the user says so. Writes can be autonomous; deletions are propose-and-confirm.
+
 ### Path 3: Explicit Save (memory_save tool)
 
 The user or a specialist explicitly calls `memory_save` with content. Maps category to importance tier (stable→4, context→2, decision→3, question→1) and writes through both backends.
@@ -281,6 +283,8 @@ Ephemeral:  0.9 × 0.5 + 0.5 × 0.2 + 0.0 × 0.3 = 0.55
 
 Your wife's health condition surfaces above yesterday's weather, even if the weather was discussed more recently.
 
+**The relevance floor (July 2026):** multi-signal scoring only ORDERS results — it never rejected any. A fresh critical fact scored 0.50 with ZERO similarity to the query, so identity facts injected on every turn regardless of topic (a topic-drift trap for small models: ask about Docker, get family facts as "context"). Injection now requires raw cosine similarity ≥ 0.55 (`minSimilarity` filter in `graph-store.search`) before scoring even applies. An irrelevant query injects nothing.
+
 ---
 
 ## Auto-Injection: Silent Context Enhancement
@@ -293,11 +297,11 @@ High-importance facts (tier ≥ 4) — job, family, projects, critical health in
 
 ### Layer 2: Contextual Facts (Query-Relevant)
 
-Vector search on the current message finds the 5 most relevant facts by multi-signal score. Deduplicated against stable facts.
+Vector search on the current message finds relevant facts by multi-signal score, subject to the 0.55 similarity floor, capped at 3 (July 2026 — was 5 uncapped). Deduplicated against stable facts.
 
 ### Layer 3: Multi-Hop Connected Facts
 
-Starting from vector search results, traverse entity connections to find related facts the vector search missed:
+Starting from vector search results, traverse entity connections to find related facts the vector search missed. Only fires when at least one result passed the similarity floor but results are sparse (<3) — previously it fired exactly when the query was LEAST memory-relevant (zero vector hits), adding tangential facts when they'd be most distracting:
 
 ```cypher
 -- 1-hop: fact → entity → related fact
