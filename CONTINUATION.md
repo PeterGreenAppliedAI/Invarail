@@ -120,23 +120,36 @@ All changes are in the working tree / recent commits. `npx tsc --noEmit` clean,
 - **pipeline/definitions/web-search.ts** — extraction fallback: raw message as
   query.
 
-### Behavior changes to VERIFY LIVE before trusting (not yet user-tested)
-1. `toolStyle: 'native'` default — every specialist's prompt lost the text tool
-   block. If a served model's template lacks tool support, set
-   `toolStyle: "text"` on that specialist. **Owner's setup note:** only DeepSeek
-   (vLLM) is conveniently spun up for testing right now; Qwen/Ollama paths need
-   a live pass when the gateway is wired back up.
-2. `send_message` is now confirm-gated on ALL channels by metadata default.
-   If that's too much friction interactively, add
-   `security.autoApproveTools: ["send_message"]` to that channel's config —
-   that's the intended promotion path, not removing the metadata.
-3. Memory injection floor (0.55) — if recall feels worse, tune the floor in
-   `buildUserPriming` (dispatch.ts) before adding complexity like rerankers.
-4. Router URL handling — bare URLs still go to website; URL-plus-task messages
-   now go to the model. Watch `[Router]` logs.
-5. `format`-based structured outputs — if the Ollama gateway is old and rejects
-   `format`, everything falls back automatically (watch for "[Extract] Backend
-   rejected structured format" once per process).
+### Live verification status (updated 2026-07-06 late session)
+1. `toolStyle` — **VERIFIED LIVE** on qwen3.6:35b via `scripts/tool-loop-live-check.ts`:
+   both native and text modes complete cleanly (tools called, params well-formed,
+   scaffolding strip confirmed working on real output). Native saves ~950 prompt
+   tokens vs text with ONE tool. Watch item: native-mode qwen3.6 sometimes writes
+   deliberation into the final answer instead of the requested format.
+2. `send_message` confirm-gated by metadata default — **not yet exercised live**
+   (needs a running channel session). Promotion path if too much friction:
+   `security.autoApproveTools: ["send_message"]` per channel.
+3. Memory injection floor (0.55) — **not yet exercised live**; FalkorDB +
+   embeddings (legacy /api/embeddings) confirmed reachable. If recall feels
+   worse, tune the floor in `buildUserPriming` (dispatch.ts) first.
+4. Router — **VERIFIED LIVE**: 15/16 on real phi4:14b via
+   `scripts/router-live-check.ts` (URL handling correct; the one miss is
+   "turn this analysis into a PDF report" → multi instead of document —
+   judgment call, acceptable). Router timeout is now ENFORCED in code;
+   config `router.timeout` raised 2000→8000 (phi4 measures 0.2-8s through
+   the gateway while keep_alive is being dropped).
+5. `format` structured outputs — **BLOCKED ON GATEWAY** (see
+   GATEWAY-REQUIREMENTS.md): the gateway 422s schema objects and swallows
+   "json". LocalClaw's fallbacks verified working. Re-run acceptance tests
+   1a/1b after the gateway team lands their passthrough refactor.
+
+### Environment gotcha (cost half a night — do not rediscover)
+Node processes spawned from SSH sessions (incl. VS Code Remote) get SILENTLY
+denied LAN access by macOS Local Network privacy → `EHOSTUNREACH` from node
+while curl/python work. Fix: run node work inside the `lab` tmux session
+(server started from local Terminal.app, inherits its permission):
+`tmux send-keys -t lab '<cmd>' Enter` + `tmux capture-pane`. Survives until
+reboot; recreate from local Terminal.app after reboots.
 
 ## 3. Verification commands
 
