@@ -31,6 +31,10 @@ export interface OllamaChatParams {
   model: string;
   messages: OllamaMessage[];
   tools?: OllamaTool[];
+  /** Structured output: 'json' for free-form JSON mode, or a JSON schema object
+   *  for grammar-constrained decoding (Ollama 0.5+; translated to response_format
+   *  /guided_json for OpenAI-compatible backends). */
+  format?: 'json' | Record<string, unknown>;
   options?: {
     temperature?: number;
     num_predict?: number;
@@ -56,6 +60,8 @@ export interface OllamaGenerateParams {
   model: string;
   prompt: string;
   system?: string;
+  /** Structured output: 'json' or a JSON schema object (see OllamaChatParams.format) */
+  format?: 'json' | Record<string, unknown>;
   options?: {
     temperature?: number;
     num_predict?: number;

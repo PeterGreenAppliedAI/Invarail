@@ -31,6 +31,8 @@ export const webSearchPipeline: PipelineDefinition = {
         { input: "what's the latest on NVIDIA stock", output: { query: 'NVIDIA stock price latest news', freshness: 'day' } },
         { input: 'best practices for TypeScript in 2026', output: { query: 'TypeScript best practices 2026' } },
       ],
+      // A failed extraction shouldn't abort the search — the raw message is a usable query
+      fallback: (ctx) => ({ query: ctx.userMessage }),
     },
     {
       name: 'search',

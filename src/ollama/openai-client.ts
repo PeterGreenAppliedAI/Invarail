@@ -88,6 +88,15 @@ export class OpenAICompatClient {
     if (o.top_k !== undefined) body.top_k = o.top_k;
     if (o.repeat_penalty !== undefined) body.repetition_penalty = o.repeat_penalty;
     if (params.tools?.length) body.tools = params.tools;
+    // Structured output translation: Ollama `format` → OpenAI/vLLM shapes.
+    // 'json' → response_format json_object; schema object → vLLM guided_json
+    // (grammar-constrained decoding) plus json_object mode as belt-and-braces.
+    if (params.format === 'json') {
+      body.response_format = { type: 'json_object' };
+    } else if (params.format && typeof params.format === 'object') {
+      body.response_format = { type: 'json_object' };
+      body.guided_json = params.format;
+    }
     return body;
   }
 

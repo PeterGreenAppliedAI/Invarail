@@ -117,6 +117,9 @@ export interface ExtractStage extends BaseStage {
   examples?: Array<{ input: string; output: Record<string, unknown> }>;
   /** Optional context injector — returns extra context (e.g. current task list) to help the LLM resolve fuzzy references */
   context?: (ctx: PipelineContext) => string;
+  /** Deterministic fallback params when LLM extraction fails entirely.
+   *  Degrade-not-abort: without this, extraction failure aborts the pipeline. */
+  fallback?: (ctx: PipelineContext) => Record<string, unknown>;
 }
 
 /** Branch to a sub-pipeline based on a synchronous decision function */

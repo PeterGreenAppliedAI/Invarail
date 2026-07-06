@@ -31,14 +31,22 @@ async function executeStage(stage: PipelineStage, ctx: PipelineContext): Promise
       const extraContext = stage.context ? stage.context(ctx) : undefined;
       // Use router model for extraction — it's a structured task, not reasoning
       const extractModel = ctx.routerModel ?? ctx.model;
-      const params = await extractParams(
-        ctx.client,
-        extractModel,
-        stage.schema,
-        ctx.userMessage,
-        stage.examples,
-        extraContext,
-      );
+      let params: Record<string, unknown>;
+      try {
+        params = await extractParams(
+          ctx.client,
+          extractModel,
+          stage.schema,
+          ctx.userMessage,
+          stage.examples,
+          extraContext,
+        );
+      } catch (err) {
+        if (!stage.fallback) throw err;
+        params = stage.fallback(ctx);
+        console.warn(`[Pipeline] Extraction failed for "${stage.name}" — using deterministic fallback:`,
+          err instanceof Error ? err.message : err);
+      }
       // Merge extracted params into ctx.params
       Object.assign(ctx.params, params);
       return params;
@@ -100,11 +108,23 @@ async function executeStage(stage: PipelineStage, ctx: PipelineContext): Promise
     case 'llm_branch': {
       const model = stage.model ?? ctx.routerModel ?? ctx.model;
       const prompt = `${stage.prompt}\n\nValid options: ${stage.options.join(', ')}\n\nUser message: "${ctx.userMessage}"\n\nReply with ONE word only.`;
-      const response = await ctx.client.generate({
-        model,
-        prompt,
-        options: { temperature: 0.1, num_predict: 20 },
-      });
+      let response;
+      try {
+        // Grammar-constrained: the model can ONLY emit one of the valid options
+        response = await ctx.client.generate({
+          model,
+          prompt,
+          format: { type: 'string', enum: stage.options },
+          options: { temperature: 0.1, num_predict: 20 },
+        });
+      } catch {
+        // Backend may not support format — plain generation, validated below
+        response = await ctx.client.generate({
+          model,
+          prompt,
+          options: { temperature: 0.1, num_predict: 20 },
+        });
+      }
       const raw = response.response.trim().toLowerCase().replace(/[^a-z_]/g, '');
       const branchKey = stage.options.includes(raw) ? raw : stage.fallback;
       const subStages = stage.branches[branchKey];

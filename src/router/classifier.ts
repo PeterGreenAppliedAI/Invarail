@@ -65,10 +65,8 @@ const PRE_MODEL_OVERRIDES: Array<{ pattern: RegExp; category: string }> = [
   // Speculative/conversational language → chat (prevents "I wonder if you could create" → multi)
   { pattern: /^(I wonder|I'm wondering|what if|do you think|what do you think|I feel like|I was thinking|could you theoretically)\b/i, category: 'chat' },
 
-  // URL in message → website (fetch + summarize, not search)
-  // Matches: bare URL, URL with short intro, "check this URL", etc.
-  { pattern: /^\s*https?:\/\/\S+\s*$/i, category: 'website' },
-  { pattern: /https?:\/\/\S+/i, category: 'website' },
+  // NOTE: URL→website is handled in code (see classifyMessage) — a blanket
+  // "any URL anywhere" regex hijacked messages like "research X, start from <url>".
   // NOTE: email/calendar and document-format (pdf/docx/report) overrides were REMOVED.
   // They matched bare keywords anywhere in the text, so a word inside pasted/attached content
   // (e.g. "email" in a security guide, "pdf" in a doc) hijacked routing — sending document
@@ -175,6 +173,19 @@ export async function classifyMessage(
   // keyword fallback and bypassing capability routing entirely.
   const matchText = capForClassification(classifyText?.trim() ? classifyText : message);
 
+  // URL handling: only route to website when the URL essentially IS the message
+  // (bare URL or a short "check this" wrapper with no other task intent). A URL
+  // embedded in a larger request ("research X, start from <url>") must not hijack
+  // routing — the model sees the full intent and decides.
+  if (/https?:\/\/\S+/i.test(matchText) && validCategories.has('website')) {
+    const remainder = matchText.replace(/https?:\/\/\S+/gi, '').trim();
+    const hasOtherIntent = /\b(research|analyze|compare|search|find|monitor|track|schedule|remind|sign\s*up|register|email|message|build|create|write)\b/i.test(remainder);
+    if (remainder.length < 60 && !hasOtherIntent) {
+      console.log(`[Router] URL override: "${matchText.slice(0, 60)}..." → website (bare URL)`);
+      return { category: 'website', confidence: 'keyword' };
+    }
+  }
+
   // Pre-model overrides FIRST — high-confidence patterns always win, even over sticky routing
   for (const override of PRE_MODEL_OVERRIDES) {
     if (override.pattern.test(matchText) && validCategories.has(override.category)) {
@@ -201,15 +212,26 @@ export async function classifyMessage(
   // Try model classification (on the capped text — never the full blob)
   try {
     const prompt = buildRouterPrompt(matchText, config);
-
-    const response = await client.generate({
+    const generateParams = {
       model: config.model,
       prompt,
       options: {
         temperature: 0.1,
         num_predict: 20,
       },
-    });
+    };
+
+    let response;
+    try {
+      // Grammar-constrained: the model can ONLY emit a valid category name
+      response = await client.generate({
+        ...generateParams,
+        format: { type: 'string', enum: [...validCategories] },
+      });
+    } catch {
+      // Backend may not support format — plain generation, validated below
+      response = await client.generate(generateParams);
+    }
 
     const raw = response.response.trim().toLowerCase().replace(/[^a-z_]/g, '');
 
