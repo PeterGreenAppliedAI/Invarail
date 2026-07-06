@@ -139,6 +139,37 @@ describe('parseReActResponse', () => {
     }
   });
 
+  it('preserves apostrophes inside double-quoted values (sanitizer)', () => {
+    // Unquoted key forces the sanitizer path (strict JSON and JSON5 both accept
+    // this via JSON5 actually — use a form JSON5 rejects: unquoted string value)
+    const text = `Action: memory_save[{"text": "don't forget Peter's meeting", note: "it's important",}]`;
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.params.text).toBe("don't forget Peter's meeting");
+      expect(result.params.note).toBe("it's important");
+    }
+  });
+
+  it('handles closing braces inside string values (brace matcher)', () => {
+    const text = 'Action: write_file[{"path": "a.json", "content": "{\\"key\\": \\"val}\\"}"}]';
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.params.path).toBe('a.json');
+      expect(result.params.content).toBe('{"key": "val}"}');
+    }
+  });
+
+  it('handles braces inside single-quoted string values', () => {
+    const text = "Action: exec[{'command': 'echo {a} }'}]";
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.params.command).toBe('echo {a} }');
+    }
+  });
+
   it('parses DeepSeek DSML tool calls (｜DSML｜ markers + extra param attrs)', () => {
     const text = '<｜DSML｜tool_calls><｜DSML｜invoke name="browse_snapshot"><｜DSML｜parameter name="url" string="true">https://www.facebook.com/</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>';
     const result = parseReActResponse(text);

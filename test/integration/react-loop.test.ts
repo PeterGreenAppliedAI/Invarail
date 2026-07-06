@@ -156,6 +156,92 @@ describe('runToolLoop', () => {
     expect(result.iterations).toBe(1);
   });
 
+  it('strips ReAct scaffolding from the final answer', async () => {
+    const client = createMockClient([
+      { content: 'Thought: I have everything I need.\nFinal Answer: Paris is the capital of France.' },
+    ]);
+
+    const result = await runToolLoop({
+      client,
+      config: { model: 'test', maxIterations: 5, temperature: 0.7, maxTokens: 1024 },
+      tools: [],
+      executor: vi.fn(),
+      toolContext: testContext,
+      userMessage: 'Capital of France?',
+    });
+
+    expect(result.answer).toBe('Paris is the capital of France.');
+  });
+
+  it('retries once on empty completion instead of returning empty answer', async () => {
+    const client = createMockClient([
+      { content: '' },
+      { content: 'Recovered answer.' },
+    ]);
+
+    const result = await runToolLoop({
+      client,
+      config: { model: 'test', maxIterations: 5, temperature: 0.7, maxTokens: 1024 },
+      tools: [],
+      executor: vi.fn(),
+      toolContext: testContext,
+      userMessage: 'Hi',
+    });
+
+    expect(result.answer).toBe('Recovered answer.');
+    expect(result.hitMaxIterations).toBe(false);
+  });
+
+  it('does not flag data claims as hallucination after a real tool call', async () => {
+    const client = createMockClient([
+      { content: '', tool_calls: [toolCall('web_search', { query: 'AAPL price' })] },
+      { content: 'The current price of AAPL is $210.' },
+    ]);
+
+    const executor: ToolExecutor = vi.fn().mockResolvedValue('AAPL: $210');
+
+    const result = await runToolLoop({
+      client,
+      config: { model: 'test', maxIterations: 5, temperature: 0.7, maxTokens: 1024 },
+      tools: testTools,
+      executor,
+      toolContext: testContext,
+      userMessage: 'AAPL price?',
+    });
+
+    // Answer accepted directly — no hallucination repair round-trip
+    expect(client.chat).toHaveBeenCalledTimes(2);
+    expect(result.answer).toBe('The current price of AAPL is $210.');
+  });
+
+  it('does not duplicate assistant messages when action dedup blocks a repeat', async () => {
+    const client = createMockClient([
+      { content: '', tool_calls: [toolCall('web_search', { query: 'same' })] },
+      { content: '', tool_calls: [toolCall('web_search', { query: 'same' })] },
+      { content: '', tool_calls: [toolCall('web_search', { query: 'same' })] }, // blocked by dedup
+      { content: 'Done.' },
+    ]);
+
+    const executor: ToolExecutor = vi.fn().mockResolvedValue('result');
+
+    await runToolLoop({
+      client,
+      config: { model: 'test', maxIterations: 10, temperature: 0.7, maxTokens: 1024 },
+      tools: testTools,
+      executor,
+      toolContext: testContext,
+      userMessage: 'loop test',
+    });
+
+    const lastCallArgs = (client.chat as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+    const roles = lastCallArgs.messages.map((m: OllamaMessage) => m.role);
+    for (let i = 1; i < roles.length; i++) {
+      if (roles[i] === 'assistant') {
+        expect(roles[i - 1]).not.toBe('assistant');
+      }
+    }
+  });
+
   it('handles multi-step tool chain', async () => {
     const client = createMockClient([
       { content: '', tool_calls: [toolCall('web_search', { query: 'topic A' })] },

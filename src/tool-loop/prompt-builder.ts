@@ -1,5 +1,4 @@
 import type { ToolDefinition } from '../tools/types.js';
-import type { ReActStep } from './types.js';
 
 export interface PromptContext {
   specialistPrompt?: string;
@@ -25,6 +24,7 @@ export function buildReActSystemPrompt(
   tools: ToolDefinition[],
   workspaceContext?: string,
   promptContext?: PromptContext,
+  toolStyle: 'native' | 'text' = 'native',
 ): string {
   const today = new Date().toISOString().split('T')[0];
   const sections: string[] = [];
@@ -64,8 +64,10 @@ export function buildReActSystemPrompt(
     sections.push(promptContext.userPriming);
   }
 
-  // ── Tools with structured descriptions + examples ──
-  if (tools.length > 0) {
+  // ── Tools — text style only. In native style the tool schemas travel via the
+  // API tools field and the model's own template; duplicating them here doubles
+  // the prompt AND teaches a second, contradictory calling convention.
+  if (tools.length > 0 && toolStyle === 'text') {
     const toolLines = ['## Available Tools', ''];
     for (const tool of tools) {
       toolLines.push(`**${tool.name}**: ${tool.description}`);
@@ -87,10 +89,19 @@ export function buildReActSystemPrompt(
 
   // ── BOTTOM: Format rules + constraints (recency position) ──
   // These are the last thing the model reads before generating.
-  const exampleTool = tools.length > 0 ? tools[0] : { name: 'tool_name' };
-  const exampleTool2 = tools.length > 1 ? tools[1] : exampleTool;
+  if (tools.length > 0 && toolStyle === 'native') {
+    sections.push(`## Tool Use Rules
 
-  sections.push(`## Response Format
+1. Use the provided tools via tool calls — NEVER describe or write out a call as text.
+2. Call ONE tool at a time, then wait for its result before deciding the next step.
+3. NEVER claim you performed an action without actually calling the tool.
+4. NEVER refuse to use tools — you have full access to every tool provided.
+5. When you have everything you need, reply with your final answer as plain text (no tool call).`);
+  } else if (tools.length > 0) {
+    const exampleTool = tools[0];
+    const exampleTool2 = tools.length > 1 ? tools[1] : exampleTool;
+
+    sections.push(`## Response Format
 
 You MUST respond using EXACTLY this format. Do NOT deviate.
 
@@ -120,28 +131,7 @@ Final Answer: [your complete response to the user]
 7. NEVER write code blocks, markdown tool calls, or JSON outside of Action: lines
 8. NEVER narrate what you would do — actually DO it with Action:
 9. NEVER refuse to use tools — you have full access to all tools listed above`);
+  }
 
   return sections.join('\n\n');
-}
-
-/**
- * Build the scratchpad from previous ReAct steps.
- */
-export function buildScratchpad(steps: ReActStep[]): string {
-  if (steps.length === 0) return '';
-
-  const lines: string[] = [];
-  for (const step of steps) {
-    if (step.thought) lines.push(`Thought: ${step.thought}`);
-    if (step.action) {
-      lines.push(`Action: ${step.action.tool}[${JSON.stringify(step.action.params)}]`);
-    }
-    if (step.observation !== undefined) {
-      lines.push(`Observation: ${step.observation}`);
-    }
-    if (step.finalAnswer) {
-      lines.push(`Final Answer: ${step.finalAnswer}`);
-    }
-  }
-  return lines.join('\n');
 }

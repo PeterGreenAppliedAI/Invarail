@@ -28,6 +28,9 @@ export interface ReActConfig {
   contextSize?: number;
   /** Skip drift detection — browser control sessions produce long responses that trigger false positives */
   skipDriftDetection?: boolean;
+  /** Tool-calling convention: 'native' (API tools field, no text-format prompt block)
+   *  or 'text' (prompt-described tools + Action: format, no native tools). Default 'native'. */
+  toolStyle?: 'native' | 'text';
 }
 
 export type ParsedReActResponse =
