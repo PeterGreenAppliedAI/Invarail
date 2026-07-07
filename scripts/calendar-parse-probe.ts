@@ -1,0 +1,23 @@
+import { loadConfig } from '../src/config/loader.js';
+import { createInferenceClient } from '../src/ollama/multi-backend.js';
+import { ToolRegistry } from '../src/tools/registry.js';
+import { registerAllTools } from '../src/tools/register-all.js';
+import { enrichCalendarOutput } from '../src/temporal/urgency.js';
+import { parseCalendarEvents } from '../src/services/prep-proposals.js';
+import { resolveWorkspacePath } from '../src/agents/scope.js';
+
+const config = loadConfig('localclaw.config.json5');
+const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+const registry = new ToolRegistry();
+await registerAllTools(registry, config, { ollamaClient: client });
+const executor = registry.createExecutor();
+const now = new Date();
+const raw = await executor('calendar_list', { days: 2 }, { agentId: 'main', sessionKey: 'probe', workspacePath: resolveWorkspacePath(config.agents.default, config) });
+const enriched = enrichCalendarOutput(raw, now);
+console.log('=== ENRICHED CALENDAR (exact prep input) ===');
+console.log(JSON.stringify(enriched.slice(0, 800)));
+const events = parseCalendarEvents(enriched, now, config.timezone);
+console.log('\n=== PARSED EVENTS ===');
+for (const e of events) console.log(`${e.index}. "${e.title}" start=${e.start.toISOString()} label="${e.label}"`);
+console.log(events.length === 0 ? '\nDIAGNOSIS: parser returned ZERO events — prep dies here' : '\nParser OK — problem is downstream');
+process.exit(0);

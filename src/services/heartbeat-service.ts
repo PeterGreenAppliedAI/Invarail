@@ -235,7 +235,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
 
     // Maintenance tasks
     const executor = toolRegistry.createExecutor();
-    const toolCtx = { agentId: config.agents.default, sessionKey: 'heartbeat', workspacePath, senderId: hb.delivery.target };
+    const toolCtx = { agentId: config.agents.default, sessionKey: 'heartbeat', workspacePath, senderId: resolvePrincipal(hb.delivery.target, config) };
 
     try {
       const cleanupResult = await executor('memory_cleanup', {}, toolCtx);

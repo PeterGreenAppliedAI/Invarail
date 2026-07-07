@@ -4,6 +4,15 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Morning After: Migration Starved the Briefing's Memory (July 7 2026)
+
+### First production 8am briefing — conflict caught, but prep silently absent
+**What the owner received at 8:00:** correct schedule, the Val/David overlap flagged with exact interval language (the new deterministic detector), a memory-driven insight (Val↔Domo — unified-memory payoff), and a working `!heartbeat no` round-trip that removed facts from the PRINCIPAL bucket. But NO prep section — no questions, no confirmable proposals.
+**Debug path (empiricism, no theorizing):** calendar parser probe on real text → OK. Full harness re-run → reproduced: no `[Prep]` failure warning, so the model call succeeded and returned nothing actionable. Raw-output probe → DeepSeek was answering "none" for almost everything, validly.
+**Root cause:** the briefing log's own `memory=18 chars`. The briefing/heartbeat tool contexts still passed the RAW delivery target as senderId — post-migration that bucket is empty; the person's memory lives under `peter`. With zero user context, "prefer none over inventing busywork" produced exactly what it says. Fixed: principal-resolved senderId in both services' toolCtx + the briefing's stale-facts read. Verified: memory 18→236 chars, prep section back (two intake questions; TKD reminder correctly deduped against last night's still-open proposal).
+**Lessons:** (1) An identity migration isn't done until EVERY read path is audited — grep for the alias, not just the write sites; the two missed spots were toolCtx constructions, not memory calls. (2) "Model returned none" and "model was starved of context" are indistinguishable from the outside — when a judgment stage goes quiet, check what it was SHOWN before blaming its judgment. (3) The `memory=<n> chars` context log line is what cracked this — keep sizing logs on every model-facing context assembly.
+**Recurring cosmetic:** DeepSeek name-slips in prep questions (wrote "Val" in David's question twice across runs). Harmless, watch for pattern.
+
 ## First Real Proactive Briefing + the Determinism Rubric (July 7 2026)
 
 ### The proof run — real calendar, real conflict, real confirmable proposal
