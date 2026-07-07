@@ -4,6 +4,19 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The First Real Save: Misroute Chain vs the Confirm Gate (July 7 2026)
+
+### Incident — the gate contained what routing broke, including a reflex confirm
+**Timeline (production, 4:05-4:14 PM):** The owner answered a briefing prep question in Discord ("David is going on the podcast, I just need to get him a Riverside link"). The router classified the ANSWER as a `message` command; extraction fabricated a WhatsApp target (a Discord-shaped snowflake) with his own words as the text; the confirm gate previewed it. The owner **reflex-confirmed without reading**. The stored action executed — and the WhatsApp adapter refused the invalid target: **nothing was ever delivered**. He then asked "did you actually send a message?" — which ALSO routed to `message`, and the pipeline's anaphoric rewrite rebuilt fresh send params from conversation history (the earlier preview JSON), proposing a SECOND send. He didn't confirm that one. Net harm: zero, minus some trust.
+**What worked:** every layer of the July autonomy build held — the gate previewed both times, stored-params execution ran exactly what was shown, the ledger/metrics recorded every step (which is how the incident was reconstructed to the minute), and the invalid fabricated target was unsendable. Without this stack, the 4:05 message sends immediately.
+**What broke (all fixed, all deterministic):**
+1. Briefing replies now presume answerhood — sticky to chat ('briefing' in STICKY_CATEGORIES with target chat); only imperatives or keyword hits break out. The fuzzy new-topic patterns ("get…a…") are tuned for chat drift and misfire on answers.
+2. Meta-questions about the agent's own actions ("did you / have you…") are a pre-model chat override — a question about an action must never BECOME an action. Past/perfective second-person only; polite commands ("can you send…") untouched.
+3. The anaphoric history rewrite never runs for the message pipeline — a send must come from the user's explicit words; history had become a parts-bin for fabricating sends.
+4. `validate_target` stage: extraction-produced targets must be format-plausible for their channel (jid/chat-id/snowflake/slack patterns) or match the conversation's own channel — otherwise the pipeline ASKS instead of proposing.
+5. Preview + confirm honesty: gate previews render as "⏸️ Not sent yet … to `<target>`" (was "Failed to send message: <JSON>"); confirmed actions whose tool returns an error string now reply ❌ and log outcome `failure` (was "✅ Ran send_message: Error…" — a success mark on a failure).
+**Lessons:** (1) The reflex confirm is REAL — the owner confirmed without reading within 2 minutes of the feature's first misfire. Previews must put the scary part (who receives it) in plain words, and structural validity checks must run BEFORE anything reaches the human, because the human is not a reliable validator. (2) An agent's conversation history is attacker-shaped input to parameter extraction — never let a rewrite stage synthesize action params from it. (3) Meta-conversation about the system is a routing category of its own; treat it as chat by rule. (4) The metrics ledger paid for itself on day one — the incident was reconstructed entirely from `autonomous_action` events.
+
 ## Self-Identity in Prompts: Config, Never Code (July 7 2026)
 
 ### Models must recognize the user in content metadata — from config only
