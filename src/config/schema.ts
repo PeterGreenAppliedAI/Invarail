@@ -65,6 +65,11 @@ export const SpecialistConfigSchema = z.object({
  *  separate control-plane slice). */
 export const PrincipalSchema = z.object({
   aliases: z.array(z.string()).default([]),
+  /** Human name for prompts — lets models recognize the person in calendar
+   *  metadata, email headers, etc. ("booked by <displayName>" is not a third party) */
+  displayName: z.string().optional(),
+  /** The person's OWN email addresses — models must never treat these as other people */
+  emails: z.array(z.string()).default([]),
 });
 
 export const ChannelAllowFromSchema = z.object({

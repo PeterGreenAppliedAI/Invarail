@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePrincipal, isOwner } from '../../src/identity/principal.js';
+import { resolvePrincipal, isOwner, selfIdentityLine } from '../../src/identity/principal.js';
 import type { LocalClawConfig } from '../../src/config/types.js';
 
 const config = {
   ownerId: '415030165005926401',
   principals: {
     peter: {
+      displayName: 'Test Owner',
+      emails: ['owner@example.com'],
       aliases: ['415030165005926401', '6555481980', '13478769461_s.whatsapp.net', 'console-user'],
     },
   },
@@ -30,6 +32,21 @@ describe('resolvePrincipal', () => {
   it('behaves as identity with no principals configured', () => {
     const bare = { principals: {} } as unknown as LocalClawConfig;
     expect(resolvePrincipal('6555481980', bare)).toBe('6555481980');
+  });
+});
+
+describe('selfIdentityLine', () => {
+  it('builds the identity line entirely from config — no hardcoded people', () => {
+    const line = selfIdentityLine('6555481980', config);
+    expect(line).toContain('Test Owner');
+    expect(line).toContain('owner@example.com');
+    expect(line).toContain('THEIR OWN');
+  });
+
+  it('returns null when no identity metadata is configured', () => {
+    const bare = { principals: { p: { aliases: ['x'], emails: [] } } } as unknown as LocalClawConfig;
+    expect(selfIdentityLine('x', bare)).toBeNull();
+    expect(selfIdentityLine('stranger', config)).toBeNull();
   });
 });
 
