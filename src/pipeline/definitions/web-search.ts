@@ -111,6 +111,7 @@ export const webSearchPipeline: PipelineDefinition = {
             'If the fetched pages add useful detail beyond the search snippets, incorporate it.',
             'Provide ANALYSIS and INSIGHT, not just a summary of what each source said.',
             'Structure your response with clear sections. Each point should add value beyond restating a headline.',
+            'NEVER copy page navigation, link-card text, or repeated site boilerplate into the answer — only substantive content.',
           ].join('\n'),
           user: `User asked: "${ctx.userMessage}"\n\n## Search Results\n${searchResults}\n\n## Fetched Pages\n${pageContent}`,
         };
@@ -211,6 +212,7 @@ Respond with JSON: {"pass": true} if adequate, or {"pass": false, "fix": "brief 
                 `Revise this search synthesis. ${instructions}`,
                 '',
                 'Provide ANALYSIS and INSIGHT, not just summaries. Cite sources with URLs. Structure with clear sections.',
+                'Output ONLY the revised synthesis itself — no preamble, no meta-commentary about what was revised or improved.',
                 '',
                 `Original question: "${ctx.userMessage}"`,
                 '',
@@ -225,7 +227,12 @@ Respond with JSON: {"pass": true} if adequate, or {"pass": false, "fix": "brief 
             options: { temperature: 0.4, num_predict: 2048 },
           });
 
-          const revised = (response.message?.content ?? '').trim();
+          // Deterministic hygiene: models preamble revisions with meta-commentary
+          // ("Here is the revised synthesis, incorporating the requested
+          // improvements: …") — internal machinery must never reach the user
+          const revised = (response.message?.content ?? '').trim()
+            .replace(/^(?:here(?:'s| is)\b[^\n]*(?:revis|synthes|improv|incorporat|request)[^\n]*)\n+/i, '')
+            .trim();
           if (revised.length > synthesis.length * 0.5) {
             ctx.answer = revised;
             console.log('[WebSearch] Revision applied');
