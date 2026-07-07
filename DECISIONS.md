@@ -4,6 +4,21 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## First Real Proactive Briefing + the Determinism Rubric (July 7 2026)
+
+### The proof run — real calendar, real conflict, real confirmable proposal
+**What happened:** `scripts/briefing-live-check.ts` runs the PRODUCTION briefing path (real Google Calendar OAuth, real unified memory under the principal, real DeepSeek, real pending-action ledger, real session-transcript append) with only the channel send stubbed to stdout. First run against live data: correct schedule, the genuine Val/David 11:00-vs-11:15 overlap flagged, a confirmable one-shot TKD reminder proposed into the live ledger, and intake questions asked for both under-specified meetings — the owner's original vision sentence, on his actual life.
+**Blemishes recorded:** DeepSeek name-slipped in one question (wrote "Val" for David's meeting — cosmetic); and the conflict catch came from the MODEL, because the code detector only matched identical start times (fixed below).
+
+### "Does this need to be deterministic if the model catches it?" — the rubric
+Peter challenged whether conflict detection needs code at all, since DeepSeek caught the overlap. Resolution — determinism is required when ALL of:
+1. **Silent-miss harm** — a missed catch = real-world damage discovered too late (double-booked at 11:15), with nothing signaling the miss;
+2. **Objectively computable** — the check is enumerable (interval intersection), not judgment;
+3. **Floor-sensitive** — model-layer detection makes the feature's reliability silently track whichever model is in the swappable slot.
+Model judgment remains the right layer for everything fuzzy: soft conflicts (back-to-back across town, travel time), topical connections, "you always run over with Val." Code guarantees the floor; the model provides the ceiling.
+**The kicker that decided this case:** the system had ALREADY voted for deterministic — a code detector existed and the prompt declared it AUTHORITATIVE — but it compared start times for equality, so it missed the real overlap and DeepSeek freelanced around its own instructions to save the user. Worst possible configuration: prompt declares a wrong layer authoritative. Fixed: `findScheduleConflicts` (temporal/urgency.ts) does interval intersection, tested incl. the live case, back-to-back non-conflicts, and AM/PM handling.
+**Status:** Live-proven. Remaining known gap: multi-day events / midnight-spanning intervals not handled (calendar output format doesn't produce them today).
+
 ## Prep Proposals: Never Ask a Model to Construct a Timestamp (July 7 2026)
 
 ### The whenISO failure — a rail violation caught by live testing
