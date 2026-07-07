@@ -17,6 +17,7 @@ import { resolveWorkspacePath } from '../agents/scope.js';
 import { enrichTasks, getAutoActions, filterForModel, formatTaskBoard } from '../temporal/urgency.js';
 import { LocalClawError } from '../errors.js';
 import { logAutonomousAction } from '../metrics.js';
+import { resolvePrincipal } from '../identity/principal.js';
 
 export interface HeartbeatDeps {
   config: LocalClawConfig;
@@ -141,7 +142,8 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
     }
 
     // --- Memory decay ---
-    const senderId = hb.delivery.target;
+    // Memory ops key on the principal — the delivery target is a channel alias
+    const senderId = resolvePrincipal(hb.delivery.target, config);
     if (graphMemory && senderId) {
       try {
         const decay = await graphMemory.applyDecay(senderId);

@@ -6,6 +6,7 @@ import type { LocalClawConfig } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import { buildPrepSection } from './prep-proposals.js';
+import { resolvePrincipal } from '../identity/principal.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { TaskStore } from '../tasks/store.js';
@@ -174,7 +175,7 @@ Write a useful ${timeOfDay} update:
           model: briefingModel,
           calendar,
           memory,
-          sender: hb.delivery.target,
+          sender: resolvePrincipal(hb.delivery.target, config),
           channel: hb.delivery.channel,
           target: hb.delivery.target,
           agentId: config.agents.default,

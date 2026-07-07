@@ -88,6 +88,7 @@ export function clearCompactionCache(agentId: string, sessionKey: string): void 
 }
 import { computeBudget, trimHistoryToFit } from './context/budget.js';
 import { pendingActions } from './security/pending-actions.js';
+import { resolvePrincipal, isOwner as isOwnerPrincipal } from './identity/principal.js';
 import { buildCompactedHistory } from './context/compactor.js';
 import { PipelineRegistry } from './pipeline/registry.js';
 import { runPipeline } from './pipeline/executor.js';
@@ -342,7 +343,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
       model: tempSpecialist?.model ?? config.router.model,
       workspacePath,
       factStore: params.factStore,
-      senderId: params.sourceContext?.senderId,
+      senderId: resolvePrincipal(params.sourceContext?.senderId, config),
     };
 
     const cacheValid = cachedCompaction
@@ -397,7 +398,10 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     : classifyMessage(client, config.router, message, previousCategory, params.classifyText);
 
   // Start memory priming in background (will be awaited later before specialist runs)
-  const senderId = params.sourceContext?.senderId;
+  // Identity: resolve the channel sender to its principal — memory, ledger,
+  // and trust key on the PERSON, not the channel account. Unmapped ids pass
+  // through, so a config without `principals` behaves exactly as before.
+  const senderId = resolvePrincipal(params.sourceContext?.senderId, config);
   const memoryPromise = (senderId && !params.cronMode && (params.graphMemory || params.factStore))
     ? buildUserPriming(params, message, senderId)
     : Promise.resolve('');
@@ -412,8 +416,12 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
 
   // 2b. Channel security — category enforcement
   const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
-  // senderId already declared above (parallel section)
-  const isTrusted = senderId !== undefined && (!channelSecurity?.trustedUsers || channelSecurity.trustedUsers.includes(senderId));
+  // senderId already declared above (parallel section) — principal-resolved.
+  // Trust lists may contain raw channel ids OR principal names; match either.
+  const rawSenderId = params.sourceContext?.senderId;
+  const isTrusted = senderId !== undefined && (!channelSecurity?.trustedUsers
+    || channelSecurity.trustedUsers.includes(senderId)
+    || (rawSenderId !== undefined && channelSecurity.trustedUsers.includes(rawSenderId)));
   let effectiveCategory = category;
 
   if (channelSecurity?.allowedCategories && !channelSecurity.allowedCategories.includes(category)) {
@@ -444,7 +452,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
 
   // 3c. Owner-only tools — stripped for everyone except the config-level ownerId
   // This is a code gate — the model never sees these tools for non-owners
-  const isOwner = !!senderId && !!config.ownerId && senderId === config.ownerId;
+  const isOwner = isOwnerPrincipal(rawSenderId, config);
   if (!isOwner && specialistConfig && channelSecurity?.ownerOnlyTools) {
     const filtered = specialistConfig.tools.filter(t => !channelSecurity.ownerOnlyTools!.includes(t));
     if (filtered.length !== specialistConfig.tools.length) {
@@ -805,7 +813,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
         model: config.router.model,
         workspacePath: wsPath,
         factStore: params.factStore,
-        senderId: params.sourceContext?.senderId,
+        senderId: resolvePrincipal(params.sourceContext?.senderId, config),
       }).then(result => {
         compactionCache.set(prewarmKey, { messages: result.messages, cachedAt: Date.now(), turnCount: newTurnCount });
       }).catch(err => {
@@ -860,7 +868,7 @@ async function runSpecialist(
           pendingActions.record({
             tool: toolName,
             params: toolParams,
-            sender: params.sourceContext?.senderId ?? 'unknown',
+            sender: resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown',
             channel: params.sourceContext?.channel ?? 'unknown',
             agentId,
             sessionKey,
@@ -874,7 +882,7 @@ async function runSpecialist(
     agentId,
     sessionKey,
     workspacePath,
-    senderId: params.sourceContext?.senderId,
+    senderId: resolvePrincipal(params.sourceContext?.senderId, config),
     channel: params.sourceContext?.channel,
   };
 
@@ -1103,7 +1111,7 @@ async function runPipelineDispatch(
           pendingActions.record({
             tool: toolName,
             params: toolParams,
-            sender: params.sourceContext?.senderId ?? 'unknown',
+            sender: resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown',
             channel: params.sourceContext?.channel ?? 'unknown',
             agentId,
             sessionKey,
@@ -1129,7 +1137,7 @@ async function runPipelineDispatch(
     agentId,
     sessionKey,
     workspacePath,
-    senderId: params.sourceContext?.senderId,
+    senderId: resolvePrincipal(params.sourceContext?.senderId, config),
     channel: params.sourceContext?.channel,
     config: { imageGen: config.imageGen },
   };

@@ -8,6 +8,7 @@ import { resolveWorkspacePath } from '../../agents/scope.js';
 import { saveAttachment, isImageMime } from '../../services/attachments.js';
 import { stripThinkingTags } from '../../utils/text.js';
 import { pendingActions, CONFIRMATION_PATTERN, CONFIRMATION_NEAR_MISS, BARE_CONFIRM_MAX_AGE_MS, parseConfirmationId } from '../../security/pending-actions.js';
+import { resolvePrincipal } from '../../identity/principal.js';
 import { logAutonomousAction } from '../../metrics.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -137,13 +138,14 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
     if (CONFIRMATION_PATTERN.test(trimmed) || CONFIRMATION_NEAR_MISS.test(trimmed)) {
       const isStrict = CONFIRMATION_PATTERN.test(trimmed);
       const targetId = isStrict ? parseConfirmationId(trimmed) : null;
+      const principal = resolvePrincipal(senderId, deps.config);
       const pending = targetId
-        ? pendingActions.findById(targetId, senderId)
+        ? pendingActions.findById(targetId, principal)
         : isStrict
-          ? pendingActions.latestFor(senderId, 'console', BARE_CONFIRM_MAX_AGE_MS)
+          ? pendingActions.latestFor(principal, 'console', BARE_CONFIRM_MAX_AGE_MS)
           : null;
       if (!pending && (targetId || !isStrict)) {
-        const open = pendingActions.listFor(senderId);
+        const open = pendingActions.listFor(principal);
         const openList = open.length > 0
           ? `\nOpen proposals:\n${open.map(p => `- \`confirm ${p.id}\` → ${p.tool}`).join('\n')}`
           : '\nNo open proposals.';

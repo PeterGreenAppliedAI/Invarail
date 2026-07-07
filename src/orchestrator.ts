@@ -15,6 +15,7 @@ import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
 import { pendingActions, CONFIRMATION_PATTERN, CONFIRMATION_NEAR_MISS, BARE_CONFIRM_MAX_AGE_MS, parseConfirmationId } from './security/pending-actions.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
+import { resolvePrincipal } from './identity/principal.js';
 import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
 import { bootstrapWorkspace } from './agents/workspace.js';
@@ -575,7 +576,8 @@ export class Orchestrator {
       // Extract senderId from session filename (format: agentId:channel:...:senderId.json)
       const sessionKey = file.replace(/\.json$/, '');
       const parts = sessionKey.split(':');
-      const senderId = parts.length > 0 ? parts[parts.length - 1] : 'unknown';
+      // Session filenames carry the raw channel sender — facts key on the principal
+      const senderId = resolvePrincipal(parts.length > 0 ? parts[parts.length - 1] : 'unknown', this.config);
 
       try {
         const data = readFileSync(filePath, 'utf-8');
@@ -639,6 +641,11 @@ export class Orchestrator {
       return;
     }
 
+    // Identity: memory, ledger, and review files key on the PRINCIPAL so the
+    // person's knowledge follows them across channels. Routing/session keys
+    // deliberately stay on the raw sender (conversation unification = Slice 3).
+    const principal = resolvePrincipal(msg.senderId, this.config);
+
     // Handle slash commands
     const trimmed = msg.content.trim().toLowerCase();
     if (trimmed === '!new' || trimmed === '!reset') {
@@ -664,9 +671,9 @@ export class Orchestrator {
       // Extract facts from the conversation
       let replyText = 'Session cleared. Starting fresh!';
       try {
-        const facts = await this.extractFacts(transcript, undefined, msg.senderId);
+        const facts = await this.extractFacts(transcript, undefined, principal);
         if (facts.length > 0) {
-          const userMemDir = join(workspacePath, 'memory', msg.senderId);
+          const userMemDir = join(workspacePath, 'memory', principal);
           mkdirSync(userMemDir, { recursive: true });
           const pending = {
             extractedAt: new Date().toISOString(),
@@ -698,13 +705,13 @@ export class Orchestrator {
         this.config,
       );
       const workspacePath = resolveWorkspacePath(route.agentId, this.config);
-      const pendingFile = this.pendingPath(workspacePath, msg.senderId);
+      const pendingFile = this.pendingPath(workspacePath, principal);
 
       let replyText: string;
       try {
         const raw = readFileSync(pendingFile, 'utf-8');
         const pending = JSON.parse(raw) as { facts: FactInput[]; senderId?: string };
-        const senderId = pending.senderId ?? msg.senderId;
+        const senderId = pending.senderId ?? principal;
 
         // Write through FactStore (flat) + GraphMemory (graph)
         if (this.factStore) {
@@ -748,7 +755,7 @@ export class Orchestrator {
         this.config,
       );
       const workspacePath = resolveWorkspacePath(route.agentId, this.config);
-      const pendingFile = this.pendingPath(workspacePath, msg.senderId);
+      const pendingFile = this.pendingPath(workspacePath, principal);
 
       let replyText: string;
       try {
@@ -779,7 +786,7 @@ export class Orchestrator {
         this.config,
       );
       const workspacePath = resolveWorkspacePath(route.agentId, this.config);
-      const pendingFilePath = join(workspacePath, 'memory', msg.senderId, 'pending-file.json');
+      const pendingFilePath = join(workspacePath, 'memory', principal, 'pending-file.json');
       try {
         const raw = readFileSync(pendingFilePath, 'utf-8');
         const pending = JSON.parse(raw) as { filePath: string; filename: string; mimeType: string };
@@ -864,7 +871,7 @@ export class Orchestrator {
         this.config,
       );
       const workspacePath = resolveWorkspacePath(route.agentId, this.config);
-      const reviewFile = this.heartbeatPendingPath(workspacePath, msg.senderId);
+      const reviewFile = this.heartbeatPendingPath(workspacePath, principal);
 
       let replyText: string;
       try {
@@ -958,7 +965,7 @@ export class Orchestrator {
     if (trimmed.startsWith('!autonomy')) {
       const args = trimmed.slice('!autonomy'.length).trim();
       const sinceDays = /^\d+$/.test(args) ? parseInt(args) : 30;
-      const openProposals = pendingActions.listFor(msg.senderId);
+      const openProposals = pendingActions.listFor(principal);
       let replyText = buildAutonomyReport(undefined, sinceDays);
       if (openProposals.length > 0) {
         const openList = openProposals
@@ -988,12 +995,12 @@ export class Orchestrator {
       let removed = 0;
       // Graph memory
       if (this.graphMemory) {
-        try { removed += await this.graphMemory.removeFact(query, msg.senderId); } catch { /* best-effort */ }
+        try { removed += await this.graphMemory.removeFact(query, principal); } catch { /* best-effort */ }
       }
       // Flat store
       if (this.factStore) {
-        removed += this.factStore.removeFact(query, msg.senderId);
-        this.factStore.recordRemoval(query, 'user_denied', msg.senderId);
+        removed += this.factStore.removeFact(query, principal);
+        this.factStore.recordRemoval(query, 'user_denied', principal);
       }
 
       const replyText = removed > 0
@@ -1219,14 +1226,14 @@ export class Orchestrator {
         // Bare confirms only fire on recent interactive previews — a stale 12h
         // briefing proposal must be addressed by id, never by a casual "go ahead"
         const pending = targetId
-          ? pendingActions.findById(targetId, msg.senderId)
+          ? pendingActions.findById(targetId, principal)
           : isStrict
-            ? pendingActions.latestFor(msg.senderId, msg.channel, BARE_CONFIRM_MAX_AGE_MS)
+            ? pendingActions.latestFor(principal, msg.channel, BARE_CONFIRM_MAX_AGE_MS)
             : null;
         if (!pending && (targetId || !isStrict)) {
           // Explicit id that doesn't exist, or a near-miss ("confirm 2") — error
           // with the open list instead of falling through to chat
-          const open = pendingActions.listFor(msg.senderId);
+          const open = pendingActions.listFor(principal);
           const openList = open.length > 0
             ? `\nOpen proposals:\n${open.map(p => `- \`confirm ${p.id}\` → ${p.tool}`).join('\n')}`
             : '\nNo open proposals.';
