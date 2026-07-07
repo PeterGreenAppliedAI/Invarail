@@ -4,6 +4,15 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Prep Proposals: Never Ask a Model to Construct a Timestamp (July 7 2026)
+
+### The whenISO failure — a rail violation caught by live testing
+**Symptom:** the prep-proposal live check on real qwen3.5:9b returned an empty section. Raw output showed the model burned its ENTIRE 1024-token budget on prose reasoning about timezones ("If this is UTC, it's very late night in Europe...") and never emitted the JSON array. Unit tests (mocked model) were all green — the failure only exists with a real small model.
+**Root cause:** the prompt asked the model to construct `whenISO` (an ISO-8601 timestamp with offset) from calendar text like "Wed, Jul 8 2:00 PM". That's date math + timezone reasoning pushed into the model — a direct violation of "code decides, model executes," written by the same session that documented the rail hours earlier. The builder blind spot is real.
+**Fix (the on-principle shape):** CODE parses calendar lines into structured events (`parseCalendarEvents` — the regex already existed in briefing conflict detection) and does ALL time math in the configured timezone (`zonedDate`/`cronForDate`, two-pass Intl offset, DST-tested). The model now returns only `{event: <number>, action, reminder?: {minutesBefore: <integer>, message}}` — an index and an integer. Also fixed en passant: the original `isoToOneShotCron` built cron fields with server-local getters, but croner interprets expressions in the CONFIGURED timezone — worked only because the Mac's zone matches config.
+**Result:** live PASS on deepseek-v4-flash first try — asked the intake question for a context-less meeting, proposed a memory-informed prep task, skipped the dentist, and the proposal was confirmed from a different channel alias (principal binding) with stored-params execution.
+**Lessons:** (1) A model's output schema should never contain anything code can compute — every such field is a place for a small model to drown. (2) Mocked-model unit tests cannot catch "the model can't actually produce this" — every model-facing prompt needs one live-model run before it ships. (3) num_predict ceilings turn model rumination into silent empty outputs; prefer output shapes too small to ruminate over.
+
 ## Confusion Audit of the Autonomy System (July 6 2026)
 
 ### Fresh-eyes audit found 4 real bugs the builder couldn't see
