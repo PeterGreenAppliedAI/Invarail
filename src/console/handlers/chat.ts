@@ -7,7 +7,7 @@ import { resolveRoute } from '../../agents/resolve-route.js';
 import { resolveWorkspacePath } from '../../agents/scope.js';
 import { saveAttachment, isImageMime } from '../../services/attachments.js';
 import { stripThinkingTags } from '../../utils/text.js';
-import { pendingActions, CONFIRMATION_PATTERN, parseConfirmationId } from '../../security/pending-actions.js';
+import { pendingActions, CONFIRMATION_PATTERN, CONFIRMATION_NEAR_MISS, BARE_CONFIRM_MAX_AGE_MS, parseConfirmationId } from '../../security/pending-actions.js';
 import { logAutonomousAction } from '../../metrics.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -134,13 +134,20 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
     // Confirmation follow-up: execute the STORED pending action (exact previewed
     // params). Without this, confirmTools on the console channel was a dead-end —
     // the preview was shown but nothing could ever release the gate.
-    if (CONFIRMATION_PATTERN.test(trimmed)) {
-      const targetId = parseConfirmationId(trimmed);
+    if (CONFIRMATION_PATTERN.test(trimmed) || CONFIRMATION_NEAR_MISS.test(trimmed)) {
+      const isStrict = CONFIRMATION_PATTERN.test(trimmed);
+      const targetId = isStrict ? parseConfirmationId(trimmed) : null;
       const pending = targetId
         ? pendingActions.findById(targetId, senderId)
-        : pendingActions.latestFor(senderId, 'console');
-      if (targetId && !pending) {
-        res.write(`data: ${JSON.stringify({ type: 'done', answer: `No pending action with id \`${targetId}\` — it may have expired (10 min) or already run.`, category: 'system', iterations: 0 })}\n\n`);
+        : isStrict
+          ? pendingActions.latestFor(senderId, 'console', BARE_CONFIRM_MAX_AGE_MS)
+          : null;
+      if (!pending && (targetId || !isStrict)) {
+        const open = pendingActions.listFor(senderId);
+        const openList = open.length > 0
+          ? `\nOpen proposals:\n${open.map(p => `- \`confirm ${p.id}\` → ${p.tool}`).join('\n')}`
+          : '\nNo open proposals.';
+        res.write(`data: ${JSON.stringify({ type: 'done', answer: `That doesn't match a pending action — it may have expired or already run.${openList}`, category: 'system', iterations: 0 })}\n\n`);
         clearInterval(keepalive);
         res.end();
         return;

@@ -19,7 +19,6 @@ export function createWorkspaceWriteTool(): LocalClawTool {
       required: ['file', 'content'],
     },
     category: 'config',
-    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const file = params.file as string;

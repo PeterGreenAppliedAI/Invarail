@@ -88,6 +88,25 @@ describe('id-targeted confirmation + channel binding', () => {
     expect(parseConfirmationId('confirm')).toBeNull();
     expect(parseConfirmationId('go ahead')).toBeNull();
   });
+
+  it('latestFor with maxAgeMs ignores old entries — bare "go ahead" cannot fire a stale 12h proposal', () => {
+    const action = store.record(baseEntry, 12 * 60 * 60 * 1000);
+    // Rewrite createdAt to 30 minutes ago (still unexpired under the 12h TTL)
+    const raw = JSON.parse(readFileSync(storePath, 'utf-8'));
+    raw[0].createdAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    writeFileSync(storePath, JSON.stringify(raw));
+
+    expect(store.latestFor('user-1', 'discord', 10 * 60 * 1000)).toBeNull(); // bare confirm path
+    expect(store.findById(action.id, 'user-1')?.id).toBe(action.id); // id-targeted still works
+  });
+
+  it('near-miss pattern catches "confirm 2" but not longer requests', async () => {
+    const { CONFIRMATION_NEAR_MISS } = await import('../../src/security/pending-actions.js');
+    expect(CONFIRMATION_NEAR_MISS.test('confirm 2')).toBe(true);
+    expect(CONFIRMATION_NEAR_MISS.test('confirm 3fa2c1b')).toBe(true);
+    expect(CONFIRMATION_NEAR_MISS.test('confirm my flight booking')).toBe(false);
+    expect(CONFIRMATION_NEAR_MISS.test('can you confirm the meeting')).toBe(false);
+  });
 });
 
 describe('CONFIRMATION_PATTERN', () => {

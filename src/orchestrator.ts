@@ -13,7 +13,7 @@ import { CronService } from './cron/service.js';
 import { TaskStore } from './tasks/store.js';
 import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
-import { pendingActions, CONFIRMATION_PATTERN, parseConfirmationId } from './security/pending-actions.js';
+import { pendingActions, CONFIRMATION_PATTERN, CONFIRMATION_NEAR_MISS, BARE_CONFIRM_MAX_AGE_MS, parseConfirmationId } from './security/pending-actions.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
 import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
@@ -298,6 +298,7 @@ export class Orchestrator {
       channelRegistry: this.channelRegistry,
       factStore: this.factStore,
       taskStore: this.taskStore,
+      sessionStore: this.sessionStore,
     });
   }
 
@@ -901,7 +902,12 @@ export class Orchestrator {
           if (numMatch && toRemove.length < pending.facts.length) {
             pending.facts = pending.facts.filter(f => !toRemove.includes(f));
             writeFileSync(reviewFile, JSON.stringify(pending, null, 2));
-            replyText = `Removed "${toRemove[0]?.text.slice(0, 60)}". ${pending.facts.length} fact(s) still pending review.`;
+            // Positions shift after removal — show the CURRENT numbering so a
+            // follow-up "!heartbeat no N" targets what the user is looking at
+            const renumbered = pending.facts
+              .map((f, i) => `${i + 1}. \`${f.category}\` — ${f.text.slice(0, 80)}`)
+              .join('\n');
+            replyText = `Removed "${toRemove[0]?.text.slice(0, 60)}". Still pending (numbers updated):\n${renumbered}`;
           } else {
             unlinkSync(reviewFile);
             replyText = `Removed ${toRemove.length} fact(s) from memory. They won't come back.`;
@@ -1207,15 +1213,26 @@ export class Orchestrator {
       // "confirm <id>" targets a specific proposal (briefings propose several);
       // bare "confirm" takes the latest for this sender+channel.
       // A confirmation with no pending entry falls through as a normal message.
-      if (CONFIRMATION_PATTERN.test(trimmed)) {
-        const targetId = parseConfirmationId(trimmed);
+      if (CONFIRMATION_PATTERN.test(trimmed) || CONFIRMATION_NEAR_MISS.test(trimmed)) {
+        const isStrict = CONFIRMATION_PATTERN.test(trimmed);
+        const targetId = isStrict ? parseConfirmationId(trimmed) : null;
+        // Bare confirms only fire on recent interactive previews — a stale 12h
+        // briefing proposal must be addressed by id, never by a casual "go ahead"
         const pending = targetId
           ? pendingActions.findById(targetId, msg.senderId)
-          : pendingActions.latestFor(msg.senderId, msg.channel);
-        if (targetId && !pending) {
+          : isStrict
+            ? pendingActions.latestFor(msg.senderId, msg.channel, BARE_CONFIRM_MAX_AGE_MS)
+            : null;
+        if (!pending && (targetId || !isStrict)) {
+          // Explicit id that doesn't exist, or a near-miss ("confirm 2") — error
+          // with the open list instead of falling through to chat
+          const open = pendingActions.listFor(msg.senderId);
+          const openList = open.length > 0
+            ? `\nOpen proposals:\n${open.map(p => `- \`confirm ${p.id}\` → ${p.tool}`).join('\n')}`
+            : '\nNo open proposals.';
           await this.channelRegistry.send(
             { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
-            { text: `No pending action with id \`${targetId}\` — it may have expired (10 min) or already run.` },
+            { text: `That doesn't match a pending action — it may have expired or already run.${openList}` },
           );
           return;
         }

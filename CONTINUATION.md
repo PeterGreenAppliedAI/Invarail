@@ -189,7 +189,22 @@ typed SSE events, skeletons, modal guard).
    `check_progress` done-detection with plan-index arithmetic.
 6. **Deterministic citation numbering** in research `parse_final`.
 7. **Gmail compose tool** (backlog promotion candidate: prep proposals will
-   eventually want draft_reply → actual send; it must be propose_confirm).
+   eventually want draft_reply → actual send; it must be requiresConfirm).
+8. **One-inbox unification (designed, deliberately deferred)** — from the July 6
+   confusion audit's synthesis. End state: EVERY proposal (tool preview, prep
+   reminder/task, stale-fact review) lands in the single pending-action ledger
+   as a numbered item; reply grammar is `ok N` / `no N` (with `no` a real
+   reject that consumes + logs `rejected`); numbers are per-batch-stable, never
+   renumbered live; `!heartbeat yes/no` and hex ids retire. Second piece:
+   collapse the five per-channel tool lists into one `{who: everyone|trusted|
+   owner, gate: allow|confirm|deny}` entry per tool, old keys as a deprecated
+   Zod transform. Both preserve every safety invariant (stored-params
+   execution, code gates). The three-sentence mental model to build toward:
+   "The agent either acts silently or proposes; every proposal is a numbered
+   item in one inbox, and ok N runs exactly what's shown. Each tool carries
+   one bit — asks-first or not — overridable per channel with one line. Nothing
+   external executes without a stored-params confirmation or an explicit
+   config grant."
 
 ## 5. Anti-goals — do NOT do these
 

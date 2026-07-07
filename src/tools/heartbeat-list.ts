@@ -14,7 +14,6 @@ export function createHeartbeatListTool(cronService: CronService): LocalClawTool
       },
     },
     category: 'cron',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const includeDisabled = params.includeDisabled === true || params.includeDisabled === 'true';

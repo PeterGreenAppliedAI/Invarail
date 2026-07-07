@@ -2,23 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import type { LocalClawTool } from '../../src/tools/types.js';
 
-function makeTool(name: string, autonomy?: LocalClawTool['autonomy']): LocalClawTool {
+function makeTool(name: string, requiresConfirm?: boolean): LocalClawTool {
   return {
     name,
     description: 'test',
     parameterDescription: 'none',
     category: 'test',
-    autonomy,
+    requiresConfirm,
     execute: async () => 'ok',
   };
 }
 
-describe('ToolRegistry autonomy metadata', () => {
-  it('collects propose_confirm tools as the structural confirm default', () => {
+describe('ToolRegistry requiresConfirm metadata', () => {
+  it('collects requiresConfirm tools as the structural confirm default', () => {
     const registry = new ToolRegistry();
-    registry.register(makeTool('send_message', { tier: 'propose_confirm', reversible: false, blastRadius: 'external' }));
-    registry.register(makeTool('exec', { tier: 'act_then_notify', reversible: false, blastRadius: 'owner' }));
-    registry.register(makeTool('web_search')); // no metadata
+    registry.register(makeTool('send_message', true));
+    registry.register(makeTool('exec'));
+    registry.register(makeTool('web_search', false));
 
     const confirm = registry.getMetadataConfirmTools();
     expect(confirm.has('send_message')).toBe(true);
@@ -26,10 +26,9 @@ describe('ToolRegistry autonomy metadata', () => {
     expect(confirm.has('web_search')).toBe(false);
   });
 
-  it('registered production send_message tool declares propose_confirm', async () => {
+  it('registered production send_message tool asks first', async () => {
     const { createSendMessageTool } = await import('../../src/tools/send-message.js');
     const tool = createSendMessageTool({ send: async () => {} } as any);
-    expect(tool.autonomy?.tier).toBe('propose_confirm');
-    expect(tool.autonomy?.blastRadius).toBe('external');
+    expect(tool.requiresConfirm).toBe(true);
   });
 });

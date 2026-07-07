@@ -96,7 +96,6 @@ tab (optional): Tab ID.`,
     },
     category: 'web_search',
     // Drives the user's real Chrome, visible in real time — confirm-gating would break browser control.
-    autonomy: { tier: 'act_then_notify', reversible: false, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>, ctx): Promise<string> {
       const action = params.action as string;

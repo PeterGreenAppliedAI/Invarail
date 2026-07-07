@@ -18,7 +18,6 @@ export function createWebsiteQueryTool(config?: WebsiteConfig): LocalClawTool {
       required: ['endpoint'],
     },
     category: 'website',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const baseUrl = config?.baseUrl;

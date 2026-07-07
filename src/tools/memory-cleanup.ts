@@ -15,7 +15,6 @@ export function createMemoryCleanupTool(
     example: 'memory_cleanup[{}]',
     parameters: { type: 'object', properties: {}, required: [] },
     category: 'memory',
-    autonomy: { tier: 'act_then_notify', reversible: false, blastRadius: 'owner' },
 
     async execute(_params: Record<string, unknown>, ctx: import('./types.js').ToolContext): Promise<string> {
       if (!factStore) return 'Memory cleanup unavailable — no fact store configured.';

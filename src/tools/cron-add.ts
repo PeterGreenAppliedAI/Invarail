@@ -24,7 +24,6 @@ export function createCronAddTool(cronService: CronService): LocalClawTool {
       required: ['name', 'schedule', 'category', 'message', 'channel', 'target'],
     },
     category: 'cron',
-    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const name = params.name as string;

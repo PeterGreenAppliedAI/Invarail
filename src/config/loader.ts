@@ -101,5 +101,25 @@ export function loadConfig(filePath?: string): LocalClawConfig {
     throw configInvalid(issues);
   }
 
+  warnOnSecurityFootguns(result.data);
   return result.data;
+}
+
+/**
+ * Loudly flag security config that silently does nothing (or contradicts
+ * itself). These were previously silent no-ops — the doc suite's theme is
+ * "never silently degrade", and that applies to the owner's own config too.
+ */
+function warnOnSecurityFootguns(config: LocalClawConfig): void {
+  for (const [name, ch] of Object.entries(config.channels)) {
+    const sec = ch.security;
+    if (!sec) continue;
+    if ((sec.restrictedTools?.length || sec.restrictedCategories?.length) && !sec.trustedUsers?.length) {
+      console.warn(`[config] channels.${name}: restrictedTools/restrictedCategories are set but trustedUsers is empty — with no trusted list, EVERY user is untrusted and the restrictions apply to everyone (including you). Set trustedUsers if that's not intended.`);
+    }
+    const conflict = (sec.confirmTools ?? []).filter(t => sec.autoApproveTools?.includes(t));
+    if (conflict.length > 0) {
+      console.warn(`[config] channels.${name}: [${conflict.join(', ')}] appear in BOTH confirmTools and autoApproveTools — explicit confirmTools wins; the autoApprove entries are ignored.`);
+    }
+  }
 }

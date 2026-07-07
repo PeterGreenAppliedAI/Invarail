@@ -17,9 +17,9 @@ export function createSendMessageTool(channelRegistry: ChannelRegistry): LocalCl
       required: ['channel', 'channelId', 'text'],
     },
     category: 'message',
-    // Visible to other people — ladder default is propose-and-confirm.
-    // Promote per channel with autoApproveTools once the track record supports it.
-    autonomy: { tier: 'propose_confirm', reversible: false, blastRadius: 'external' },
+    // Irreversible and visible to other people — asks first. Promote per
+    // channel with autoApproveTools once the track record supports it.
+    requiresConfirm: true,
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const channel = params.channel as string;

@@ -28,7 +28,6 @@ export function createGmailSearchTool(): LocalClawTool {
       required: ['query'],
     },
     category: 'owner',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'owner' },
 
     async execute(params): Promise<string> {
       const auth = getAuth();
@@ -90,7 +89,6 @@ export function createGmailReadTool(): LocalClawTool {
       required: ['id'],
     },
     category: 'owner',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'owner' },
 
     async execute(params): Promise<string> {
       const auth = getAuth();

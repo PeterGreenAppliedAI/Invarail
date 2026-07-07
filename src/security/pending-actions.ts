@@ -30,6 +30,17 @@ const STORE_PATH = 'data/pending-actions.json';
  *  or id-targeted ("confirm 3fa2c1b9") for multi-proposal flows (briefing prep). */
 export const CONFIRMATION_PATTERN = /^(?:confirm|yes,?\s*do it|approved?|go ahead|proceed)(?:\s+([a-f0-9]{6,12}))?\s*[.!]?$/i;
 
+/** Near-miss: confirm-verb + a short token that is NOT a valid id ("confirm 2",
+ *  a typo'd id). These must get an error reply, never fall through to chat where
+ *  the model may hallucinate "Done!". Longer phrases ("confirm my flight") still
+ *  route to chat as normal requests. */
+export const CONFIRMATION_NEAR_MISS = /^(?:confirm|approved?|ok)\s+([a-z0-9]{1,12})\s*[.!]?$/i;
+
+/** Bare confirms ("go ahead") only fire on RECENT interactive previews. Without
+ *  this, a casual "go ahead" hours later executes a stale 12h briefing proposal
+ *  as a non-sequitur. Long-TTL proposals always require "confirm <id>". */
+export const BARE_CONFIRM_MAX_AGE_MS = 10 * 60 * 1000;
+
 /** Extract the optional action id from a confirmation message (null = bare confirm). */
 export function parseConfirmationId(message: string): string | null {
   const m = message.trim().match(CONFIRMATION_PATTERN);
@@ -77,12 +88,16 @@ export class PendingActionStore {
     return action;
   }
 
-  /** Most recent unexpired action for a sender (sender-bound; optionally channel-bound).
-   *  Channel binding prevents cross-channel confirmation when generic sender ids
-   *  (e.g. "console-user") could collide across channels. */
-  latestFor(sender: string, channel?: string): PendingAction | null {
+  /** Most recent unexpired action for a sender (sender-bound; optionally channel-bound
+   *  and age-bound). Channel binding prevents cross-channel confirmation when generic
+   *  sender ids (e.g. "console-user") could collide across channels. maxAgeMs limits
+   *  bare confirms to recent interactive previews (see BARE_CONFIRM_MAX_AGE_MS). */
+  latestFor(sender: string, channel?: string, maxAgeMs?: number): PendingAction | null {
+    const cutoff = maxAgeMs !== undefined ? Date.now() - maxAgeMs : null;
     const actions = this.load().filter(a =>
-      a.sender === sender && (channel === undefined || a.channel === channel));
+      a.sender === sender
+      && (channel === undefined || a.channel === channel)
+      && (cutoff === null || new Date(a.createdAt).getTime() >= cutoff));
     return actions.length > 0 ? actions[actions.length - 1] : null;
   }
 
