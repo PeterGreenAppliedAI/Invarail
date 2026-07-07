@@ -179,6 +179,7 @@ Write a useful ${timeOfDay} update:
           channel: hb.delivery.channel,
           target: hb.delivery.target,
           agentId: config.agents.default,
+          timeZone: config.timezone,
         });
         if (prepSection) console.log(`[Briefing] Prep proposals attached (${prepSection.split('\n').length - 3} item(s))`);
       } catch (err) {

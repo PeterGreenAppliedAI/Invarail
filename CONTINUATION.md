@@ -197,6 +197,34 @@ anti-goals) — the control plane unifies session/identity/pending state, not
 routing. All safety invariants hold: stored-params execution, code gates,
 principal-bound confirmation.
 
+**Slice status (July 7):** Pillar 1 (identity) BUILT — `src/identity/
+principal.ts`, `config.principals`, wired at every identity-bearing point,
+live stores migrated (`scripts/migrate-to-principal.ts`), cross-channel
+memory verified unified. Pillar 3 partially built (ledger is principal-bound;
+full one-inbox grammar still item 8 below). Pillar 4 partially built
+(briefings append to the owner's session). One confirm entry point built
+(`src/security/confirm-handler.ts`).
+
+**Slice 3 design — shared conversation per principal (NOT built; dragons
+identified):**
+- Scope: DM/1:1 sessions only. Group/guild sessions must NEVER merge.
+  Per-adapter `isDm` detection is required (Telegram: private chat id ==
+  sender id; Discord: no guildId; WhatsApp: jid without @g.us; console: its
+  own surface — decide whether it joins the DM session or stays separate).
+- Key change: `buildSessionKey` uses `dm:<principal>` for DM contexts,
+  unchanged otherwise. Gate behind `session.sharedDmSessions` (default off).
+- MUST-FIX FIRST: SessionStore.appendTurn has no locking — two channels
+  writing one session concurrently (Telegram reply while console streams)
+  clobbers turns. Add an in-process write queue per sessionKey (all writers
+  are in one Node process).
+- Migration: interleave existing per-channel DM transcripts by timestamp
+  into the shared key; keep originals as .pre-merge backups.
+- Watch: channel-specific artifacts in one transcript (voice formatting,
+  [PAGE:] context) may confuse the model — consider tagging turns with
+  their source channel in metadata (NOT in content).
+- Test live with two real channels before trusting; compaction cache keys
+  follow the session key and need no change.
+
 ## 4. Remaining roadmap (updated after the July 6 second session)
 
 DONE since first writing: autonomy annotations (all 35 factories), `!autonomy`
