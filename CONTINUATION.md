@@ -234,9 +234,11 @@ promotion report command, few-shot text-mode example, ledger transcript writes
 see DECISIONS.md July 6). Console frontend error-UX pass done (error banner,
 typed SSE events, skeletons, modal guard).
 
-1. **Live briefing run** — the prep-proposal loop is unit-tested but has never
-   produced a real briefing. Validate: proposals render with confirm ids,
-   `confirm <id>` creates the one-shot cron, the reminder fires ONCE.
+1. **Live briefing run** — DONE July 7 via `scripts/briefing-live-check.ts`
+   (production path, channel send stubbed to stdout): real calendar, real
+   conflict caught deterministically, confirmable reminder + intake questions
+   proposed into the live ledger. Remaining sliver: observe a confirmed
+   one-shot reminder actually FIRE once through the running app's cron.
 2. **Cross-channel identity mapping** — now evidence-backed: 55/64 facts live
    under the Telegram sender id; Discord sees 8% of the owner's memory
    (scripts/memory-floor-check.ts + graph-diag.ts). Biggest memory lever.
