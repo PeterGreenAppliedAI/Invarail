@@ -44,7 +44,10 @@ export async function runBriefing(deps: BriefingDeps): Promise<void> {
   try {
     const workspacePath = resolveWorkspacePath(config.agents.default, config);
     const executor = toolRegistry.createExecutor();
-    const toolCtx = { agentId: config.agents.default, sessionKey: 'briefing', workspacePath, senderId: hb.delivery.target };
+    // Principal-resolved: memory tools must read the PERSON's bucket — the raw
+    // delivery target's bucket is empty post-migration (this starved the 8am
+    // July 7 briefing of all user context and it proposed nothing)
+    const toolCtx = { agentId: config.agents.default, sessionKey: 'briefing', workspacePath, senderId: resolvePrincipal(hb.delivery.target, config) };
 
     // Gather calendar. Look 2 days ahead (3 in the evening, when you're planning further out) so
     // the near horizon is reliably covered — a 1-day window from a midday briefing clipped events
@@ -89,7 +92,7 @@ export async function runBriefing(deps: BriefingDeps): Promise<void> {
     let staleFacts = '';
     if (factStore && hb.delivery.target) {
       try {
-        const allFacts = factStore.loadFactsJson(hb.delivery.target);
+        const allFacts = factStore.loadFactsJson(resolvePrincipal(hb.delivery.target, config));
         const nowMs = Date.now();
         const TEN_DAYS = 10 * 24 * 60 * 60 * 1000;
         const staleList = allFacts.filter(f => f.category !== 'stable' && (nowMs - new Date(f.createdAt).getTime()) > TEN_DAYS);
