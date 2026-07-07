@@ -680,10 +680,10 @@ export class Orchestrator {
             extractedAt: new Date().toISOString(),
             channel: msg.channel,
             channelId: msg.channelId,
-            senderId: msg.senderId,
+            senderId: principal,
             facts,
           };
-          writeFileSync(this.pendingPath(workspacePath, msg.senderId), JSON.stringify(pending, null, 2));
+          writeFileSync(this.pendingPath(workspacePath, principal), JSON.stringify(pending, null, 2));
           const factList = facts.map((f, i) => `${i + 1}. [${f.category}] ${f.text} (conf: ${f.confidence})`).join('\n');
           replyText = `Session cleared. I noticed some things worth remembering:\n\n${factList}\n\nReply **!save** to keep or **!discard** to skip.`;
         }
@@ -801,7 +801,7 @@ export class Orchestrator {
               agentId: route.agentId,
               sessionKey: route.sessionKey,
               workspacePath,
-              senderId: msg.senderId,
+              senderId: principal,
             });
             await this.channelRegistry.send(
               { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
@@ -848,7 +848,7 @@ export class Orchestrator {
           agentId: route.agentId,
           sessionKey: route.sessionKey,
           workspacePath,
-          senderId: msg.senderId,
+          senderId: principal,
         });
         await this.channelRegistry.send(
           { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
