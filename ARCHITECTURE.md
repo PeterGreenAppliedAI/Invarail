@@ -69,12 +69,24 @@ in the schema lets small-context models stay low. DeepSeek-V4-Flash ignores `num
 
 ## Inference Routing
 
+**Since July 2026: single-gateway topology.** The custom inference gateway
+(`ollama.url` — the name is historical; it's a proxy speaking the Ollama wire
+protocol) fronts EVERYTHING: Ollama-served models and vLLM/DeepSeek behind it.
+The gateway does the cross-protocol translation itself (verified: reasoning
+headroom, Ollama-shaped tool_calls with object arguments). `inference.backends`
+is empty; LocalClaw talks to one endpoint and doesn't know what serves each model.
+
 ```
 client.chat({ model })
-  model matches inference.backends[].models  → OpenAICompatClient → vLLM /v1/chat/completions
-  everything else (phi4, qwen3.6:27b, embedding) → OllamaClient → gateway /api/chat
-embed() always → Ollama gateway
+  model matches inference.backends[].models  → OpenAICompatClient → direct OpenAI-compatible endpoint
+  everything else (i.e. ALL models today)    → OllamaClient → gateway /api/chat → {Ollama | vLLM}
+embed() always → gateway
 ```
+
+The `MultiBackendClient`/`OpenAICompatClient` machinery is retained — re-adding
+a `backends[]` entry points specific models at a direct endpoint again with no
+code changes. Watch item: constrained decoding (`format`) for every model now
+depends on the gateway's format passthrough (GATEWAY-REQUIREMENTS.md item 1).
 
 `OpenAICompatClient` (src/ollama/openai-client.ts) translates Ollama↔OpenAI: maps `options.*` to
 top-level params, JSON-parses tool-call arguments (vLLM returns a string, Ollama an object), stitches
