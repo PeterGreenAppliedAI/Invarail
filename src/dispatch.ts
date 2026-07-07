@@ -593,7 +593,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   } else if (!params.skipPipeline && effectiveCategory === 'multi') {
     result = await runMultiOrchestration(effectiveParams, classification, specialistConfig, history, statePreamble);
   } else {
-    result = await runSpecialist(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming);
+    result = await runSpecialist(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming, browserControlMode);
   }
 
   result.category = effectiveCategory;
@@ -835,6 +835,9 @@ async function runSpecialist(
   history?: OllamaMessage[],
   statePreamble?: string,
   userPriming?: string,
+  /** Chrome extension bridge connected — browser-automation prompt + guardrail tweaks.
+   *  Computed by dispatchMessage from the remote bridge, NOT from a model name. */
+  browserControlMode = false,
 ): Promise<DispatchResult> {
   const { client, registry, message, agentId = 'main', sessionKey = 'default', config } = params;
   const { category } = classification;
@@ -901,7 +904,10 @@ async function runSpecialist(
   let systemPrompt = specialist.systemPrompt;
 
   // Browser control prompt — replaces specialist prompt when extension is connected
-  if (params.sourceContext?.channel === 'console' && specialist.model === 'qwen3.6:35b' && !specialist.pipeline) {
+  // Gated on the bridge flag — this was `specialist.model === 'qwen3.6:35b'`, a
+  // model literal that silently killed browser-control mode when the model fleet
+  // changed (exactly why model literals in logic are banned)
+  if (browserControlMode && !specialist.pipeline) {
     systemPrompt = `You are a browser automation agent controlling the user's real Chrome browser. They can see every action you take in real time.
 
 ACTIONS AVAILABLE:
@@ -968,7 +974,7 @@ RULES:
       maxTokens: specialist.maxTokens,
       // Browser control: skip growing-text drift detection (model needs room for long answers)
       // Repeat detection still active via action dedup in engine
-      skipDriftDetection: params.sourceContext?.channel === 'console' && specialist.model === 'qwen3.6:35b',
+      skipDriftDetection: browserControlMode,
       topK: specialist.topK,
       topP: specialist.topP,
       repeatPenalty: specialist.repeatPenalty,
