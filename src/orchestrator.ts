@@ -13,7 +13,8 @@ import { CronService } from './cron/service.js';
 import { TaskStore } from './tasks/store.js';
 import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
-import { pendingActions, CONFIRMATION_PATTERN, CONFIRMATION_NEAR_MISS, BARE_CONFIRM_MAX_AGE_MS, parseConfirmationId } from './security/pending-actions.js';
+import { pendingActions } from './security/pending-actions.js';
+import { handleConfirmation } from './security/confirm-handler.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
 import { resolvePrincipal } from './identity/principal.js';
 import { resolveRoute } from './agents/resolve-route.js';
@@ -1215,68 +1216,23 @@ export class Orchestrator {
       const mimeMap: Record<string, string> = { opus: 'audio/ogg', wav: 'audio/wav', mp3: 'audio/mpeg' };
       const audioMime = mimeMap[format] ?? 'audio/ogg';
 
-      // Confirmation follow-up: execute the STORED pending action (exact previewed
-      // params — never a model-regenerated call). Sender-bound, single-use, expiring.
-      // "confirm <id>" targets a specific proposal (briefings propose several);
-      // bare "confirm" takes the latest for this sender+channel.
-      // A confirmation with no pending entry falls through as a normal message.
-      if (CONFIRMATION_PATTERN.test(trimmed) || CONFIRMATION_NEAR_MISS.test(trimmed)) {
-        const isStrict = CONFIRMATION_PATTERN.test(trimmed);
-        const targetId = isStrict ? parseConfirmationId(trimmed) : null;
-        // Bare confirms only fire on recent interactive previews — a stale 12h
-        // briefing proposal must be addressed by id, never by a casual "go ahead"
-        const pending = targetId
-          ? pendingActions.findById(targetId, principal)
-          : isStrict
-            ? pendingActions.latestFor(principal, msg.channel, BARE_CONFIRM_MAX_AGE_MS)
-            : null;
-        if (!pending && (targetId || !isStrict)) {
-          // Explicit id that doesn't exist, or a near-miss ("confirm 2") — error
-          // with the open list instead of falling through to chat
-          const open = pendingActions.listFor(principal);
-          const openList = open.length > 0
-            ? `\nOpen proposals:\n${open.map(p => `- \`confirm ${p.id}\` → ${p.tool}`).join('\n')}`
-            : '\nNo open proposals.';
-          await this.channelRegistry.send(
-            { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
-            { text: `That doesn't match a pending action — it may have expired or already run.${openList}` },
-          );
-          return;
-        }
-        if (pending) {
-          pendingActions.consume(pending.id);
-          let replyText: string;
-          try {
-            const executor = this.toolRegistry.createScopedExecutor(new Set([pending.tool]));
-            const wsPath = resolveWorkspacePath(pending.agentId, this.config);
-            const observation = await executor(pending.tool, pending.params, {
-              agentId: pending.agentId,
-              sessionKey: pending.sessionKey,
-              workspacePath: wsPath,
-              senderId: msg.senderId,
-              channel: msg.channel,
-            });
-            logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120) });
-            replyText = `✅ Ran **${pending.tool}**: ${observation}`;
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: errMsg.slice(0, 120) });
-            replyText = `❌ **${pending.tool}** failed: ${errMsg}`;
-          }
-          // Record the exchange in the session transcript so the conversation
-          // history reflects what actually ran
-          try {
-            this.sessionStore.appendTurn(pending.agentId, pending.sessionKey, { role: 'user', content: trimmed, timestamp: new Date().toISOString() });
-            this.sessionStore.appendTurn(pending.agentId, pending.sessionKey, { role: 'assistant', content: replyText, timestamp: new Date().toISOString() });
-          } catch (err) {
-            console.warn('[Orchestrator] Failed to record confirm exchange in transcript:', err instanceof Error ? err.message : err);
-          }
-          await this.channelRegistry.send(
-            { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
-            { text: replyText },
-          );
-          return;
-        }
+      // Confirmation follow-up — ONE entry point shared with the console path
+      // (src/security/confirm-handler.ts). Executes stored params, principal-
+      // bound, audit-hardened semantics.
+      const confirmOutcome = await handleConfirmation({
+        message: trimmed,
+        senderId: msg.senderId,
+        channel: msg.channel,
+        config: this.config,
+        toolRegistry: this.toolRegistry,
+        sessionStore: this.sessionStore,
+      });
+      if (confirmOutcome.handled) {
+        await this.channelRegistry.send(
+          { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
+          { text: confirmOutcome.reply! },
+        );
+        return;
       }
 
       // Browser extension injects [PAGE:] context — route to chat, content is already in the message
