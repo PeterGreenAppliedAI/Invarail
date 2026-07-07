@@ -58,6 +58,15 @@ export const SpecialistConfigSchema = z.object({
   toolStyle: z.enum(['native', 'text']).default('native'),
 });
 
+/** Identity: one principal (person) with per-channel sender aliases.
+ *  Memory, the pending-action ledger, and trust checks key on the principal —
+ *  fixes cross-channel fragmentation (measured: 55/64 facts under one channel's
+ *  sender id). Session keys stay channel-scoped (conversation unification is a
+ *  separate control-plane slice). */
+export const PrincipalSchema = z.object({
+  aliases: z.array(z.string()).default([]),
+});
+
 export const ChannelAllowFromSchema = z.object({
   guilds: z.array(z.string()).optional(),
   channels: z.array(z.string()).optional(),
@@ -403,6 +412,8 @@ export const FactInputSchema = z.object({
 export const LocalClawConfigSchema = z.object({
   /** Owner user ID — the single person who can access owner-only tools (gmail, calendar, etc.). Checked in code, not by the model. */
   ownerId: z.string().optional(),
+  /** Principals: person → channel sender aliases. See PrincipalSchema. */
+  principals: z.record(z.string(), PrincipalSchema).default({}),
   timezone: z.string().default('America/New_York'),
   ollama: OllamaConfigSchema.default({}),
   inference: InferenceConfigSchema.default({}),
