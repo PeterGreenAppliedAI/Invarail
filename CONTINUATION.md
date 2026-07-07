@@ -163,6 +163,40 @@ New test files: `test/pipeline/extractor.test.ts`,
 plus additions in `test/tool-loop/parser.test.ts`,
 `test/integration/react-loop.test.ts`, `test/pipeline/verification.test.ts`.
 
+## 4a. THE architectural item: Session Control Plane (owner-named, design below)
+
+Peter's closing insight of the July 6 session: every wart the confusion audit
+found is one missing layer, not many bugs. Build a session control plane that
+owns four things (evolution over SessionStore/ledger/resolveRoute — the organs
+exist, this is the membrane):
+
+1. **Identity**: a Principal ("peter") with channel aliases (Discord id,
+   Telegram id, WhatsApp jid, console-user). All memory, ledger binding, and
+   trust checks key on the principal. Fixes the measured 55/64 memory
+   fragmentation; makes sender-binding mean PERSON not channel-account.
+   Config: a `principals` block mapping alias → principal.
+2. **Conversation**: one logical session per principal that channels attach
+   to (per-channel view, shared transcript). A Telegram reply continues the
+   Discord conversation.
+3. **Pending interactions**: ONE inbox for everything awaiting the owner —
+   tool previews, prep proposals, memory reviews, unanswered agent questions.
+   Single grammar (`ok N` / `no N` per the deferred blueprint in item 8
+   below). The pending-action ledger and heartbeat review file both fold in.
+4. **Proactive injection**: agent-initiated turns (briefing, heartbeat,
+   alerts) enter the conversation as first-class turns BY DESIGN.
+
+Seams to dissolve when building it (tonight's manual bridges, all marked in
+code): briefing appendTurn patch (briefing-service.ts), ledger sender/channel
+binding heuristics (pending-actions.ts), heartbeat review file
+(heartbeatPendingPath), the duplicated confirm handling in orchestrator.ts +
+console/handlers/chat.ts (the control plane should expose ONE confirm entry
+point both paths call).
+
+Constraints: keep the two dispatch paths' ROUTING overrides separate (see
+anti-goals) — the control plane unifies session/identity/pending state, not
+routing. All safety invariants hold: stored-params execution, code gates,
+principal-bound confirmation.
+
 ## 4. Remaining roadmap (updated after the July 6 second session)
 
 DONE since first writing: autonomy annotations (all 35 factories), `!autonomy`
