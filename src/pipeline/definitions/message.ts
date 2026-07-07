@@ -56,6 +56,34 @@ export const messagePipeline: PipelineDefinition = {
       },
     },
     {
+      name: 'validate_target',
+      type: 'code',
+      execute: (ctx) => {
+        // Fabricated-target guard: extraction has invented ids before (a
+        // Discord-shaped snowflake as a WhatsApp target, July 7 — only the
+        // confirm gate stopped it). A target the extractor produced must be
+        // FORMAT-plausible for its channel, or plausibly sourced (== the
+        // conversation's own channelId). Otherwise abort with a question
+        // instead of proposing a send to nowhere/someone-unknown.
+        const channel = String(ctx.params.channel ?? '');
+        const channelId = String(ctx.params.channelId ?? '');
+        const fromSource = channelId === ctx.sourceContext?.channelId;
+
+        const plausible: Record<string, RegExp> = {
+          whatsapp: /@(s\.whatsapp\.net|g\.us)$|^\d{7,15}$/,   // jid or bare phone number
+          telegram: /^-?\d{6,14}$/,                             // chat id
+          discord: /^\d{17,20}$/,                               // snowflake
+          slack: /^[CDG][A-Z0-9]{6,12}$/,                       // channel id
+        };
+        const re = plausible[channel];
+        if (channelId && re && !re.test(channelId) && !fromSource) {
+          ctx.answer = `I couldn't determine a valid ${channel} destination — "${channelId}" doesn't look like a real ${channel} target. Who should this go to?`;
+          ctx.abort = true;
+        }
+        return ctx.params;
+      },
+    },
+    {
       name: 'send',
       type: 'tool',
       tool: 'send_message',
@@ -70,9 +98,15 @@ export const messagePipeline: PipelineDefinition = {
       type: 'code',
       execute: (ctx) => {
         const result = ctx.stageResults.send as string;
-        ctx.answer = result.startsWith('Message sent')
-          ? `Done — message sent to ${ctx.params.channel}:${ctx.params.channelId}.`
-          : `Failed to send message: ${result}`;
+        if (result.startsWith('Message sent')) {
+          ctx.answer = `Done — message sent to ${ctx.params.channel}:${ctx.params.channelId}.`;
+        } else if (result.includes('Confirmation required')) {
+          // Confirm-gate preview is NOT a failure — present it plainly, with the
+          // target spelled out in words a skim-reader catches
+          ctx.answer = `⏸️ Not sent yet. I'm ready to send this ${ctx.params.channel} message to \`${ctx.params.channelId}\`:\n> ${String(ctx.params.text).slice(0, 200)}\n\nReply "confirm" to send it, or ignore to cancel (expires in 10 minutes).`;
+        } else {
+          ctx.answer = `Failed to send message: ${result}`;
+        }
         return ctx.answer;
       },
     },

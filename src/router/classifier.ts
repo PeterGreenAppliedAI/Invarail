@@ -67,6 +67,10 @@ export function capForClassification(text: string, max = 600): string {
 const PRE_MODEL_OVERRIDES: Array<{ pattern: RegExp; category: string }> = [
   // Speculative/conversational language → chat (prevents "I wonder if you could create" → multi)
   { pattern: /^(I wonder|I'm wondering|what if|do you think|what do you think|I feel like|I was thinking|could you theoretically)\b/i, category: 'chat' },
+  // Meta-questions about the agent's own past actions → chat ("did you actually
+  // send a message?" classified as `message` and proposed ANOTHER send, July 7).
+  // Past/perfective second-person only — polite commands ("can you send...") untouched.
+  { pattern: /^(did|what did|when did|why did|have|has) you\b/i, category: 'chat' },
 
   // NOTE: URL→website is handled in code (see classifyMessage) — a blanket
   // "any URL anywhere" regex hijacked messages like "research X, start from <url>".
@@ -125,8 +129,16 @@ function isGreeting(message: string): boolean {
   return GREETING_PATTERNS.some(p => p.test(message));
 }
 
-/** Categories where multi-turn sticky makes sense (conversation-oriented) */
-const STICKY_CATEGORIES = new Set(['chat', 'memory']);
+/** Categories where multi-turn sticky makes sense (conversation-oriented).
+ *  'briefing' — a proactive briefing just asked the user a question; their
+ *  reply is an ANSWER (intake context), not a fresh command. Without this, a
+ *  reply like "I just need to get him a link" classified as `message` and the
+ *  pipeline tried to SEND the user's own words to a fabricated target (caught
+ *  by the confirm gate, July 7). Imperatives still break through sticky. */
+const STICKY_CATEGORIES = new Set(['chat', 'memory', 'briefing']);
+
+/** Sticky target per category — briefing replies land in chat (there is no 'briefing' specialist) */
+const STICKY_TARGET: Record<string, string> = { briefing: 'chat' };
 
 function isLikelyFollowUp(message: string, previousCategory?: string): boolean {
   const trimmed = message.trim();
@@ -142,6 +154,12 @@ function isLikelyFollowUp(message: string, previousCategory?: string): boolean {
   if (isImperativeTask) return false;
   // Long conversational messages without imperative task — keep sticky
   if (trimmed.length > 200) return true;
+  // Briefing replies: the agent JUST asked a question — presume the message is
+  // the answer. Only imperatives (above) or keyword hits (checked by the
+  // caller) break out; the fuzzy new-topic signals below are tuned for chat
+  // drift and misfire on answers ("I just need to get him a link" matched
+  // get...a → routed to message → tried to SEND the user's own words).
+  if (previousCategory === 'briefing') return true;
   // Strong new-topic signals override stickiness
   if (hasStrongNewTopicSignal(trimmed)) return false;
   // Simple greetings are never follow-ups
@@ -197,17 +215,19 @@ export async function classifyMessage(
     }
   }
 
-  // Sticky category: follow-ups stay on the previous specialist
+  // Sticky category: follow-ups stay on the previous specialist (or the sticky
+  // TARGET — briefing replies land in chat, since 'briefing' is not a specialist).
   // Break out if: strong new-topic signal, long message, OR keywords point to a different category
-  if (previousCategory && validCategories.has(previousCategory)) {
+  const stickyTarget = previousCategory ? (STICKY_TARGET[previousCategory] ?? previousCategory) : undefined;
+  if (previousCategory && stickyTarget && validCategories.has(stickyTarget)) {
     if (isLikelyFollowUp(matchText, previousCategory)) {
       // Check if keywords point to a DIFFERENT category — if so, don't stick
       const keywordHit = applyKeywordHeuristics(matchText, validCategories);
-      if (keywordHit && keywordHit !== previousCategory) {
+      if (keywordHit && keywordHit !== stickyTarget) {
         console.log(`[Router] Sticky override: "${message.slice(0, 60)}..." keyword="${keywordHit}" beats sticky="${previousCategory}"`);
       } else {
-        console.log(`[Router] Sticky: "${message.slice(0, 60)}..." → ${previousCategory} (follow-up)`);
-        return { category: previousCategory, confidence: 'sticky' };
+        console.log(`[Router] Sticky: "${message.slice(0, 60)}..." → ${stickyTarget} (follow-up to ${previousCategory})`);
+        return { category: stickyTarget, confidence: 'sticky' };
       }
     }
   }

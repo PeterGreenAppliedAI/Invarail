@@ -73,3 +73,7 @@
 {"message": "generate a PDF report on the EV market", "expected": "research", "layer": "model", "note": "pdf REPORT \u2192 research wins (ordered before the generic pdf\u2192multi override) [now a capability decision for the model \u2014 overrides removed]"}
 {"message":"run ls -la in the workspace","expected":"exec","layer":"keyword","note":"bare workspace keyword must not hijack exec requests to config"}
 {"message":"what's the current price of bitcoin","expected":"web_search","layer":"keyword","note":"live-value lookup falls back to search, not chat default"}
+{"message":"I dont need to prepare anything for that. David is going on the podcast, I just need to get him a Riverside link and then record","expected":"chat","layer":"sticky","context":{"previousCategory":"briefing"},"note":"answer to a briefing prep question must land in chat, not message (July 7 misroute — confirm gate caught an outbound send of the users own words)"}
+{"message":"send a message to the family channel that dinner is at 7","expected":"message","layer":"keyword","context":{"previousCategory":"briefing"},"note":"imperative send breaks through briefing stickiness"}
+{"message":"did you actually send a message?","expected":"chat","layer":"override","note":"meta-question about the agents own action must never become an action (July 7: proposed a SECOND send)"}
+{"message":"have you finished the research report","expected":"chat","layer":"override","note":"perfective second-person → meta-question → chat"}

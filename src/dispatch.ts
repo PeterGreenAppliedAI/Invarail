@@ -1161,8 +1161,11 @@ async function runPipelineDispatch(
   // Resolve anaphoric references: if the message is short and the session has a topic,
   // prepend the topic so the pipeline knows what "it", "one", "that" refers to.
   // If topic is empty but there's chat history, summarize the conversation for context.
+  // NEVER for the message pipeline: a send must come from the user's explicit words —
+  // the rewrite once rebuilt send params (target id + text) from conversation history,
+  // turning a meta-question ("did you actually send it?") into a fresh send proposal.
   let pipelineMessage = message;
-  if (isolateContext && message.length < 150) {
+  if (isolateContext && specialist.pipeline !== 'message' && message.length < 150) {
     const sessionState = params.sessionStore?.loadState(agentId, sessionKey ?? 'default');
     if (sessionState?.currentTopic) {
       pipelineMessage = `[Context: ${sessionState.currentTopic}]\n${message}`;

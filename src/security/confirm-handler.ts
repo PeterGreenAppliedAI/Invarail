@@ -87,8 +87,14 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
       senderId: principal,
       channel: ctx.channel,
     });
-    logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120) });
-    reply = `✅ Ran **${pending.tool}**: ${observation}`;
+    // Tools report failures as text ("Error: ...") rather than throwing —
+    // a ✅ on an error observation told the user a send succeeded when the
+    // adapter had refused it (July 7)
+    const toolReportedFailure = /^(Error|Failed)/i.test(observation.trim());
+    logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: toolReportedFailure ? 'failure' : 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120) });
+    reply = toolReportedFailure
+      ? `❌ Confirmed, but **${pending.tool}** did not succeed: ${observation}`
+      : `✅ Ran **${pending.tool}**: ${observation}`;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: errMsg.slice(0, 120) });

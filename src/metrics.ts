@@ -20,6 +20,9 @@ function ensureDir(): void {
 }
 
 export function logMetric(event: MetricEvent): void {
+  // Unit tests exercising metric-emitting code paths must not pollute the
+  // real metrics file (found: test events in production autonomy stats)
+  if (process.env.VITEST) return;
   ensureDir();
   try {
     appendFileSync(METRICS_PATH, JSON.stringify(event) + '\n');
