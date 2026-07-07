@@ -281,3 +281,46 @@ describe('enrichCalendarOutput', () => {
     expect(enriched).toBe(raw);
   });
 });
+
+describe('findScheduleConflicts (interval intersection)', () => {
+  const slot = (title: string, date: string, start: string, end: string) => ({ title, date, start, end });
+
+  it('catches partial overlaps — the 11:00 vs 11:15 case the equality check missed', async () => {
+    const { findScheduleConflicts } = await import('../urgency.js');
+    const conflicts = findScheduleConflicts([
+      slot('Standup with Val', 'Wed, Jul 8', '11:00 AM', '12:00 PM'),
+      slot('30 min with David', 'Wed, Jul 8', '11:15 AM', '11:45 AM'),
+    ]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain('Standup with Val');
+    expect(conflicts[0]).toContain('30 min with David');
+  });
+
+  it('back-to-back events do NOT conflict', async () => {
+    const { findScheduleConflicts } = await import('../urgency.js');
+    expect(findScheduleConflicts([
+      slot('A', 'Wed, Jul 8', '10:00 AM', '11:00 AM'),
+      slot('B', 'Wed, Jul 8', '11:00 AM', '12:00 PM'),
+    ])).toHaveLength(0);
+  });
+
+  it('same times on different days do not conflict; PM/AM handled', async () => {
+    const { findScheduleConflicts } = await import('../urgency.js');
+    expect(findScheduleConflicts([
+      slot('A', 'Wed, Jul 8', '11:00 AM', '12:00 PM'),
+      slot('B', 'Thu, Jul 9', '11:00 AM', '12:00 PM'),
+    ])).toHaveLength(0);
+    expect(findScheduleConflicts([
+      slot('Noon', 'Wed, Jul 8', '12:00 PM', '1:00 PM'),
+      slot('Midnight-ish', 'Wed, Jul 8', '12:00 AM', '1:00 AM'),
+    ])).toHaveLength(0);
+  });
+
+  it('unparseable times are skipped, not crashed on', async () => {
+    const { findScheduleConflicts } = await import('../urgency.js');
+    expect(findScheduleConflicts([
+      slot('A', 'Wed, Jul 8', 'all day', ''),
+      slot('B', 'Wed, Jul 8', '11:00 AM', '12:00 PM'),
+    ])).toHaveLength(0);
+  });
+});

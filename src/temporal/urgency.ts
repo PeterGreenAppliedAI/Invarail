@@ -185,3 +185,43 @@ export function enrichCalendarOutput(rawText: string, now: Date): string {
     },
   );
 }
+
+export interface CalendarSlot {
+  title: string;
+  date: string;   // e.g. "Wed, Jul 8"
+  start: string;  // e.g. "11:00 AM"
+  end: string;    // e.g. "12:00 PM"
+}
+
+function toMinutes(time: string): number | null {
+  const m = time.match(/(\d{1,2}):(\d{2})\s*([AP]M)/i);
+  if (!m) return null;
+  let hour = parseInt(m[1]) % 12;
+  if (m[3].toUpperCase() === 'PM') hour += 12;
+  return hour * 60 + parseInt(m[2]);
+}
+
+/**
+ * Deterministic schedule-conflict detection: two same-day events conflict when
+ * their time INTERVALS intersect. (The original check compared start times for
+ * equality — an 11:00-12:00 meeting vs an 11:15-11:45 one was invisible to
+ * code, and the model had to freelance the catch. Conflicts are the briefing's
+ * highest-stakes output; they must not depend on which model is in the slot.)
+ */
+export function findScheduleConflicts(events: CalendarSlot[]): string[] {
+  const conflicts: string[] = [];
+  for (let i = 0; i < events.length; i++) {
+    for (let j = i + 1; j < events.length; j++) {
+      if (events[i].date !== events[j].date) continue;
+      const aStart = toMinutes(events[i].start);
+      const aEnd = toMinutes(events[i].end);
+      const bStart = toMinutes(events[j].start);
+      const bEnd = toMinutes(events[j].end);
+      if (aStart === null || aEnd === null || bStart === null || bEnd === null) continue;
+      if (aStart < bEnd && bStart < aEnd) {
+        conflicts.push(`CONFLICT: "${events[i].title}" (${events[i].start}–${events[i].end}) and "${events[j].title}" (${events[j].start}–${events[j].end}) overlap on ${events[i].date}`);
+      }
+    }
+  }
+  return conflicts;
+}

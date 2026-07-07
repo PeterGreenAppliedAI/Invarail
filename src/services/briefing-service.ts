@@ -12,7 +12,7 @@ import type { FactStore } from '../memory/fact-store.js';
 import type { TaskStore } from '../tasks/store.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { resolveRoute } from '../agents/resolve-route.js';
-import { enrichTasks, filterForModel, formatTaskBoard, enrichCalendarOutput } from '../temporal/urgency.js';
+import { enrichTasks, filterForModel, formatTaskBoard, enrichCalendarOutput, findScheduleConflicts } from '../temporal/urgency.js';
 import type { SessionStore } from '../sessions/store.js';
 
 export interface BriefingDeps {
@@ -63,14 +63,10 @@ export async function runBriefing(deps: BriefingDeps): Promise<void> {
         calEvents.push({ title: titleMatch[1].trim(), date: timeMatch[1], start: timeMatch[2], end: timeMatch[3] });
       }
     }
-    const conflicts: string[] = [];
-    for (let i = 0; i < calEvents.length; i++) {
-      for (let j = i + 1; j < calEvents.length; j++) {
-        if (calEvents[i].date === calEvents[j].date && calEvents[i].start === calEvents[j].start) {
-          conflicts.push(`CONFLICT: "${calEvents[i].title}" and "${calEvents[j].title}" overlap at ${calEvents[i].start} on ${calEvents[i].date}`);
-        }
-      }
-    }
+    // Interval intersection, not start-time equality — an 11:00-12:00 vs
+    // 11:15-11:45 overlap must be caught by CODE (the AUTHORITATIVE layer),
+    // not left to whichever model is in the briefing slot
+    const conflicts = findScheduleConflicts(calEvents);
     if (conflicts.length > 0) {
       calendar += `\n\n**Schedule Conflicts Detected:**\n${conflicts.join('\n')}`;
     }
