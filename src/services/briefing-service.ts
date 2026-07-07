@@ -10,7 +10,9 @@ import type { ChannelRegistry } from '../channels/registry.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { TaskStore } from '../tasks/store.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
+import { resolveRoute } from '../agents/resolve-route.js';
 import { enrichTasks, filterForModel, formatTaskBoard, enrichCalendarOutput } from '../temporal/urgency.js';
+import type { SessionStore } from '../sessions/store.js';
 
 export interface BriefingDeps {
   config: LocalClawConfig;
@@ -19,6 +21,10 @@ export interface BriefingDeps {
   channelRegistry: ChannelRegistry;
   factStore?: FactStore;
   taskStore?: TaskStore;
+  /** When set, the delivered briefing is appended to the owner's session
+   *  transcript on the delivery channel — so a free-text reply to a prep
+   *  question lands in a conversation that actually contains the question. */
+  sessionStore?: SessionStore;
 }
 
 export async function runBriefing(deps: BriefingDeps): Promise<void> {
@@ -180,10 +186,31 @@ Write a useful ${timeOfDay} update:
     }
 
     if (insight || prepSection) {
+      const briefingText = `${insight}${prepSection}`;
       await channelRegistry.send(
         { channel: hb.delivery.channel, channelId: hb.delivery.target },
-        { text: `${insight}${prepSection}` },
+        { text: briefingText },
       );
+
+      // Land the briefing in the owner's conversation on the delivery channel.
+      // Without this, "reply with details" is structurally broken: the reply
+      // dispatches into a session that never saw the question.
+      if (deps.sessionStore) {
+        try {
+          const route = resolveRoute(
+            { channel: hb.delivery.channel, senderId: hb.delivery.target, channelId: hb.delivery.target },
+            config,
+          );
+          deps.sessionStore.appendTurn(route.agentId, route.sessionKey, {
+            role: 'assistant',
+            content: briefingText,
+            timestamp: new Date().toISOString(),
+            category: 'briefing',
+          });
+        } catch (err) {
+          console.warn('[Briefing] Failed to append briefing to session transcript:', err instanceof Error ? err.message : err);
+        }
+      }
     }
   } catch (err) {
     console.warn('[Briefing] Failed:', err instanceof Error ? err.message : err);

@@ -98,7 +98,6 @@ Returns the project directory and a list of files created.`,
     },
     category: 'code',
     // Builds are cwd-scoped with local git commits; remote push is separately config-gated.
-    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const prompt = (params.prompt as string)?.trim();

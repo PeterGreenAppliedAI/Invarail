@@ -4,6 +4,19 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Confusion Audit of the Autonomy System (July 6 2026)
+
+### Fresh-eyes audit found 4 real bugs the builder couldn't see
+**Context:** Peter: "I don't think we've created the best autonomous workflow, it feels confusing — even to me." A 4-agent audit (owner-UX / config-surface / mental-model lenses + synthesis) reviewed the just-built autonomy system with no stake in defending it. Verdict: the safety was sound, the SURFACE had three vocabularies for one concept and several interaction bugs.
+**Bugs found and fixed same night:**
+1. **"Reply with details" was structurally broken** — briefings were channel-sent but never appended to any session transcript, so a reply to a prep question dispatched into a session that never saw the question. Fixed: the delivered briefing is appended to the owner's session on the delivery channel (`category: 'briefing'` turn).
+2. **Stale-proposal misfire** — loose confirm synonyms ("go ahead") matched the LATEST pending action, and briefing proposals live 12h; a casual "go ahead" hours later fired a morning proposal as a non-sequitur. Fixed: bare confirms only match entries `< BARE_CONFIRM_MAX_AGE_MS` (10 min) old on the same channel; long-TTL proposals require `confirm <id>`.
+3. **"confirm 2" fell through to chat** — the id regex wants 6-12 hex chars, so a natural short reply matched nothing and routed to the model, which could hallucinate "Done!". Fixed: `CONFIRMATION_NEAR_MISS` catches confirm-verb + short token and replies with an error + the open-proposal list. ("confirm my flight booking" still routes to chat.)
+4. **`!heartbeat no 2` renumbering drift** — partial removal rewrote the pending file (positions shift) while the owner's phone showed the old numbers; the next `no N` could delete the wrong fact. Fixed: the reply now prints the renumbered remaining list.
+**Simplifications applied:** `ToolAutonomy {tier, reversible, blastRadius}` collapsed to ONE bit — `requiresConfirm?: boolean` — after the audit verified `reversible`/`blastRadius` were never read by enforcement and silent vs act_then_notify were behaviorally identical (tier labels live on in metric events, where they mean something). The dead `DispatchParams.confirmed` bypass flag (zero setters, shaped exactly like the hole the ledger closed) deleted. Config footguns now warn at load: restrictedTools/Categories with no trustedUsers (= applies to EVERYONE), tool in both confirmTools and autoApproveTools (autoApprove ignored).
+**Deliberately NOT done (owner's call):** the full one-inbox unification (`ok N` / `no N` replacing hex ids + `!heartbeat yes/no` + free-text) — blueprint preserved in CONTINUATION.md for a future session.
+**Lesson:** the builder of a multi-surface UX cannot audit its coherence — every concept feels earned to the person who added it. Fresh-eyes agents found in one pass what two nights of building never noticed, including one structurally-broken headline feature. Audit user-facing surfaces with reviewers who didn't build them, BEFORE shipping to the owner.
+
 ## Calendar Prep Proposals — First Proactive Autonomy Rung (July 6 2026)
 
 ### The briefing now proposes executable actions, not just insight text

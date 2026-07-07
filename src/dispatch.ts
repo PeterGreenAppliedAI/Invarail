@@ -135,8 +135,6 @@ export interface DispatchParams {
   executionMetrics?: import('./metrics/execution-store.js').ExecutionMetricsStore;
   /** Skip pipeline — force ReAct tool-loop (used by plan sub-dispatch to prevent recursion) */
   skipPipeline?: boolean;
-  /** Bypass confirmation gate — set when user confirmed a pending action */
-  confirmed?: boolean;
   /** Internal: prevent infinite re-route loops */
   _reRouted?: boolean;
 }
@@ -854,7 +852,7 @@ async function runSpecialist(
   // executes the STORED params, never a model-regenerated call.
   const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
   const confirmSet = resolveConfirmSet(registry, channelSecurity, { cronMode: params.cronMode, category });
-  const executor: import('./tools/types.js').ToolExecutor = !params.confirmed && confirmSet.size > 0
+  const executor: import('./tools/types.js').ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
           const preview = JSON.stringify(toolParams, null, 2);
@@ -1097,7 +1095,7 @@ async function runPipelineDispatch(
   // bypassed confirmTools entirely.
   const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
   const confirmSet = resolveConfirmSet(registry, channelSecurity, { cronMode: params.cronMode, category });
-  const gatedExecutor: ToolExecutor = !params.confirmed && confirmSet.size > 0
+  const gatedExecutor: ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
           const preview = JSON.stringify(toolParams, null, 2);

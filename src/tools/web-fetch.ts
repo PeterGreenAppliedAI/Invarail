@@ -26,7 +26,6 @@ export function createWebFetchTool(config?: WebFetchConfig): LocalClawTool {
       required: ['url'],
     },
     category: 'web_search',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const url = params.url as string;

@@ -33,7 +33,6 @@ export function createKnowledgeImportTool(
       required: ['path'],
     },
     category: 'memory',
-    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'owner' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const filePath = params.path as string;

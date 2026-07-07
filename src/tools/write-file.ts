@@ -31,7 +31,6 @@ export function createWriteFileTool(): LocalClawTool {
       required: ['path', 'content'],
     },
     category: 'exec',
-    autonomy: { tier: 'act_then_notify', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const path = params.path as string;

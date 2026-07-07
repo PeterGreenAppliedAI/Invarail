@@ -36,7 +36,6 @@ export function createMemorySearchTool(
       required: ['query'],
     },
     category: 'memory',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: import('./types.js').ToolContext): Promise<string> {
       const query = params.query as string;

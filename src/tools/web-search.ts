@@ -26,7 +26,6 @@ export function createWebSearchTool(config?: WebSearchConfig): LocalClawTool {
       required: ['query'],
     },
     category: 'web_search',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const query = params.query as string;

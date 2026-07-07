@@ -16,7 +16,6 @@ export function createMemoryGetTool(workspacePath: string): LocalClawTool {
       required: ['file'],
     },
     category: 'memory',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const file = params.file as string;

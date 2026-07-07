@@ -416,7 +416,6 @@ Returns a [FILE:path] token for the generated diagram PNG.`,
     },
     example: 'diagram_generate[{"spec": "{\\"title\\": \\"My System\\", \\"theme\\": \\"cyberpunk\\", \\"sections\\": [{\\"id\\": \\"core\\", \\"label\\": \\"Core\\", \\"items\\": [\\"Router\\", \\"Specialist\\"], \\"position\\": \\"top\\"}], \\"connections\\": []}"}]',
     category: 'media',
-    autonomy: { tier: 'silent', reversible: true, blastRadius: 'self' },
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       // 1. Parse spec
