@@ -48,3 +48,22 @@ export function isOwner(senderId: string | undefined, config: LocalClawConfig): 
   if (senderId === config.ownerId) return true;
   return resolvePrincipal(senderId, config) === resolvePrincipal(config.ownerId, config);
 }
+
+/**
+ * Self-identity line for model prompts — ENTIRELY config-driven (this is an
+ * open-source app; no person may ever be hardcoded in a prompt). Without it,
+ * models treat the user's own name in calendar/email metadata as a third
+ * party ("What is the context for the meeting regarding <the user himself>?").
+ * Returns null when the principal has no identity metadata configured.
+ */
+export function selfIdentityLine(senderId: string | undefined, config: LocalClawConfig): string | null {
+  const principal = resolvePrincipal(senderId, config);
+  if (!principal) return null;
+  const def = config.principals?.[principal];
+  if (!def?.displayName && !def?.emails?.length) return null;
+  const parts: string[] = [];
+  if (def.displayName) parts.push(`The user you are assisting is ${def.displayName}.`);
+  if (def.emails.length > 0) parts.push(`These are THEIR OWN addresses — never treat them as other people: ${def.emails.join(', ')}.`);
+  parts.push('Calendar entries "booked by" or emails "from" these identities are the user\'s own actions.');
+  return parts.join(' ');
+}

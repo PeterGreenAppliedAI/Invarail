@@ -6,7 +6,7 @@ import type { LocalClawConfig } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import { buildPrepSection } from './prep-proposals.js';
-import { resolvePrincipal } from '../identity/principal.js';
+import { resolvePrincipal, selfIdentityLine } from '../identity/principal.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { TaskStore } from '../tasks/store.js';
@@ -111,11 +111,16 @@ export async function runBriefing(deps: BriefingDeps): Promise<void> {
       evening: "Focus on tomorrow. What's coming up? Anything to prep tonight? Flag early morning commitments.",
     };
 
+    // Config-driven self-identity — lets the model recognize the user's own
+    // name/addresses in calendar + email metadata (never hardcoded: open-source app)
+    const identityLine = selfIdentityLine(hb.delivery.target, config);
+
     const response = await client.chat({
       model: briefingModel,
       messages: [{
         role: 'user',
         content: `You are a proactive personal assistant. It is ${dateStr}. This is the ${timeOfDay} check-in.
+${identityLine ? `\n${identityLine}\n` : ''}
 
 ## Calendar (day labels are pre-computed and correct)
 ${calendar}
@@ -179,6 +184,7 @@ Write a useful ${timeOfDay} update:
           target: hb.delivery.target,
           agentId: config.agents.default,
           timeZone: config.timezone,
+          identityLine,
         });
         if (prepSection) console.log(`[Briefing] Prep proposals attached (${prepSection.split('\n').length - 3} item(s))`);
       } catch (err) {

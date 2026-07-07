@@ -4,6 +4,14 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Self-Identity in Prompts: Config, Never Code (July 7 2026)
+
+### Models must recognize the user in content metadata — from config only
+**Problem:** the briefing asked "What is the context for the meeting with David regarding Peter Green?" — the model saw "booked by pgreen@devmesh.tech" in calendar metadata and treated the user as a third party. The principal layer taught the SYSTEM who the user is; the MODEL had never been told.
+**Constraint (Peter's, and now a standing rule):** this is an open-source app — no person may ever be hardcoded in a prompt. Kin to "no model literals in logic": no PERSON literals in prompts.
+**Fix:** `PrincipalSchema` gained `displayName` + `emails`; `selfIdentityLine()` (identity/principal.ts) assembles the prompt line entirely from config ("The user you are assisting is X. These are THEIR OWN addresses…"), returns null when unconfigured. Injected into the briefing prompt and prep prompt. Verified live: the question became "What is the agenda for your meeting with David?"
+**Status:** Active. Candidate follow-up: inject the same line into specialist prompts that read email/calendar (personal category).
+
 ## The Morning After: Migration Starved the Briefing's Memory (July 7 2026)
 
 ### First production 8am briefing — conflict caught, but prep silently absent

@@ -132,11 +132,12 @@ export function parseCalendarEvents(calendarText: string, now: Date, timeZone: s
   return events;
 }
 
-export function buildPrepPrompt(events: ParsedEvent[], memory: string): { system: string; user: string } {
+export function buildPrepPrompt(events: ParsedEvent[], memory: string, identityLine?: string | null): { system: string; user: string } {
   const eventList = events.map(e => `${e.index}. ${e.title} — ${e.label}`).join('\n');
   return {
     system: [
       'You help a user prepare for upcoming calendar events. For each event pick EXACTLY ONE action:',
+      ...(identityLine ? [identityLine] : []),
       '- "question" — the title alone doesn\'t tell you what prep would help. Ask ONE short, specific question.',
       '- "reminder" — a timed nudge would help. Give minutesBefore: how many minutes before the event to nudge (30, 60, or 120 are typical). Include a short message.',
       '- "task" — concrete prep work exists (prepare slides, review numbers). Give an actionable title.',
@@ -197,6 +198,8 @@ export interface PrepSectionDeps {
   target: string;
   agentId: string;
   timeZone: string;
+  /** Config-driven self-identity line (identity/principal.ts selfIdentityLine) */
+  identityLine?: string | null;
   store?: PendingActionStore;
   now?: Date;
 }
@@ -214,7 +217,7 @@ export async function buildPrepSection(deps: PrepSectionDeps): Promise<string> {
   // Re-number after the 48h filter so the model's numbering matches what it sees
   events.forEach((e, i) => { e.index = i + 1; });
 
-  const { system, user } = buildPrepPrompt(events, memory);
+  const { system, user } = buildPrepPrompt(events, memory, deps.identityLine);
   const chatParams = {
     model,
     messages: [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }],
