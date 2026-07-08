@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const workspacePath = resolveWorkspacePath(config.agents.default, config);
 
   const factStore = new FactStore(workspacePath, client);
-  const graphMemory = new GraphMemoryStore(client, { nerModel: config.memory?.nerModel });
+  const graphMemory = new GraphMemoryStore(client, { nerModel: config.memory?.nerModel, ...config.memory.falkordb });
   try {
     await graphMemory.connect();
   } catch (err) {

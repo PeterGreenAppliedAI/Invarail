@@ -189,6 +189,14 @@ export const MemoryConfigSchema = z.object({
    *  The heartbeat runs every ~2h, but nagging the user that often is review fatigue — gate the
    *  prompt to at most once per this interval. Default once a day. */
   reviewIntervalHours: z.number().nonnegative().default(24),
+  /** FalkorDB connection — defaults match a local Docker install. Set these if
+   *  FalkorDB runs on another host/port (portability: nothing infra-specific is
+   *  hardcoded; localhost:6379 is only a default). */
+  falkordb: z.object({
+    host: z.string().default('localhost'),
+    port: z.number().default(6379),
+    graphName: z.string().default('localclaw_memory'),
+  }).default({}),
 });
 
 export const VerificationConfigSchema = z.object({
