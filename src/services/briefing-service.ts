@@ -7,6 +7,7 @@ import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import { buildPrepSection } from './prep-proposals.js';
 import { resolvePrincipal, selfIdentityLine } from '../identity/principal.js';
+import { PrepContextStore } from './prep-context.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { TaskStore } from '../tasks/store.js';
@@ -185,6 +186,7 @@ Write a useful ${timeOfDay} update:
           agentId: config.agents.default,
           timeZone: config.timezone,
           identityLine,
+          prepContext: PrepContextStore.forPrincipal(workspacePath, resolvePrincipal(hb.delivery.target, config)),
         });
         if (prepSection) console.log(`[Briefing] Prep proposals attached (${prepSection.split('\n').length - 3} item(s))`);
       } catch (err) {

@@ -15,6 +15,7 @@ import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
 import { pendingActions } from './security/pending-actions.js';
 import { handleConfirmation } from './security/confirm-handler.js';
+import { PrepContextStore, captureBriefingAnswer } from './services/prep-context.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
 import { resolvePrincipal } from './identity/principal.js';
 import { resolveRoute } from './agents/resolve-route.js';
@@ -1240,6 +1241,25 @@ export class Orchestrator {
       if (fromExtension) {
         console.log('[Orchestrator] Browser extension context detected → chat');
       }
+
+      // Intake write-side: a reply following a briefing may answer one of its
+      // prep questions — capture it into the prep-context store so the question
+      // is never re-asked. Fire-and-forget: the chat reply must not wait on it.
+      try {
+        const lastTurns = this.sessionStore.loadTranscript(route.agentId, route.sessionKey, 2);
+        const lastAssistant = [...lastTurns].reverse().find(t => t.role === 'assistant');
+        if (lastAssistant?.category === 'briefing' && lastAssistant.content.includes('❓')) {
+          const wsPath = resolveWorkspacePath(route.agentId, this.config);
+          captureBriefingAnswer({
+            client: this.client,
+            model: this.config.router.model,
+            userMessage: msg.content,
+            store: PrepContextStore.forPrincipal(wsPath, principal),
+          }).then(captured => {
+            if (captured) console.log('[Orchestrator] Prep answer captured from briefing reply');
+          }).catch(err => console.warn('[Orchestrator] Prep answer capture failed:', err instanceof Error ? err.message : err));
+        }
+      } catch { /* capture is best-effort */ }
 
       const dispatchBase = {
         client: this.client,
