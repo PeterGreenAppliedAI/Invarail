@@ -1,5 +1,6 @@
 import { logAutonomousAction } from '../metrics.js';
 import { pendingActions, PendingActionStore } from '../security/pending-actions.js';
+import { eventKeyFor, PrepContextStore } from './prep-context.js';
 import type { OllamaClient } from '../ollama/client.js';
 
 /**
@@ -132,8 +133,11 @@ export function parseCalendarEvents(calendarText: string, now: Date, timeZone: s
   return events;
 }
 
-export function buildPrepPrompt(events: ParsedEvent[], memory: string, identityLine?: string | null): { system: string; user: string } {
-  const eventList = events.map(e => `${e.index}. ${e.title} — ${e.label}`).join('\n');
+export function buildPrepPrompt(events: ParsedEvent[], memory: string, identityLine?: string | null, knownContext?: Map<number, string>): { system: string; user: string } {
+  const eventList = events.map(e => {
+    const known = knownContext?.get(e.index);
+    return `${e.index}. ${e.title} — ${e.label}${known ? `\n   KNOWN CONTEXT (the user already told you): ${known}` : ''}`;
+  }).join('\n');
   return {
     system: [
       'You help a user prepare for upcoming calendar events. For each event pick EXACTLY ONE action:',
@@ -143,6 +147,7 @@ export function buildPrepPrompt(events: ParsedEvent[], memory: string, identityL
       '- "task" — concrete prep work exists (prepare slides, review numbers). Give an actionable title.',
       '- "none" — routine event, nothing useful. Prefer "none" over inventing busywork.',
       'RULES:',
+      '- NEVER ask a question about an event that has KNOWN CONTEXT — the user already answered. Use the context to propose something concrete, or choose "none".',
       '- Reference events ONLY by their number. NEVER write dates, times, or timezones — the system computes all timing.',
       `- At most ${MAX_PROPOSALS_PER_BRIEFING} entries. Return ONLY a JSON array, no prose, no reasoning.`,
       'Example: [{"event":2,"action":"reminder","reminder":{"minutesBefore":60,"message":"Budget review at 9 — bring updated numbers"}}]',
@@ -200,6 +205,8 @@ export interface PrepSectionDeps {
   timeZone: string;
   /** Config-driven self-identity line (identity/principal.ts selfIdentityLine) */
   identityLine?: string | null;
+  /** Prep-context store — remembered answers + asked-question dedup (intake loop) */
+  prepContext?: PrepContextStore;
   store?: PendingActionStore;
   now?: Date;
 }
@@ -217,7 +224,17 @@ export async function buildPrepSection(deps: PrepSectionDeps): Promise<string> {
   // Re-number after the 48h filter so the model's numbering matches what it sees
   events.forEach((e, i) => { e.index = i + 1; });
 
-  const { system, user } = buildPrepPrompt(events, memory, deps.identityLine);
+  // Known answers (this instance or a recent same-title instance) become
+  // context the model must use instead of re-asking
+  const knownContext = new Map<number, string>();
+  if (deps.prepContext) {
+    for (const e of events) {
+      const ctx = deps.prepContext.contextFor(e.title, e.start);
+      if (ctx?.answer) knownContext.set(e.index, ctx.answer);
+    }
+  }
+
+  const { system, user } = buildPrepPrompt(events, memory, deps.identityLine, knownContext);
   const chatParams = {
     model,
     messages: [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }],
@@ -249,7 +266,14 @@ export async function buildPrepSection(deps: PrepSectionDeps): Promise<string> {
     const event = events[a.event - 1];
 
     if (a.action === 'question' && a.question) {
+      // Ask-once policy: answered (incl. recurring carryover) → never; asked &
+      // unanswered → one re-ask on the morning of the event, then silent
+      if (deps.prepContext && !deps.prepContext.shouldAsk(event.title, event.start, timeZone, now)) {
+        console.log(`[Prep] Question suppressed for "${event.title}" (answered or already asked)`);
+        continue;
+      }
       lines.push(`❓ **${event.title}** (${event.label}) — ${a.question}`);
+      deps.prepContext?.recordAsked(eventKeyFor(event.title, event.start), event.title, event.start, a.question, now);
       logAutonomousAction({ action: 'prep_question', tier: 'propose_confirm', source: 'briefing', reversible: true, outcome: 'proposed', detail: `${event.title}: ${a.question.slice(0, 80)}` });
       continue;
     }
