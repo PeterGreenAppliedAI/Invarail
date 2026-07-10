@@ -4,6 +4,15 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Document Vault: Folders Are the Taxonomy (July 9 2026)
+
+### A domain-organized document store as source of truth — designed by interrogation
+**Origin:** Peter asked whether Obsidian would help for documents-as-source-of-truth. Resolution: don't adopt Obsidian, adopt THE VAULT — a plain folder of markdown/PDF that Obsidian happens to edit well. Editor and data decoupled; zero dependency. He then rejected a fancy frontmatter/`applies_to` doctrine-routing design in favor of "folders are the taxonomy: business/, coding/, ..." — and stress-tested every hand-wave until the spec was real (chunking strategy? unstructured docs? no numbered sections? retrieval mechanics?). The design improved at every challenge; adversarial owner review before build is as valuable as the fresh-eyes audit after.
+**Shape:** `vault/<domain>/*` → normalization ladder (markdown heading-path chunks → heuristic heading promotion → semantic-valley segmentation via embedding dips — deterministic math, no generative model ever touches document text → paragraph fallback; tier logged per file) → hybrid retrieval (dense ∪ FTS5 lexical fused by reciprocal rank — doctrine is term-anchored, "Gate 4" must hit exactly; floor 0.45 pending corpus measurement; per-file cap; adjacent stitch with combined provenance; budget pack) → `docs_search`/`docs_store` tools; heartbeat reindexes by mtime+hash. Every search logged for tuning.
+**Test-caught bugs worth remembering:** (1) contentless FTS5 (`content=''`) does not store UNINDEXED columns — joins silently return nothing; use contentful tables. (2) Query-term regex `{2,}` dropped single digits — "Gate 7" searched as "Gate". (3) Runt-section merging at 120 chars swallowed adjacent rubric gates into one chunk labeled with the WRONG heading — provenance-correct thresholds beat tidy-looking chunks (now 40). Each found by a test asserting on real retrieval shape, not by review.
+**Deferred with triggers:** LLM-assisted structuring for hopeless walls of text (when tier-3 list shows retrieval pain), reranker (evidence first), ANN/HNSW migration (>50k chunks — FalkorDB already serves HNSW), auto-injection of doctrine into pipelines (tool-initiated retrieval first; watch usage).
+**Status:** Built, 522 tests. Seeded with the code-review rubric. vault/ is gitignored — personal content never enters the open-source repo (the person-literals rule extended to person-documents).
+
 ## The First Real Save: Misroute Chain vs the Confirm Gate (July 7 2026)
 
 ### Incident — the gate contained what routing broke, including a reflex confirm
