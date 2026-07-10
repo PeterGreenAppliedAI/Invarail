@@ -48,18 +48,51 @@ export interface HeartbeatDeps {
   heartbeatPendingPath: (workspacePath: string, senderId: string) => string;
 }
 
+/** Max stale-fact nominations shown per heartbeat — the positional !heartbeat
+ *  interface is only usable at this scale. */
+const MAX_STALE_PROPOSALS = 3;
+/** If the model nominates more than this, its staleness judgment is broken for
+ *  this cycle (July 10: it nominated 40 — half the user's memory — after a
+ *  migration made the diff look huge). Distrust the ENTIRE batch. */
+const STALE_BATCH_DISTRUST_THRESHOLD = 8;
+/** A fact the user KEPT (or that was proposed and ignored) is not re-nominated
+ *  within this window — same asked-once principle as prep questions. */
+const STALE_REPROPOSE_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+
+function staleProposalLogPath(pendingPath: string): string {
+  return join(dirname(pendingPath), 'stale-proposed.json');
+}
+
 /**
  * Route LLM-flagged stale facts into the pending !heartbeat review file instead
  * of deleting them directly. Returns the proposals with their 1-based positions
  * in the merged pending file (the positions "!heartbeat no N" indexes into).
+ *
+ * Guards (all code, July 10 incident): oversize batches are distrusted wholly;
+ * at most MAX_STALE_PROPOSALS surface per cycle; each fact is proposed at most
+ * once per cooldown window regardless of the user's answer.
  */
-function proposeStaleFactsForReview(
+export function proposeStaleFactsForReview(
   staleTexts: string[],
   factStore: FactStore,
   senderId: string,
   pendingPath: string,
 ): Array<{ index: number; text: string; category: string }> {
+  // Sanity guard: a model claiming a large fraction of memory is stale is a
+  // model failure, not a memory failure — never turn it into user homework
+  if (staleTexts.length > STALE_BATCH_DISTRUST_THRESHOLD) {
+    console.warn(`[Heartbeat] Model nominated ${staleTexts.length} stale facts — batch distrusted, none proposed`);
+    logAutonomousAction({ action: 'stale_batch_distrusted', tier: 'propose_confirm', source: 'heartbeat', reversible: true, outcome: 'rejected', detail: `${staleTexts.length} nominations` });
+    return [];
+  }
+
   const allFacts = factStore.loadFactsJson(senderId);
+
+  // Propose-once cooldown ledger
+  const logPath = staleProposalLogPath(pendingPath);
+  let proposedLog: Record<string, string> = {};
+  try { proposedLog = JSON.parse(readFileSync(logPath, 'utf-8')); } catch { /* fresh */ }
+  const cutoff = Date.now() - STALE_REPROPOSE_COOLDOWN_MS;
 
   // Resolve model-provided text to actual stored facts (exact, then fuzzy prefix)
   const matched = staleTexts
@@ -68,7 +101,12 @@ function proposeStaleFactsForReview(
       return allFacts.find(f =>
         f.text === stale || f.text.toLowerCase().includes(needle) || stale.toLowerCase().includes(f.text.slice(0, 40).toLowerCase()));
     })
-    .filter((f): f is NonNullable<typeof f> => !!f);
+    .filter((f): f is NonNullable<typeof f> => !!f)
+    .filter(f => {
+      const last = proposedLog[f.id];
+      return !last || new Date(last).getTime() < cutoff;
+    })
+    .slice(0, MAX_STALE_PROPOSALS);
   if (matched.length === 0) return [];
 
   // Merge into the pending review file (create if absent)
@@ -87,10 +125,12 @@ function proposeStaleFactsForReview(
       idx = pending.facts.length - 1;
     }
     proposals.push({ index: idx + 1, text: fact.text, category: fact.category });
+    proposedLog[fact.id] = new Date().toISOString();
     console.log(`[Heartbeat] Proposed stale fact for review: "${fact.text.slice(0, 60)}"`);
     logAutonomousAction({ action: 'stale_fact_proposed', tier: 'propose_confirm', source: 'heartbeat', reversible: true, outcome: 'proposed', detail: fact.text.slice(0, 80) });
   }
   writeFileSync(pendingPath, JSON.stringify(pending, null, 2));
+  try { writeFileSync(logPath, JSON.stringify(proposedLog, null, 2)); } catch { /* best-effort */ }
   return proposals;
 }
 
