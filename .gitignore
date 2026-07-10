@@ -19,3 +19,4 @@ AI_principles
 localclaw-backup.tar.gz
 nohup.out
 *.pyc
+vault/

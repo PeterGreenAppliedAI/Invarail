@@ -12,6 +12,7 @@ import type { SessionStore } from '../sessions/store.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { GraphMemoryStore } from '../memory/graph-store.js';
 import type { TaskStore } from '../tasks/store.js';
+import type { EmbeddingStore } from '../memory/embeddings.js';
 import type { CronService } from '../cron/service.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { enrichTasks, getAutoActions, filterForModel, formatTaskBoard } from '../temporal/urgency.js';
@@ -29,6 +30,8 @@ export interface HeartbeatDeps {
   graphMemory?: GraphMemoryStore;
   taskStore?: TaskStore;
   cronService?: CronService;
+  /** Vault reindex target — shared EmbeddingStore from tool registration */
+  embeddingStore?: EmbeddingStore;
   /** Extract facts from a transcript — delegates to the orchestrator's extraction logic */
   extractFacts: (
     transcript: any[],
@@ -112,6 +115,20 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
     const promoted = await deps.promoteRecurringLearnings(workspacePath);
     if (promoted > 0) {
       console.log(`[Heartbeat] Promoted ${promoted} learnings from error patterns`);
+    }
+
+    // Reindex the document vault — mtime/hash driven, so an unchanged vault
+    // costs a directory walk and nothing else
+    if (deps.embeddingStore) {
+      try {
+        const { reindexVault } = await import('../knowledge/vault.js');
+        const report = await reindexVault(config.vault.path, deps.embeddingStore, client);
+        if (report.indexed.length > 0 || report.removed.length > 0) {
+          console.log(`[Heartbeat] Vault: ${report.indexed.length} indexed, ${report.removed.length} removed, ${report.unchanged} unchanged`);
+        }
+      } catch (err) {
+        console.warn('[Heartbeat] Vault reindex failed:', err instanceof Error ? err.message : err);
+      }
     }
 
     // Curate skills — archive stale, flag duplicates

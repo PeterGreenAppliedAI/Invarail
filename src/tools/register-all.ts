@@ -13,6 +13,7 @@ import { createMemoryGetTool } from './memory-get.js';
 import { createMemorySaveTool } from './memory-save.js';
 import { createMemoryForgetTool } from './memory-forget.js';
 import { createKnowledgeImportTool } from './knowledge-import.js';
+import { createDocsSearchTool, createDocsStoreTool } from './docs.js';
 import { createExecTool } from './exec.js';
 import { createCodeSessionTool } from './code-session.js';
 import { SessionManager } from '../exec/session-manager.js';
@@ -92,6 +93,10 @@ export async function registerAllTools(
   // Knowledge import tool (requires Ollama for embeddings)
   if (options?.ollamaClient) {
     registry.register(createKnowledgeImportTool(workspace, options.ollamaClient, embeddingStore, config.tools?.knowledge));
+  if (options?.ollamaClient) {
+    registry.register(createDocsSearchTool(config.vault.path, embeddingStore, options.ollamaClient));
+    registry.register(createDocsStoreTool(config.vault.path, embeddingStore, options.ollamaClient));
+  }
   }
 
   // Docker backend (if configured)

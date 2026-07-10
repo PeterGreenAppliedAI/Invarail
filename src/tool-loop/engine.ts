@@ -409,6 +409,7 @@ const TOOL_RESULT_LIMITS: Record<string, number> = {
   pi_build: 16_000,
   reason: 12_000,
   web_fetch: 12_000,
+  docs_search: 8_000,
   code_session: 8_000,
 };
 

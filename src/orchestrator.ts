@@ -284,6 +284,7 @@ export class Orchestrator {
       graphMemory: this.graphMemory,
       taskStore: this.taskStore,
       cronService: this.cronService,
+      embeddingStore: this.embeddingStore,
       extractFacts: this.extractFacts.bind(this),
       reviewTranscripts: this.reviewTranscripts.bind(this),
       promoteRecurringLearnings: this.promoteRecurringLearnings.bind(this),
