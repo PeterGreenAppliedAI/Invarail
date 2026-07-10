@@ -427,6 +427,12 @@ export const LocalClawConfigSchema = z.object({
   ownerId: z.string().optional(),
   /** Principals: person → channel sender aliases. See PrincipalSchema. */
   principals: z.record(z.string(), PrincipalSchema).default({}),
+  /** Document vault: domain-organized markdown/PDF store as source of truth.
+   *  Subfolders are the domains (business/, coding/, ...). Edit with any
+   *  editor (Obsidian works — it's just files); heartbeat reindexes changes. */
+  vault: z.object({
+    path: z.string().default('vault'),
+  }).default({}),
   timezone: z.string().default('America/New_York'),
   ollama: OllamaConfigSchema.default({}),
   inference: InferenceConfigSchema.default({}),
