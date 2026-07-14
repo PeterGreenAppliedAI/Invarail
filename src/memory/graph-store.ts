@@ -78,6 +78,23 @@ export class GraphMemoryStore {
     this.db = await FalkorDB.connect({
       socket: { host: this.config.host, port: this.config.port },
     });
+
+    // A mid-life socket drop emits 'error' on the FalkorDB emitter — with no
+    // listener, Node THROWS and kills the whole process (July 14: a DB update
+    // crashed the app). Log, drop the connection, and let the next memory
+    // operation lazily reconnect — memory degrades to flat store meanwhile and
+    // self-heals when the DB returns.
+    const db = this.db as unknown as { on?: (event: string, fn: (err: unknown) => void) => void; close?: () => Promise<void> };
+    db.on?.('error', (err: unknown) => {
+      console.warn('[GraphMemory] Connection lost — flat-store fallback until reconnect:', err instanceof Error ? err.message : err);
+      if (this.db === (db as unknown)) {
+        this.db = null;
+        this.graph = null;
+        this.initialized = false;
+      }
+      try { void db.close?.(); } catch { /* already dead */ }
+    });
+
     this.graph = this.db.selectGraph(this.config.graphName!);
     await this.ensureSchema();
     this.initialized = true;
