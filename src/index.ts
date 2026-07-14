@@ -18,6 +18,18 @@ if (process.env.LOCALCLAW_UNSAFE_TLS === '1') {
   console.warn('[LocalClaw] Removed NODE_TLS_REJECT_UNAUTHORIZED=0. Use LOCALCLAW_UNSAFE_TLS=1 if you need insecure TLS, or set NODE_EXTRA_CA_CERTS for custom CAs.');
 }
 
+// Process-level safety net: a long-running personal agent must not die to a
+// stray rejection from a flaky dependency (FalkorDB socket drop killed the
+// process July 14; Baileys disconnects have done the same). Log LOUDLY and
+// keep running — every known-fatal path already has its own handling, and
+// masking is mitigated by the prominent log lines.
+process.on('unhandledRejection', (reason) => {
+  console.error('[LocalClaw] UNHANDLED REJECTION (process continues):', reason instanceof Error ? reason.stack : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[LocalClaw] UNCAUGHT EXCEPTION (process continues):', err.stack ?? err.message);
+});
+
 async function main() {
   const config = loadConfig();
 
