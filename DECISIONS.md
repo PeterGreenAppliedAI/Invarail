@@ -4,6 +4,13 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## FalkorDB: The Volume That Wasn't (July 14 2026)
+
+### Two months of graph memory lived in a disposable container layer
+**Found during a routine image update:** the May container mounted its volume at `/data`, but FalkorDB persists to `/var/lib/falkordb/data` (its `FALKORDB_DATA_PATH`) — the volume was EMPTY and the real `dump.rdb` sat in the container's writable layer. A plain `docker rm` at any point since May would have destroyed all graph memory (1,301 turns, all facts/entities). The update procedure caught it only because step one was "verify where the data actually is before removing anything."
+**Fix:** host-side RDB backup first (`data/backups/falkordb-dump-2026-07-14.rdb` — keep forever), old container preserved until verification, new container mounts the volume at the CORRECT path and got `--restart unless-stopped` (was `no` — memory also silently died on every Mac reboot until manually restarted). Counts verified identical post-upgrade; HNSW vector search verified live (version upgrades are where vector indexes silently break).
+**Lessons:** (1) A mounted volume proves nothing — verify the process's actual persistence path writes INTO it (`redis-cli CONFIG GET dir` + ls both paths). (2) Infra updates start with "where is the data, really," not with the update. (3) macOS keychain blocks docker pulls over SSH — pull via the tmux lab session (GUI keychain) — same family as the EHOSTUNREACH entry.
+
 ## Document Vault: Folders Are the Taxonomy (July 9 2026)
 
 ### A domain-organized document store as source of truth — designed by interrogation
