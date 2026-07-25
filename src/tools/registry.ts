@@ -16,16 +16,30 @@ export class ToolRegistry {
     return [...this.tools.values()].filter(t => t.category === category);
   }
 
+  /** Expand "mcp:<server>" tokens in a specialist's tool list into that server's
+   *  registered tool names. Plain names pass through untouched. */
+  expandToolNames(names: string[]): string[] {
+    return names.flatMap(n => {
+      if (!n.startsWith('mcp:')) return [n];
+      const matched = this.getByCategory(n).map(t => t.name);
+      if (matched.length === 0) {
+        console.warn(`[Tools] Specialist references "${n}" but no tools are registered for it (server down or misnamed?)`);
+      }
+      return matched;
+    });
+  }
+
   getDefinitions(names: string[]): ToolDefinition[] {
     return names
       .map(n => this.tools.get(n))
       .filter((t): t is LocalClawTool => t !== undefined)
-      .map(({ name, description, parameterDescription, parameters, example }) => ({
+      .map(({ name, description, parameterDescription, parameters, example, resultLimit }) => ({
         name,
         description,
         parameterDescription,
         parameters,
         example,
+        resultLimit,
       }));
   }
 

@@ -63,6 +63,27 @@ describe('loadConfig', () => {
     expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow('Invalid config');
   });
 
+  it('parses the tools.mcp block with defaults and env interpolation', () => {
+    process.env.TEST_MCP_TOKEN = 'sekret';
+    writeFileSync(TEST_CONFIG_PATH, `{
+      tools: {
+        mcp: {
+          servers: [
+            { name: "blender", command: "uvx", args: ["blender-mcp"], env: { TOKEN: "\${TEST_MCP_TOKEN}" } },
+          ],
+        },
+      },
+    }`);
+    const config = loadConfig(TEST_CONFIG_PATH);
+    const server = config.tools?.mcp?.servers[0];
+    expect(server?.name).toBe('blender');
+    expect(server?.enabled).toBe(true);
+    expect(server?.trust).toBe('confirm');
+    expect(server?.timeoutMs).toBe(60000);
+    expect(server?.env.TOKEN).toBe('sekret');
+    delete process.env.TEST_MCP_TOKEN;
+  });
+
   it('preserves specialist configurations', () => {
     writeFileSync(TEST_CONFIG_PATH, `{
       specialists: {

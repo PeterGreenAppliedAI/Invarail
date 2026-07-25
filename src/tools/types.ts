@@ -38,6 +38,15 @@ export interface LocalClawTool {
    *  irreversible AND visible to other people asks first. Enforcement is structural
    *  (code gate in dispatch), never model judgment. */
   requiresConfirm?: boolean;
+  /** Params that name the EXTERNAL TARGET of this tool (ordered; values are
+   *  joined into one grant key, e.g. send_message → ['channel','channelId'] →
+   *  "discord:123"). Declaring this makes the tool eligible for target-bound
+   *  standing grants ("always allow to THIS target"). Tools without it (exec)
+   *  are structurally grant-INELIGIBLE — fail-closed by construction. */
+  targetArgs?: string[];
+  /** Per-tool result truncation cap (chars). Overrides the engine default; the
+   *  static TOOL_RESULT_LIMITS map still wins for built-ins. */
+  resultLimit?: number;
   execute: (params: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 }
 
@@ -47,6 +56,7 @@ export interface ToolDefinition {
   parameterDescription: string;
   parameters?: ToolParameterSchema;
   example?: string;
+  resultLimit?: number;
 }
 
 export type ToolExecutor = (

@@ -353,6 +353,29 @@ export const KnowledgeConfigSchema = z.object({
   allowedExtensions: z.array(z.string()).default(['.pdf', '.csv', '.md', '.txt', '.html', '.htm']),
 });
 
+export const McpServerConfigSchema = z.object({
+  name: z.string(),                                   // registry prefix + log identity
+  command: z.string(),                                // e.g. "uvx"
+  args: z.array(z.string()).default([]),              // e.g. ["blender-mcp"]
+  env: z.record(z.string(), z.string()).default({}),
+  enabled: z.boolean().default(true),
+  /** 'confirm': non-readOnlyHint tools are confirm-gated (default). 'auto': owner
+   *  waives the gate for this server — owner-authored config is the code gate. */
+  trust: z.enum(['confirm', 'auto']).default('confirm'),
+  timeoutMs: z.number().default(60000),
+  /** When set, only these tool names register — first lever against 40-tool servers drowning a small model */
+  toolAllowlist: z.array(z.string()).optional(),
+  toolPrefix: z.string().optional(),                  // defaults to "<name>_"
+  /** Hand-curated description rewrites for tools whose upstream prose confuses small models */
+  toolDescriptions: z.record(z.string(), z.string()).default({}),
+  /** Per-server tool result cap (chars) — Blender scene dumps outgrow the 2000 default */
+  maxResultChars: z.number().optional(),
+});
+
+export const McpConfigSchema = z.object({
+  servers: z.array(McpServerConfigSchema).default([]),
+});
+
 export const ToolsConfigSchema = z.object({
   web: z.object({
     search: WebSearchConfigSchema.optional(),
@@ -361,6 +384,7 @@ export const ToolsConfigSchema = z.object({
   exec: ExecConfigSchema.optional(),
   website: WebsiteConfigSchema.optional(),
   knowledge: KnowledgeConfigSchema.optional(),
+  mcp: McpConfigSchema.optional(),
 });
 
 export const VoiceConfigSchema = z.object({
