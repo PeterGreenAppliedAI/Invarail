@@ -42,6 +42,13 @@ export interface RunReActLoopParams {
   };
   /** Stream callback — streams natural language tokens to user during final answer generation */
   onStream?: (delta: string) => void;
+  /** Progress narration — one deterministic line per tool call ("Using web_search…").
+   *  Code-generated, zero model cost; channels surface it during long runs. */
+  onProgress?: (note: string) => void;
+  /** Steering: messages the user sent MID-TURN. Drained at the top of each
+   *  iteration and injected as user messages so a correction lands inside the
+   *  running loop instead of colliding as a separate dispatch. */
+  pollSteering?: () => string[];
 }
 
 /**
@@ -424,7 +431,7 @@ const TOOL_RESULT_LIMITS: Record<string, number> = {
  *   5. Safety: max iterations limit
  */
 export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResult> {
-  const { client, config, tools, executor, toolContext, userMessage, history, workspaceContext, promptContext, errorStore, summarizeObservations, onStream } = params;
+  const { client, config, tools, executor, toolContext, userMessage, history, workspaceContext, promptContext, errorStore, summarizeObservations, onStream, onProgress, pollSteering } = params;
 
   // Build observation summarizer if enabled
   const observationSummarizer: ObservationSummarizer | undefined = summarizeObservations?.enabled
@@ -515,6 +522,15 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
   }
 
   for (let i = 0; i < config.maxIterations + extraIterations; i++) {
+    // Steering: fold in messages the user sent mid-turn — a correction lands
+    // inside the running loop instead of colliding as a separate dispatch
+    if (pollSteering) {
+      for (const steer of pollSteering()) {
+        messages.push({ role: 'user', content: `[User interjected mid-task]: ${steer}` });
+        console.log(`[ReAct] Steering message injected: "${steer.slice(0, 80)}"`);
+      }
+    }
+
     // Trim older tool observations if over budget
     if (config.contextSize) {
       await trimToolLoopMessages(messages, config.contextSize, observationSummarizer);
@@ -647,6 +663,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
 
         let observation: string;
         const toolStart = Date.now();
+        onProgress?.(`Using ${toolName}…`);
 
         // Short-circuit on validation errors
         if (validation.errors.length > 0) {

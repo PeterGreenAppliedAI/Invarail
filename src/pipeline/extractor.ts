@@ -1,5 +1,6 @@
 import JSON5 from 'json5';
 import type { OllamaClient } from '../ollama/client.js';
+import { capsFor } from '../ollama/model-caps.js';
 import type { ExtractFieldSchema as FieldSchema } from './types.js';
 import { pipelineExtractFailure } from '../errors.js';
 
@@ -124,6 +125,8 @@ function buildJsonSchema(schema: Record<string, FieldSchema>): Record<string, un
 
 // Flipped false the first time a backend rejects the `format` param so we don't
 // pay a failed round-trip on every extraction against an older gateway.
+// Declared caps (model-caps.ts) are consulted FIRST; this runtime flag stays
+// as the safety net for models the matrix mispredicts.
 let structuredOutputsSupported = true;
 
 /** Chat with grammar-constrained JSON output when supported; plain chat otherwise. */
@@ -135,7 +138,7 @@ export async function chatMaybeStructured(
   maxTokens = 256,
 ): Promise<string> {
   const options = { temperature: 0.1, num_predict: maxTokens };
-  if (structuredOutputsSupported) {
+  if (structuredOutputsSupported && capsFor(model).supportsFormat) {
     try {
       const response = await client.chat({ model, messages, format: jsonSchema, options });
       return response.message?.content ?? '';
