@@ -18,6 +18,9 @@ export class CronService {
   private timezone: string;
   private schedulers = new Map<string, Cron>();
   private running = false;
+  /** Jobs currently mid-execution — a tick that fires while the previous run
+   *  (or its retries) is still going is SKIPPED, not stacked. */
+  private activeJobs = new Set<string>();
 
   constructor(deps: CronServiceDeps) {
     this.store = deps.store;
@@ -30,6 +33,28 @@ export class CronService {
     this.running = true;
     this.scheduleAll();
     console.log(`[Cron] Started with ${this.store.listByType('cron').length} cron job(s), ${this.store.listByType('heartbeat').length} heartbeat task(s)`);
+    this.catchUpMissedRuns();
+  }
+
+  /** Run-once catch-up: a fire that was missed while the process was down runs
+   *  at boot (spawned, not awaited — boot must not block on job work). Matters
+   *  most for `once` reminders: a reboot at 8:59 must not eat a 9:00 reminder. */
+  private catchUpMissedRuns(): void {
+    const now = Date.now();
+    for (const job of this.store.list()) {
+      if (job.type === 'heartbeat' || !job.enabled) continue;
+      try {
+        const since = new Date(job.lastRunAt ?? job.createdAt);
+        const probe = new Cron(job.schedule, { paused: true, timezone: this.timezone });
+        const missed = probe.nextRun(since);
+        probe.stop();
+        if (missed && missed.getTime() < now) {
+          console.log(`[Cron] Catch-up: "${job.name}" missed a fire at ${missed.toISOString()} — running once now`);
+          void this.executeJob(job).catch(err =>
+            console.warn(`[Cron] Catch-up run failed for ${job.id}:`, err instanceof Error ? err.message : err));
+        }
+      } catch { /* invalid schedule already logged by scheduleJob */ }
+    }
   }
 
   stop(): void {
@@ -128,6 +153,19 @@ export class CronService {
   private static readonly RETRY_DELAYS_MS = [30_000, 60_000]; // 30s, 60s
 
   private async executeJob(job: CronJob): Promise<void> {
+    if (this.activeJobs.has(job.id)) {
+      console.log(`[Cron] Skipping "${job.name}" (${job.id}) — previous run still in progress`);
+      return;
+    }
+    this.activeJobs.add(job.id);
+    try {
+      await this.executeJobInner(job);
+    } finally {
+      this.activeJobs.delete(job.id);
+    }
+  }
+
+  private async executeJobInner(job: CronJob): Promise<void> {
     console.log(`[Cron] Triggering job: ${job.name} (${job.id})`);
 
     for (let attempt = 0; attempt <= CronService.MAX_RETRIES; attempt++) {

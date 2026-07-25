@@ -15,6 +15,7 @@ import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
 import { pendingActions } from './security/pending-actions.js';
 import { standingGrants } from './security/grants.js';
+import { appendRunRecord, appendDeadLetter, scanArtifacts, listDeadLetters } from './cron/run-log.js';
 import { handleConfirmation } from './security/confirm-handler.js';
 import { PrepContextStore, captureBriefingAnswer } from './services/prep-context.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
@@ -138,6 +139,15 @@ export class Orchestrator {
           // to find the right pipeline. Explicit categories (web_search, research, etc.) are respected.
           const effectiveCategory = job.category === 'cron' ? undefined : job.category;
 
+          // Every run gets its OWN persisted session (cron:<job>:<run>) — fresh
+          // context (unique key = empty history) but an auditable, continuable
+          // transcript. Cross-session memory search covers runs for free.
+          const runId = Math.random().toString(36).slice(2, 8);
+          const runSessionKey = `cron:${job.id}:${runId}`;
+          const agentId = this.config.agents.default;
+          const runStart = Date.now();
+          const workspacePath = resolveWorkspacePath(agentId, this.config);
+
           const result = await dispatchMessage({
             client: this.client,
             registry: this.toolRegistry,
@@ -145,6 +155,9 @@ export class Orchestrator {
             message: job.message,
             overrideCategory: effectiveCategory,
             cronMode: true,
+            agentId,
+            sessionKey: runSessionKey,
+            sessionStore: this.sessionStore,
             pipelineRegistry: this.pipelineRegistry,
             executionMetrics: this.executionMetrics,
             sourceContext: {
@@ -153,21 +166,39 @@ export class Orchestrator {
             },
           });
 
+          // Code-driven deliverable capture: files the run left in the workspace
+          const artifacts = scanArtifacts(workspacePath, runStart);
+          appendRunRecord({
+            jobId: job.id,
+            runId,
+            name: job.name,
+            sessionKey: runSessionKey,
+            startedAt: new Date(runStart).toISOString(),
+            durationMs: Date.now() - runStart,
+            status: 'success',
+            artifacts,
+            resultPreview: result.answer.slice(0, 200),
+          });
+
           if (job.delivery.target) {
             // Extract [FILE:]/[IMAGE:] tokens into real attachments (same as the normal message
             // path) — otherwise a cron that produces a PDF leaks the raw token into the chat text
             // and never delivers the file.
             const media = extractMediaAttachments(result.answer);
+            const artifactNote = artifacts.length > 0
+              ? `\n📎 Files from this run:\n${artifacts.map(a => `- ${a}`).join('\n')}`
+              : '';
             await this.channelRegistry.send(
               { channel: job.delivery.channel, channelId: job.delivery.target },
               {
-                text: `[Cron: ${job.name}]\n${media.cleanText || result.answer}`,
+                text: `[Cron: ${job.name}]\n${media.cleanText || result.answer}${artifactNote}`,
                 attachments: media.attachments.length > 0 ? media.attachments : undefined,
               },
             );
           }
         },
         onFailure: async (job, error) => {
+          appendDeadLetter({ source: 'cron', detail: job.name, error: error.slice(0, 300) });
           if (job.delivery.target) {
             await this.channelRegistry.send(
               { channel: job.delivery.channel, channelId: job.delivery.target },
@@ -992,6 +1023,10 @@ export class Orchestrator {
           .map(p => `- \`${p.id}\` **${p.tool}** ${JSON.stringify(p.params).slice(0, 80)}`)
           .join('\n');
         replyText += `\n\n⏳ **Open proposals** (reply \`confirm <id>\`):\n${openList}`;
+      }
+      const deadLetters = listDeadLetters(5);
+      if (deadLetters.length > 0) {
+        replyText += `\n\n💀 **Recent background failures** (data/unrouted.jsonl):\n${deadLetters.map(d => `- ${d.at.slice(0, 16)} [${d.source}] ${d.detail}: ${d.error.slice(0, 80)}`).join('\n')}`;
       }
       await this.channelRegistry.send(
         { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
