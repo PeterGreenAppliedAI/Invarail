@@ -93,3 +93,54 @@ describe('extractParams', () => {
     await expect(extractParams(client, 'test', schema, 'search')).rejects.toThrow();
   });
 });
+
+const jobsSchema = {
+  jobs: {
+    type: 'array',
+    description: 'jobs to schedule',
+    required: true,
+    items: {
+      name: { type: 'string', description: 'job name', required: true },
+      category: { type: 'string', description: 'category', enum: ['message', 'web_search'] },
+      once: { type: 'boolean', description: 'one-shot' },
+    },
+  },
+};
+
+describe('array fields', () => {
+  it('validates and coerces each element against the items schema', () => {
+    const { params, errors } = validateExtractedParams(jobsSchema, {
+      jobs: [
+        { name: 'a', category: 'message', once: 'true' },
+        { name: 'b', category: 'web_search' },
+      ],
+    });
+    expect(errors).toEqual([]);
+    const jobs = params.jobs as Array<Record<string, unknown>>;
+    expect(jobs).toHaveLength(2);
+    expect(jobs[0].once).toBe(true);
+  });
+
+  it('flags non-array values and indexes element errors', () => {
+    const notArray = validateExtractedParams(jobsSchema, { jobs: 'oops' });
+    expect(notArray.errors.some(e => e.includes('should be an array'))).toBe(true);
+
+    const badElement = validateExtractedParams(jobsSchema, {
+      jobs: [{ name: 'a', category: 'nonsense' }, { category: 'message' }],
+    });
+    expect(badElement.errors.some(e => e.includes('jobs[0]') && e.includes('category'))).toBe(true);
+    expect(badElement.errors.some(e => e.includes('jobs[1]') && e.includes('name'))).toBe(true);
+  });
+
+  it('extracts arrays end-to-end and honors maxTokens', async () => {
+    const client = mockClient(['{"jobs": [{"name": "a", "category": "message", "once": true}, {"name": "b", "category": "web_search"}]}']);
+    const result = await extractParams(client, 'test', jobsSchema, 'set up two jobs', undefined, undefined, 2048);
+    const jobs = result.jobs as Array<Record<string, unknown>>;
+    expect(jobs).toHaveLength(2);
+    expect(jobs[0].once).toBe(true);
+    const call = (client.chat as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.options.num_predict).toBe(2048);
+    expect(call.format.properties.jobs.type).toBe('array');
+    expect(call.format.properties.jobs.items.properties.category.enum).toEqual(['message', 'web_search']);
+  });
+});

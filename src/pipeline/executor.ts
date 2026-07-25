@@ -40,6 +40,7 @@ async function executeStage(stage: PipelineStage, ctx: PipelineContext): Promise
           ctx.userMessage,
           stage.examples,
           extraContext,
+          stage.maxTokens,
         );
       } catch (err) {
         if (!stage.fallback) throw err;

@@ -35,6 +35,8 @@ export interface PipelineContext {
   routerModel?: string;
   /** Source context from dispatch */
   sourceContext?: { channel: string; channelId: string; guildId?: string; senderId?: string };
+  /** True for cron/heartbeat dispatches — system operations must never match or save user skills */
+  cronMode?: boolean;
   /** Current loop iteration (set by executor during loop stages) */
   loopIndex?: number;
   /** Set to true to abort the pipeline early */
@@ -108,13 +110,25 @@ export interface CodeStage extends BaseStage {
   execute: (ctx: PipelineContext) => unknown | Promise<unknown>;
 }
 
+/** One extractable field. type 'array' + items = array of objects (e.g. multiple cron jobs in one request). */
+export interface ExtractFieldSchema {
+  type: string;
+  description: string;
+  required?: boolean;
+  enum?: string[];
+  /** For type 'array': the schema of each element's fields */
+  items?: Record<string, ExtractFieldSchema>;
+}
+
 /** Extract structured params from user message via LLM */
 export interface ExtractStage extends BaseStage {
   type: 'extract';
   /** Schema for extraction — becomes the LLM prompt */
-  schema: Record<string, { type: string; description: string; required?: boolean; enum?: string[] }>;
+  schema: Record<string, ExtractFieldSchema>;
   /** Optional examples to guide extraction */
   examples?: Array<{ input: string; output: Record<string, unknown> }>;
+  /** Output token budget (default 256 — raise for array extractions, which don't fit) */
+  maxTokens?: number;
   /** Optional context injector — returns extra context (e.g. current task list) to help the LLM resolve fuzzy references */
   context?: (ctx: PipelineContext) => string;
   /** Deterministic fallback params when LLM extraction fails entirely.
