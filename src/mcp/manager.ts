@@ -1,4 +1,6 @@
 import { McpStdioClient } from './client.js';
+import { McpHttpClient } from './http-client.js';
+import { getAccessToken } from './oauth.js';
 import { saveAttachment } from '../services/attachments.js';
 import type { McpServerConfig } from '../config/types.js';
 import type { McpToolDefinition, McpCallResult } from './types.js';
@@ -10,9 +12,12 @@ const RESPAWN_BACKOFF_MS = 5_000;
 
 const PRIMITIVE_TYPES = new Set(['string', 'number', 'integer', 'boolean']);
 
+/** Both transports expose the same surface — the manager never cares which. */
+type McpTransportClient = McpStdioClient | McpHttpClient;
+
 interface ServerState {
   config: McpServerConfig;
-  client: McpStdioClient;
+  client: McpTransportClient;
   tools: McpToolDefinition[];
   respawnAttempts: number;
   lastRespawnAt: number;
@@ -50,13 +55,22 @@ export class McpManager {
   }
 
   private async connectServer(config: McpServerConfig): Promise<ServerState> {
-    const client = new McpStdioClient({
-      name: config.name,
-      command: config.command,
-      args: config.args,
-      env: config.env,
-      timeoutMs: config.timeoutMs,
-    });
+    const client: McpTransportClient = config.transport === 'http'
+      ? new McpHttpClient({
+          name: config.name,
+          url: config.url!,
+          timeoutMs: config.timeoutMs,
+          // Silent refresh only — background paths never open a browser;
+          // first-time auth runs via scripts/mcp-oauth-setup.ts
+          getToken: config.oauth ? () => getAccessToken(config.name) : undefined,
+        })
+      : new McpStdioClient({
+          name: config.name,
+          command: config.command!,
+          args: config.args,
+          env: config.env,
+          timeoutMs: config.timeoutMs,
+        });
     await client.connect();
     const tools = await client.listTools();
     return { config, client, tools, respawnAttempts: 0, lastRespawnAt: 0 };
