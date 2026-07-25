@@ -359,8 +359,13 @@ export const KnowledgeConfigSchema = z.object({
 
 export const McpServerConfigSchema = z.object({
   name: z.string(),                                   // registry prefix + log identity
-  command: z.string(),                                // e.g. "uvx"
-  args: z.array(z.string()).default([]),              // e.g. ["blender-mcp"]
+  transport: z.enum(['stdio', 'http']).default('stdio'),
+  command: z.string().optional(),                     // stdio: e.g. "uvx"
+  args: z.array(z.string()).default([]),              // stdio: e.g. ["blender-mcp"]
+  url: z.string().optional(),                         // http: e.g. "https://mcp.linear.app/mcp"
+  /** http: authorize via local OAuth 2.1 + PKCE + DCR (tokens in the secret
+   *  store; run scripts/mcp-oauth-setup.ts once — background paths NEVER open a browser) */
+  oauth: z.boolean().default(false),
   env: z.record(z.string(), z.string()).default({}),
   enabled: z.boolean().default(true),
   /** 'confirm': non-readOnlyHint tools are confirm-gated (default). 'auto': owner
@@ -374,6 +379,8 @@ export const McpServerConfigSchema = z.object({
   toolDescriptions: z.record(z.string(), z.string()).default({}),
   /** Per-server tool result cap (chars) — Blender scene dumps outgrow the 2000 default */
   maxResultChars: z.number().optional(),
+}).refine(s => (s.transport === 'stdio' ? !!s.command : !!s.url), {
+  message: 'stdio servers need "command"; http servers need "url"',
 });
 
 export const McpConfigSchema = z.object({
