@@ -2,7 +2,10 @@ import { writeFileSync, mkdirSync, readdirSync, unlinkSync, existsSync } from 'n
 import { join } from 'node:path';
 import type { PipelineDefinition, PipelineContext } from '../types.js';
 import { SkillStore } from '../../skills/store.js';
-import { findMatchingSkill } from '../../skills/matcher.js';
+import { findMatchingSkillHybrid } from '../../skills/matcher.js';
+import { upsertSkillEmbedding } from '../../skills/semantic.js';
+import { chatMaybeStructured } from '../extractor.js';
+import { logAutonomousAction } from '../../metrics.js';
 
 // --- Foreman handoff types ---
 
@@ -288,16 +291,18 @@ export const planPipeline: PipelineDefinition = {
     {
       name: 'skill_check',
       type: 'code',
-      execute: (ctx) => {
+      execute: async (ctx) => {
         const workspacePath = ctx.toolContext.workspacePath;
         if (!workspacePath) return;
 
-        // Skip skill matching for heartbeat/cron dispatches — system operations shouldn't reuse user skills
-        if (ctx.userMessage.includes('Heartbeat Tasks') || ctx.userMessage.includes('Execute each heartbeat task')) return;
+        // Structural guard: system dispatches (heartbeat/cron) must never
+        // match user skills — the old string-match on the message text let
+        // heartbeat runs both match AND save skills for months
+        if (ctx.cronMode) return;
 
         try {
           const store = new SkillStore(workspacePath);
-          const match = findMatchingSkill(store, ctx.userMessage);
+          const match = await findMatchingSkillHybrid(store, ctx.client, ctx.userMessage);
           if (match) {
             const skill = store.get(match.slug);
             if (skill && skill.steps.length > 0) {
@@ -305,7 +310,8 @@ export const planPipeline: PipelineDefinition = {
               ctx.params._skillSteps = skill.steps;
               ctx.params._skillNotes = skill.notes;
               ctx.params._skillSlug = match.slug;
-              console.log(`[Plan] Skill match: "${skill.name}" (${skill.successCount} successes) — using saved plan`);
+              console.log(`[Plan] Skill match: "${skill.name}" (${skill.successCount} successes, via ${match.method}) — using saved plan`);
+              logAutonomousAction({ action: 'skill_matched', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: `${match.slug} (${match.method})` });
 
               // Track skill reuse in metrics
               if (ctx.metricsCollector) {
@@ -665,19 +671,22 @@ RULES:
         const workspacePath = ctx.toolContext.workspacePath;
         if (!workspacePath) return;
 
-        // Skip skill saving for heartbeat/cron — system operations shouldn't become saved skills
-        if (ctx.userMessage.includes('Heartbeat Tasks') || ctx.userMessage.includes('Execute each heartbeat task')) return;
+        // Structural guard: system dispatches must never become saved skills
+        if (ctx.cronMode) return;
 
         const plan = ctx.params._plan as PlanStep[] | undefined;
         const results = ctx.params._results as string[] | undefined;
         if (!plan || !results || plan.length < 2) return;
 
-        // Check if we already used a saved skill — if so, just record success
+        // Check if we already used a saved skill — if so, record success + trigger
         const skillSlug = ctx.params._skillSlug as string | undefined;
         if (skillSlug) {
           try {
             const store = new SkillStore(workspacePath);
             store.recordSuccess(skillSlug);
+            store.addTrigger(skillSlug, ctx.userMessage);
+            const refreshed = store.get(skillSlug);
+            if (refreshed) await upsertSkillEmbedding(ctx.client, refreshed);
             console.log(`[Plan] Recorded skill success: ${skillSlug}`);
           } catch { /* ignore */ }
           return;
@@ -753,23 +762,84 @@ Return ONLY a JSON object: {"name": "pattern-name-slug", "description": "General
             purpose: s.purpose,
           }));
 
-          // Check if a pattern skill with this slug already exists — don't duplicate
-          const existing = store.get(slug);
-          if (existing) {
-            store.recordSuccess(slug);
-            console.log(`[Plan] Pattern skill "${slug}" already exists — recorded success (count: ${existing.successCount + 1})`);
-          } else {
-            store.save({
-              name: skillName,
-              slug,
-              description: skillDescription,
-              created: new Date().toISOString().split('T')[0],
-              lastUsed: new Date().toISOString().split('T')[0],
-              successCount: 1,
-              steps: skillSteps,
-              notes: [...new Set(notes)],
-            });
+          // Dedup ladder (the July skill audit found the same pattern saved 3×
+          // under different generalized names — save-time dedup did not exist):
+          // 1. exact slug hit  2. hybrid match on the original request
+          // 3. grammar-constrained judge against the catalog  4. genuinely new
+          const updateExisting = async (existingSlug: string, why: string) => {
+            store.recordSuccess(existingSlug);
+            store.addTrigger(existingSlug, ctx.userMessage);
+            const existing = store.get(existingSlug);
+            if (existing) {
+              const existingSeq = existing.steps.map(s => s.tool).join(' → ');
+              if (existingSeq !== toolSequence) {
+                store.addNote(existingSlug, `Variant sequence also works: ${toolSequence}`);
+              }
+              await upsertSkillEmbedding(ctx.client, existing);
+            }
+            console.log(`[Plan] Skill dedup (${why}): updated "${existingSlug}" instead of saving a duplicate`);
+            logAutonomousAction({ action: 'skill_updated', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: `${existingSlug} (${why})` });
+          };
+
+          if (store.get(slug)) {
+            await updateExisting(slug, 'same slug');
+            return;
           }
+
+          const similar = await findMatchingSkillHybrid(store, ctx.client, ctx.userMessage);
+          if (similar) {
+            await updateExisting(similar.slug, similar.method);
+            return;
+          }
+
+          const catalog = store.list();
+          if (catalog.length > 0) {
+            const catalogLines = catalog.map(s => `- ${s.slug}: ${s.description.slice(0, 120)}`).join('\n');
+            const judgeRaw = await chatMaybeStructured(ctx.client, ctx.routerModel ?? ctx.model, [
+              {
+                role: 'system',
+                content: `You maintain a catalog of reusable workflow skills. Decide whether the candidate is the SAME workflow pattern as an existing skill (same kind of steps toward the same kind of outcome — surface details like topic or site may differ), a NEW pattern, or too trivial to keep.\n\nExisting skills:\n${catalogLines}\n\nReturn ONLY JSON: {"decision": "new"|"update"|"skip", "slug": "<existing slug when decision is update, else empty>"}`,
+              },
+              {
+                role: 'user',
+                content: `Candidate skill: "${skillName}" — ${skillDescription}\nSteps: ${toolSequence}\nOriginal request: "${ctx.userMessage.slice(0, 200)}"`,
+              },
+            ], {
+              type: 'object',
+              properties: {
+                decision: { type: 'string', enum: ['new', 'update', 'skip'] },
+                slug: { type: 'string' },
+              },
+              required: ['decision'],
+            });
+            try {
+              const judged = JSON.parse(judgeRaw.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { decision?: string; slug?: string };
+              if (judged.decision === 'update' && judged.slug && store.get(judged.slug)) {
+                await updateExisting(judged.slug, 'judge');
+                return;
+              }
+              if (judged.decision === 'skip') {
+                console.log('[Plan] Skill save skipped by dedup judge');
+                logAutonomousAction({ action: 'skill_save_skipped', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: skillName });
+                return;
+              }
+            } catch { /* unparseable judge → treat as new */ }
+          }
+
+          const newSkill = {
+            name: skillName,
+            slug,
+            description: skillDescription,
+            created: new Date().toISOString().split('T')[0],
+            lastUsed: new Date().toISOString().split('T')[0],
+            successCount: 1,
+            steps: skillSteps,
+            notes: [...new Set(notes)],
+            triggers: [ctx.userMessage.slice(0, 200)],
+          };
+          store.save(newSkill);
+          await upsertSkillEmbedding(ctx.client, newSkill);
+          logAutonomousAction({ action: 'skill_saved', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: slug });
         } catch (err) {
           console.warn(`[Plan] Failed to save skill: ${err instanceof Error ? err.message : err}`);
         }

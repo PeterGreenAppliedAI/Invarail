@@ -58,6 +58,8 @@ export interface RegisterToolsOptions {
 
 export interface RegisterToolsResult {
   embeddingStore: EmbeddingStore;
+  /** Present when MCP servers are configured — caller must stop() it on shutdown */
+  mcpManager?: import('../mcp/manager.js').McpManager;
 }
 
 /**
@@ -194,6 +196,12 @@ export async function registerAllTools(
   registry.register(createWorkspaceReadTool());
   registry.register(createWorkspaceWriteTool());
 
+  // Saved-skill lookup — progressive disclosure for ReAct specialists
+  if (options?.ollamaClient) {
+    const { createSkillFindTool } = await import('./skill-find.js');
+    registry.register(createSkillFindTool(options.ollamaClient));
+  }
+
   // Load plugins from plugins/ and ~/.localclaw/plugins/
   try {
     const { loadPlugins } = await import('../plugins/loader.js');
@@ -205,5 +213,22 @@ export async function registerAllTools(
     console.warn('[Tools] Plugin loading failed:', err instanceof Error ? err.message : err);
   }
 
-  return { embeddingStore };
+  // MCP servers — external tool processes bridged into the registry
+  let mcpManager: import('../mcp/manager.js').McpManager | undefined;
+  if (config.tools?.mcp?.servers?.length) {
+    try {
+      const { McpManager } = await import('../mcp/manager.js');
+      mcpManager = new McpManager(config.tools.mcp.servers);
+      await mcpManager.start();
+      const mcpTools = mcpManager.buildTools();
+      for (const tool of mcpTools) registry.register(tool);
+      if (mcpTools.length > 0) {
+        console.log(`[Tools] Registered ${mcpTools.length} MCP tool(s)`);
+      }
+    } catch (err) {
+      console.warn('[Tools] MCP loading failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  return { embeddingStore, mcpManager };
 }

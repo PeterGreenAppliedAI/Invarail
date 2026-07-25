@@ -86,6 +86,12 @@ export class EmbeddingStore {
     `);
   }
 
+  /** Remove all chunks for one (source, file) pair — e.g. a skill's embedding on archive. */
+  deleteBySourceFile(source: string, file: string): void {
+    this.db.prepare('DELETE FROM memory_chunks WHERE source = ? AND file = ?').run(source, file);
+    this.db.prepare('DELETE FROM memory_chunks_fts WHERE id NOT IN (SELECT id FROM memory_chunks)').run();
+  }
+
   add(entry: MemoryEntry): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO memory_chunks (id, file, section, text, embedding, created_at, source)

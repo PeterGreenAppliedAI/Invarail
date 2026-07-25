@@ -17,7 +17,13 @@ export interface Skill {
   successCount: number;
   steps: SkillStep[];
   notes: string[];
+  /** Concrete requests that produced/matched this skill (max 5, newest kept).
+   *  The save-time generalizer strips specifics from the description; triggers
+   *  preserve them so semantic + keyword matching can see real phrasings. */
+  triggers: string[];
 }
+
+const MAX_TRIGGERS = 5;
 
 export interface SkillStep {
   tool: string;
@@ -81,6 +87,14 @@ function parseSkill(content: string, slug: string): Skill | null {
     }
   }
 
+  let triggers: string[] = [];
+  if (fm.triggers) {
+    try {
+      const parsed = JSON.parse(fm.triggers);
+      if (Array.isArray(parsed)) triggers = parsed.map(String);
+    } catch { /* legacy/malformed — treat as none */ }
+  }
+
   return {
     name: fm.name ?? slug,
     slug,
@@ -90,6 +104,7 @@ function parseSkill(content: string, slug: string): Skill | null {
     successCount: parseInt(fm.success_count ?? '0', 10),
     steps,
     notes,
+    triggers,
   };
 }
 
@@ -104,6 +119,7 @@ function serializeSkill(skill: Skill): string {
     `created: ${skill.created}`,
     `last_used: ${skill.lastUsed}`,
     `success_count: ${skill.successCount}`,
+    `triggers: ${JSON.stringify(skill.triggers.slice(-MAX_TRIGGERS))}`,
     '---',
     '',
     '## Steps',
@@ -192,6 +208,16 @@ export class SkillStore {
     this.save(skill);
   }
 
+  /** Record the concrete request that matched/produced this skill (keeps last 5, deduped). */
+  addTrigger(slug: string, trigger: string): void {
+    const skill = this.get(slug);
+    if (!skill) return;
+    const clean = trigger.trim().slice(0, 200);
+    if (!clean || skill.triggers.includes(clean)) return;
+    skill.triggers = [...skill.triggers, clean].slice(-MAX_TRIGGERS);
+    this.save(skill);
+  }
+
   /** Add a learned note to an existing skill. */
   addNote(slug: string, note: string): void {
     const skill = this.get(slug);
@@ -244,6 +270,7 @@ export class SkillStore {
       successCount: s1.successCount + s2.successCount,
       steps: s1.steps.length >= s2.steps.length ? s1.steps : s2.steps,
       notes: [...new Set([...s1.notes, ...s2.notes])],
+      triggers: [...new Set([...s1.triggers, ...s2.triggers])].slice(-MAX_TRIGGERS),
     };
 
     this.save(merged);
