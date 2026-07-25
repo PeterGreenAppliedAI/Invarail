@@ -281,7 +281,9 @@ src/
 
   mcp/                      # MCP client bridge — external tool servers as LocalClaw tools
     client.ts               #   McpStdioClient — zero-dep JSON-RPC 2.0 over newline-delimited stdio
-    manager.ts              #   McpManager — server lifecycle (lazy respawn) + tool translation layer
+    http-client.ts          #   McpHttpClient — streamable HTTP transport (JSON + SSE), same interface
+    oauth.ts                #   OAuth 2.1 + PKCE + DCR, fully local; browser flow ONLY via scripts/mcp-oauth-setup.ts
+    manager.ts              #   McpManager — transport pick + lifecycle (lazy respawn) + tool translation layer
     types.ts                #   McpToolDefinition, McpContent, McpCallResult, JsonRpcResponse
 
   agents/                   # Agent routing & workspace
