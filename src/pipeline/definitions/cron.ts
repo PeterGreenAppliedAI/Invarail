@@ -1,4 +1,5 @@
 import type { PipelineDefinition } from '../types.js';
+import { CRON_JOB_CATEGORIES } from '../../cron/types.js';
 
 const CRON_CLASSIFY_PROMPT = `You are a scheduling intent classifier. Given the user's message, decide what they want to do with scheduled jobs.
 
@@ -22,16 +23,26 @@ export const cronPipeline: PipelineDefinition = {
           {
             name: 'extract_add',
             type: 'extract',
+            // Array extraction of long reminder texts blows the 256-token default
+            maxTokens: 2048,
             schema: {
-              name: { type: 'string', description: 'Job name', required: true },
-              schedule: { type: 'string', description: 'Cron expression (e.g., "0 9 * * *" for daily at 9am)', required: true },
-              category: {
-                type: 'string',
-                description: 'Specialist category to handle the job',
+              jobs: {
+                type: 'array',
                 required: true,
-                enum: ['chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'research', 'task'],
+                description: 'EVERY job the user asked to schedule — one element per job. "Set up three reminders" MUST produce three elements; never drop any.',
+                items: {
+                  name: { type: 'string', description: 'Job name', required: true },
+                  schedule: { type: 'string', description: 'Cron expression (e.g., "0 9 * * *" for daily at 9am; "0 9 15 9 *" for Sep 15 at 9am)', required: true },
+                  category: {
+                    type: 'string',
+                    description: 'Specialist category to handle the job. Use "message" for reminders — the message text is delivered as-is.',
+                    required: true,
+                    enum: [...CRON_JOB_CATEGORIES],
+                  },
+                  message: { type: 'string', description: 'The prompt to run when triggered. For reminders, carry over ALL context the user gave so the future message is self-contained.', required: true },
+                  once: { type: 'boolean', description: 'true when the job fires at ONE specific future date (a reminder for Sep 15, 2026); false for a repeating schedule (daily, every Friday)' },
+                },
               },
-              message: { type: 'string', description: 'The prompt to run when triggered', required: true },
               channel: { type: 'string', description: 'Delivery channel (e.g., "discord", "telegram")', required: true },
               target: { type: 'string', description: 'Channel ID for results', required: true },
             },
@@ -39,11 +50,21 @@ export const cronPipeline: PipelineDefinition = {
               {
                 input: 'schedule a daily web search for AI news at 9am',
                 output: {
-                  name: 'Daily AI News',
-                  schedule: '0 9 * * *',
-                  category: 'web_search',
-                  message: 'Search for the latest AI news and summarize top stories',
+                  jobs: [
+                    { name: 'Daily AI News', schedule: '0 9 * * *', category: 'web_search', message: 'Search for the latest AI news and summarize top stories', once: false },
+                  ],
                   channel: 'discord',
+                  target: '',
+                },
+              },
+              {
+                input: 'remind me on March 3, 2027 to renew the domain, and every Friday to send invoices',
+                output: {
+                  jobs: [
+                    { name: 'Renew Domain Reminder', schedule: '0 9 3 3 *', category: 'message', message: 'Reminder: renew the domain (it expires soon)', once: true },
+                    { name: 'Friday Invoices', schedule: '0 9 * * 5', category: 'message', message: 'Reminder: send this week\'s invoices', once: false },
+                  ],
+                  channel: '',
                   target: '',
                 },
               },
@@ -64,22 +85,36 @@ export const cronPipeline: PipelineDefinition = {
           },
           {
             name: 'add',
-            type: 'tool',
+            type: 'parallel_tool',
             tool: 'cron_add',
-            resolveParams: (ctx) => ({
-              name: ctx.params.name,
-              schedule: ctx.params.schedule,
-              category: ctx.params.category,
-              message: ctx.params.message,
-              channel: ctx.params.channel,
-              target: ctx.params.target,
-            }),
+            resolveParamsList: (ctx) => {
+              const jobs = Array.isArray(ctx.params.jobs) ? ctx.params.jobs as Record<string, unknown>[] : [];
+              return jobs.map(j => ({
+                name: j.name,
+                schedule: j.schedule,
+                category: j.category,
+                message: j.message,
+                once: j.once === true,
+                channel: ctx.params.channel,
+                target: ctx.params.target,
+              }));
+            },
           },
           {
             name: 'confirm_add',
             type: 'code',
             execute: (ctx) => {
-              ctx.answer = ctx.stageResults.add as string;
+              const results = Array.isArray(ctx.stageResults.add) ? ctx.stageResults.add as string[] : [];
+              const requested = Array.isArray(ctx.params.jobs) ? (ctx.params.jobs as unknown[]).length : 0;
+              if (results.length === 0) {
+                ctx.answer = 'I couldn\'t extract any schedulable jobs from that. Tell me what to schedule, when, and (for reminders) the date — e.g. "remind me on Sep 15, 2026 at 9am to renew the token".';
+                return;
+              }
+              ctx.answer = results.join('\n');
+              // A silent partial (asked for 3, created 1) caused the July 20 incident — always disclose
+              if (results.length < requested) {
+                ctx.answer += `\n⚠️ Only ${results.length} of ${requested} requested jobs were created — the rest failed. Check the errors above and re-send the missing ones.`;
+              }
             },
           },
         ],
@@ -145,14 +180,16 @@ export const cronPipeline: PipelineDefinition = {
               category: {
                 type: 'string',
                 description: 'New specialist category',
-                enum: ['chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'research', 'task'],
+                enum: [...CRON_JOB_CATEGORIES],
               },
               message: { type: 'string', description: 'New prompt/message' },
               enabled: { type: 'string', description: '"true" or "false"' },
+              once: { type: 'boolean', description: 'true to make the job one-shot (run once, then auto-disable); false to make it recurring' },
             },
             examples: [
               { input: 'change cron job abc to run at 10am', output: { id: 'abc', schedule: '0 10 * * *' } },
               { input: 'disable job xyz', output: { id: 'xyz', enabled: 'false' } },
+              { input: 'make job abc a one-time reminder', output: { id: 'abc', once: true } },
             ],
           },
           {
@@ -164,6 +201,8 @@ export const cronPipeline: PipelineDefinition = {
               for (const key of ['name', 'schedule', 'category', 'message', 'enabled']) {
                 if (ctx.params[key]) p[key] = ctx.params[key];
               }
+              // once is a boolean — truthiness would drop an explicit false
+              if (ctx.params.once !== undefined && ctx.params.once !== '') p.once = ctx.params.once;
               return p;
             },
           },

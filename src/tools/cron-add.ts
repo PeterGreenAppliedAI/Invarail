@@ -1,8 +1,7 @@
 import { Cron } from 'croner';
 import type { LocalClawTool } from './types.js';
 import type { CronService } from '../cron/service.js';
-
-const VALID_CATEGORIES = ['chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'config'] as const;
+import { CRON_JOB_CATEGORIES as VALID_CATEGORIES } from '../cron/types.js';
 
 export function createCronAddTool(cronService: CronService): LocalClawTool {
   return {
@@ -59,7 +58,11 @@ export function createCronAddTool(cronService: CronService): LocalClawTool {
         ...(once ? { once: true } : {}),
       });
 
-      return `Scheduled ${once ? 'one-shot ' : ''}job "${job.name}" (${job.id}) with schedule "${job.schedule}", category="${job.category}"`;
+      // Surface the firing semantics — a dated reminder saved WITHOUT once
+      // silently becomes an annual job, and only the next-run line reveals it
+      const next = cronService.nextRunFor(job.id);
+      const nextRun = next ? `, next run ${next.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}` : '';
+      return `Scheduled ${once ? 'one-shot' : 'recurring'} job "${job.name}" (${job.id}) with schedule "${job.schedule}", category="${job.category}"${nextRun}${once ? ' (runs once, then auto-disables)' : ''}`;
     },
   };
 }

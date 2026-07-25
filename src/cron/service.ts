@@ -95,6 +95,11 @@ export class CronService {
     return `Job ${id} executed`;
   }
 
+  /** Next fire time of a scheduled job (croner computes it in the configured timezone). */
+  nextRunFor(id: string): Date | null {
+    return this.schedulers.get(id)?.nextRun() ?? null;
+  }
+
   private scheduleAll(): void {
     for (const job of this.store.list()) {
       if (job.type === 'heartbeat') continue;
