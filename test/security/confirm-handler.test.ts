@@ -154,3 +154,47 @@ describe('handleConfirmation — always (standing grants)', () => {
     expect(out.reply).toContain("doesn't match");
   });
 });
+
+describe('handleConfirmation — deny + continuation metadata', () => {
+  it('deny <id> consumes without executing', async () => {
+    const entry = record();
+    const exec = vi.fn().mockResolvedValue('sent!');
+    const registry = { createScopedExecutor: () => exec } as unknown as ToolRegistry;
+    const out = await handleConfirmation({ ...baseCtx, store, toolRegistry: registry, message: `deny ${entry.id}`, senderId: 'discord-1' });
+    expect(out.handled).toBe(true);
+    expect(out.reply).toContain('🚫');
+    expect(exec).not.toHaveBeenCalled();
+    expect(store.listFor('peter')).toHaveLength(0);
+    expect(out.executed).toBeUndefined();
+  });
+
+  it('deny with an unknown id falls through to normal routing (may be a cron-job id)', async () => {
+    record();
+    const out = await handleConfirmation({ ...baseCtx, store, message: 'cancel 15e8b662', senderId: 'discord-1' });
+    expect(out.handled).toBe(false);
+    expect(store.listFor('peter')).toHaveLength(1);
+  });
+
+  it('"cancel the daily search" is never intercepted (reaches the router)', async () => {
+    record();
+    const out = await handleConfirmation({ ...baseCtx, store, message: 'cancel the daily search', senderId: 'discord-1' });
+    expect(out.handled).toBe(false);
+  });
+
+  it('successful confirm returns executed info carrying the original category', async () => {
+    const entry = record({ category: 'message' });
+    const out = await handleConfirmation({ ...baseCtx, store, message: `confirm ${entry.id}`, senderId: 'discord-1' });
+    expect(out.executed).toMatchObject({ tool: 'send_message', category: 'message' });
+    expect(out.executed!.sessionKey).toBe('main:discord:peter');
+  });
+
+  it('failed execution returns no executed info (no continuation on failure)', async () => {
+    const entry = record();
+    const registry = {
+      createScopedExecutor: () => vi.fn().mockResolvedValue('Error: adapter refused'),
+    } as unknown as ToolRegistry;
+    const out = await handleConfirmation({ ...baseCtx, store, toolRegistry: registry, message: `confirm ${entry.id}`, senderId: 'discord-1' });
+    expect(out.reply).toContain('❌');
+    expect(out.executed).toBeUndefined();
+  });
+});

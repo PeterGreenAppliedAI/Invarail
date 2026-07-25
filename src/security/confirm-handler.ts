@@ -10,6 +10,7 @@ import {
   CONFIRMATION_PATTERN,
   CONFIRMATION_NEAR_MISS,
   ALWAYS_PATTERN,
+  DENY_PATTERN,
   BARE_CONFIRM_MAX_AGE_MS,
   parseConfirmationId,
 } from './pending-actions.js';
@@ -36,6 +37,10 @@ export interface ConfirmOutcome {
   /** true = the message was a confirmation interaction; deliver `reply` and stop */
   handled: boolean;
   reply?: string;
+  /** Set when the stored action executed WITHOUT a tool-reported failure —
+   *  delivery surfaces may dispatch a continuation turn in the originating
+   *  session so multi-step work survives the confirm gap. */
+  executed?: { tool: string; observation: string; agentId: string; sessionKey: string; category?: string };
 }
 
 export interface ConfirmContext {
@@ -52,6 +57,28 @@ export interface ConfirmContext {
 
 export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOutcome> {
   const trimmed = ctx.message.trim();
+
+  // Deny: consume WITHOUT executing. Unknown id falls through to normal routing
+  // ("cancel 15e8b662" may be a cron-job request — deny carries no execution
+  // risk, so fall-through is safe where confirm near-miss fall-through is not).
+  const denyMatch = trimmed.match(DENY_PATTERN);
+  if (denyMatch) {
+    const store = ctx.store ?? pendingActions;
+    const principal = resolvePrincipal(ctx.senderId, ctx.config);
+    const pending = store.findById(denyMatch[1].toLowerCase(), principal);
+    if (!pending) return { handled: false };
+    store.consume(pending.id);
+    logAutonomousAction({ action: `denied:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'rejected', detail: JSON.stringify(pending.params).slice(0, 120) });
+    const reply = `🚫 Cancelled — **${pending.tool}** will not run.`;
+    if (ctx.sessionStore) {
+      try {
+        ctx.sessionStore.appendTurn(pending.agentId, pending.sessionKey, { role: 'user', content: trimmed, timestamp: new Date().toISOString() });
+        ctx.sessionStore.appendTurn(pending.agentId, pending.sessionKey, { role: 'assistant', content: reply, timestamp: new Date().toISOString() });
+      } catch { /* transcript best-effort */ }
+    }
+    return { handled: true, reply };
+  }
+
   const alwaysMatch = trimmed.match(ALWAYS_PATTERN);
   const isStrict = !alwaysMatch && CONFIRMATION_PATTERN.test(trimmed);
   const isNearMiss = !alwaysMatch && !isStrict && CONFIRMATION_NEAR_MISS.test(trimmed);
@@ -81,6 +108,7 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
 
   store.consume(pending.id);
   let reply: string;
+  let executed: ConfirmOutcome['executed'];
   try {
     const executor = ctx.toolRegistry.createScopedExecutor(new Set([pending.tool]));
     const workspacePath = resolveWorkspacePath(pending.agentId, ctx.config);
@@ -99,6 +127,9 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     reply = toolReportedFailure
       ? `❌ Confirmed, but **${pending.tool}** did not succeed: ${observation}`
       : `✅ Ran **${pending.tool}**: ${observation}`;
+    if (!toolReportedFailure) {
+      executed = { tool: pending.tool, observation, agentId: pending.agentId, sessionKey: pending.sessionKey, category: pending.category };
+    }
 
     // "always <id>": mint a target-bound standing grant — only for tools that
     // declare targetArgs (exec never does), and never off a failed execution
@@ -134,5 +165,5 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     }
   }
 
-  return { handled: true, reply };
+  return { handled: true, reply, ...(executed ? { executed } : {}) };
 }

@@ -138,6 +138,35 @@ export class TelegramAdapter implements ChannelAdapter {
       await this.handler(inbound);
     });
 
+    // Button presses (inline keyboard) synthesize the equivalent TYPED message
+    // ("confirm <id>") through the normal inbound path — reply sugar, not a
+    // second security surface. Ledger sender-binding/single-use apply unchanged.
+    bot.on('callback_query:data', async (ctx: any) => {
+      if (!this.handler) return;
+      const from = ctx.callbackQuery.from;
+      if (this.allowFrom && !this.allowFrom.has(String(from.id))) return;
+      const command = ctx.callbackQuery.data as string;
+      console.log(`[Telegram] Button press from=${from.id} command="${command}"`);
+      // Ack + strip the keyboard so the message shows it was acted on
+      await ctx.answerCallbackQuery().catch(() => {});
+      await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+      const inbound: InboundMessage = {
+        id: String(ctx.callbackQuery.id),
+        channel: 'telegram',
+        content: command,
+        senderId: String(from.id),
+        senderName: from.first_name,
+        channelId: String(ctx.callbackQuery.message?.chat?.id ?? from.id),
+        timestamp: new Date(),
+        raw: ctx.callbackQuery,
+      };
+      try {
+        await this.handler(inbound);
+      } catch (err) {
+        console.warn('[Telegram] Button handler failed:', err instanceof Error ? err.message : err);
+      }
+    });
+
     // grammy's bot.start() handles long-polling with automatic retry on transient errors.
     // Catch fatal errors (e.g., invalid token) and update status.
     bot.catch((err: any) => {
@@ -210,10 +239,16 @@ export class TelegramAdapter implements ChannelAdapter {
         }
       }
 
+      // Buttons ride on the LAST chunk so they sit under the full message
+      const keyboard = content.actions?.length
+        ? { inline_keyboard: [content.actions.slice(0, 5).map(a => ({ text: a.label, callback_data: a.command.slice(0, 64) }))] }
+        : undefined;
+
       const chunks = splitTelegramMessage(content.text, TELEGRAM_MAX_LENGTH);
-      for (const chunk of chunks) {
-        await this.bot.api.sendMessage(target.channelId, chunk, {
+      for (let i = 0; i < chunks.length; i++) {
+        await this.bot.api.sendMessage(target.channelId, chunks[i], {
           reply_to_message_id: target.replyToId ? Number(target.replyToId) : undefined,
+          reply_markup: i === chunks.length - 1 ? keyboard : undefined,
         });
       }
     } catch (err) {

@@ -34,6 +34,11 @@ export interface MessageContent {
   embeds?: Array<{ title?: string; description?: string; url?: string }>;
   audio?: { data: Buffer; mimeType: string };
   attachments?: Array<{ data: Buffer; mimeType: string; filename: string }>;
+  /** Interactive buttons (confirm-gate UX). `command` is the EXACT message the
+   *  press synthesizes as a normal inbound message (e.g. "confirm ab12cd34") —
+   *  buttons are typed-reply sugar, never a separate security path. Adapters
+   *  without component support simply ignore this field (typed replies always work). */
+  actions?: Array<{ command: string; label: string; style?: 'primary' | 'success' | 'danger' }>;
 }
 
 export type ChannelStatus = 'disconnected' | 'connecting' | 'connected' | 'error';

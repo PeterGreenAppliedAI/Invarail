@@ -277,6 +277,19 @@ export class Orchestrator {
   }
 
   /** Heartbeat — delegates to extracted HeartbeatService */
+  /** Confirm/Always/Deny buttons for the most recent pending action a dispatch
+   *  recorded. A press synthesizes the equivalent typed reply ("confirm <id>")
+   *  through the normal inbound path — same choke point, zero new surface. */
+  private confirmActionsFor(result: { pendingActions?: Array<{ id: string; tool: string }> }): Array<{ command: string; label: string; style?: 'primary' | 'success' | 'danger' }> | undefined {
+    if (!result.pendingActions?.length) return undefined;
+    const p = result.pendingActions[result.pendingActions.length - 1];
+    return [
+      { command: `confirm ${p.id}`, label: '✅ Confirm', style: 'success' },
+      { command: `always ${p.id}`, label: '🔓 Always for this target', style: 'primary' },
+      { command: `deny ${p.id}`, label: '🚫 Deny', style: 'danger' },
+    ];
+  }
+
   private async runHeartbeat(): Promise<void> {
     await runHeartbeat({
       config: this.config,
@@ -1262,6 +1275,44 @@ export class Orchestrator {
           { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
           { text: confirmOutcome.reply! },
         );
+        // Continuation: feed the confirmed tool result back into the
+        // originating session for ONE follow-up turn (with the original
+        // category's toolset) so multi-step work survives the confirm gap
+        // instead of dying at the preview. Any NEW confirm-gated call inside
+        // the continuation is gated again — no loophole.
+        if (confirmOutcome.executed && this.config.session.continueAfterConfirm) {
+          const ex = confirmOutcome.executed;
+          try {
+            const cont = await dispatchMessage({
+              client: this.client,
+              registry: this.toolRegistry,
+              config: this.config,
+              message: `[SYSTEM] The user approved and ${ex.tool} has now run: ${ex.observation.slice(0, 600)}\nIf the original task had remaining steps, continue them now. If it is complete, reply with a single short wrap-up line.`,
+              agentId: ex.agentId,
+              sessionKey: ex.sessionKey,
+              sessionStore: this.sessionStore,
+              pipelineRegistry: this.pipelineRegistry,
+              overrideCategory: ex.category ?? 'chat',
+              sourceContext: {
+                channel: msg.channel,
+                channelId: msg.channelId ?? '',
+                guildId: msg.guildId,
+                senderId: msg.senderId,
+              },
+              factStore: this.factStore,
+              graphMemory: this.graphMemory,
+            });
+            const contText = cont.answer?.trim();
+            if (contText) {
+              await this.channelRegistry.send(
+                { channel: msg.channel, channelId: msg.channelId! },
+                { text: contText, actions: this.confirmActionsFor(cont) },
+              );
+            }
+          } catch (err) {
+            console.warn('[Orchestrator] Post-confirm continuation failed:', err instanceof Error ? err.message : err);
+          }
+        }
         return;
       }
 
@@ -1416,19 +1467,29 @@ export class Orchestrator {
               );
             }
           }
+          // Buttons can't attach to an edited stream message — follow up
+          const streamActions = this.confirmActionsFor(result);
+          if (streamActions) {
+            await this.channelRegistry.send(
+              { channel: msg.channel, channelId: msg.channelId! },
+              { text: '⏳ Your call:', actions: streamActions },
+            ).catch(err => console.warn('[Orchestrator] Button send failed:', err instanceof Error ? err.message : err));
+          }
         } else {
           const media = extractMediaAttachments(result.answer);
           const text = media.cleanText || result.answer;
           const chunks = splitFinalMessage(text, 2000);
           const target = { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id };
+          const actions = this.confirmActionsFor(result);
           await this.channelRegistry.send(target, {
             text: chunks[0],
             attachments: media.attachments.length > 0 ? media.attachments : undefined,
+            actions: chunks.length === 1 ? actions : undefined,
           });
           for (let i = 1; i < chunks.length; i++) {
             await this.channelRegistry.send(
               { channel: msg.channel, channelId: msg.channelId! },
-              { text: chunks[i] },
+              { text: chunks[i], actions: i === chunks.length - 1 ? actions : undefined },
             );
           }
         }
