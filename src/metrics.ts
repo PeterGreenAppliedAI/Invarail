@@ -107,6 +107,12 @@ export function logAutonomousAction(data: {
   outcome: 'success' | 'failure' | 'proposed' | 'confirmed' | 'rejected';
   /** Short human-readable detail (task title, fact text, job name) */
   detail?: string;
+  /** How the action was authorized — makes promotion evidence queryable:
+   *  'auto' (silent/notify tier), 'granted' (standing grant / reply-origin),
+   *  'confirmed' / 'rejected' (explicit user decision) */
+  approval?: 'auto' | 'granted' | 'confirmed' | 'rejected';
+  /** Grep-able external object the action touched (send target, url, job id) */
+  resource?: string;
 }): void {
   logMetric({
     timestamp: new Date().toISOString(),

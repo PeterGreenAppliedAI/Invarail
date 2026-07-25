@@ -72,6 +72,9 @@ export class Orchestrator {
   private heartbeatCron?: Cron;
   private embeddingStore?: EmbeddingStore;
   private mcpManager?: import('./mcp/manager.js').McpManager;
+  /** sessionKey → full inbound messages typed while that session's dispatch is
+   *  running (full messages so undrained leftovers can replay as normal traffic) */
+  private steeringQueues = new Map<string, InboundMessage[]>();
   private factStore?: FactStore;
   private graphMemory?: GraphMemoryStore;
   private taskStore?: TaskStore;
@@ -399,6 +402,7 @@ export class Orchestrator {
             'Do NOT extract things the assistant TOLD the user — only things the user TOLD the assistant or that reveal who the user IS.',
             'CONSOLIDATE related info into ONE fact. If a task has a due date, priority, and description — that is ONE fact, not three.',
             'Aim for the FEWEST facts that capture ALL the information. Fewer is better.',
+            'Use ABSOLUTE dates, never relative ones — "yesterday"/"next Thursday" are meaningless when the fact is read weeks later; convert to the actual date.',
             '',
             'Return a JSON array: [{"text":"fact","cat":"stable|context|decision|question","conf":0.0-1.0,"tags":["keyword"],"entities":["ProperNoun"],"imp":1-5}]',
             '',
@@ -696,6 +700,9 @@ export class Orchestrator {
     // person's knowledge follows them across channels. Routing/session keys
     // deliberately stay on the raw sender (conversation unification = Slice 3).
     const principal = resolvePrincipal(msg.senderId, this.config);
+    // Set when this handler registers a steering queue — the finally block
+    // MUST clear it or the session reads as busy forever
+    let activeSteeringKey: string | null = null;
 
     // Handle slash commands
     const trimmed = msg.content.trim().toLowerCase();
@@ -1351,6 +1358,25 @@ export class Orchestrator {
         return;
       }
 
+      // Steering: a message arriving while THIS session is mid-dispatch folds
+      // into the running tool loop (drained between iterations) instead of
+      // colliding as a parallel dispatch on the same session. Full inbound
+      // messages are queued so anything the loop finishes without draining is
+      // replayed as a normal message — nothing is silently lost.
+      const steeringKey = `${route.agentId}:${route.sessionKey}`;
+      const activeQueue = this.steeringQueues.get(steeringKey);
+      if (activeQueue) {
+        activeQueue.push(msg);
+        console.log(`[Orchestrator] Steering queued for busy session ${steeringKey}: "${msg.content.slice(0, 60)}"`);
+        await this.channelRegistry.send(
+          { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+          { text: '📥 Got it — folding that into the task that\'s already running.' },
+        ).catch(() => {});
+        return;
+      }
+      this.steeringQueues.set(steeringKey, []);
+      activeSteeringKey = steeringKey;
+
       // Browser extension injects [PAGE:] context — route to chat, content is already in the message
       const fromExtension = msg.content.includes('[PAGE:');
       if (fromExtension) {
@@ -1400,6 +1426,7 @@ export class Orchestrator {
         modelOverride: hadAudio ? this.config.voice.model : undefined,
         factStore: this.factStore,
         graphMemory: this.graphMemory,
+        pollSteering: () => (this.steeringQueues.get(steeringKey)?.splice(0) ?? []).map(m => m.content),
       };
 
       // Voice path: single-shot TTS on full response
@@ -1564,6 +1591,18 @@ export class Orchestrator {
         );
       } catch (sendErr) {
         console.warn('[Orchestrator] Failed to send error response:', sendErr instanceof Error ? sendErr.message : sendErr);
+      }
+    } finally {
+      if (activeSteeringKey) {
+        const leftovers = this.steeringQueues.get(activeSteeringKey) ?? [];
+        this.steeringQueues.delete(activeSteeringKey);
+        // Steering messages the loop finished without draining become normal
+        // messages — queued input is never silently dropped
+        for (const leftover of leftovers) {
+          console.log(`[Orchestrator] Replaying undrained steering message: "${leftover.content.slice(0, 60)}"`);
+          void this.handleMessage(leftover).catch(err =>
+            console.warn('[Orchestrator] Steering replay failed:', err instanceof Error ? err.message : err));
+        }
       }
     }
   }

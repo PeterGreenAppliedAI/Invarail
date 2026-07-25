@@ -88,7 +88,7 @@ export function clearCompactionCache(agentId: string, sessionKey: string): void 
 }
 import { computeBudget, trimHistoryToFit } from './context/budget.js';
 import { pendingActions } from './security/pending-actions.js';
-import { resolveGrantApproval } from './security/grants.js';
+import { resolveGrantApproval, grantTargetFor } from './security/grants.js';
 import { resolvePrincipal, isOwner as isOwnerPrincipal } from './identity/principal.js';
 import { buildCompactedHistory } from './context/compactor.js';
 import { PipelineRegistry } from './pipeline/registry.js';
@@ -120,6 +120,9 @@ export interface DispatchParams {
   onStream?: (delta: string) => void;
   /** Progress callback — called with a user-facing note at labeled pipeline stage boundaries */
   onProgress?: (note: string) => void;
+  /** Steering: drained by the ReAct loop each iteration — messages the user
+   *  sent while this dispatch was running (orchestrator queues them). */
+  pollSteering?: () => string[];
   /** Force the code_gen pipeline to MODIFY this existing build slug (deterministic — bypasses the
    *  enrich stage guessing which project a request refers to). Used by the console "Continue" flow. */
   codeTargetSlug?: string;
@@ -293,7 +296,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     const allPriming = [...new Set([...stableFacts, ...contextFacts])];
     const primingParts: string[] = [];
     if (allPriming.length > 0) {
-      primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${allPriming.join('\n')}`);
+      primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${allPriming.join('\n')}\nThese facts reflect when they were written — a file, URL, or plan they mention may have changed since; verify before relying on one.`);
     }
     if (modelSummary) {
       primingParts.push(`## User preferences (adapt your style accordingly)\n${modelSummary}`);
@@ -881,7 +884,7 @@ async function runSpecialist(
           );
           if (grantApproval) {
             console.log(`[Dispatch] ${toolName} auto-approved (${grantApproval})`);
-            logAutonomousAction({ action: `grant_used:${toolName}`, tier: 'act_then_notify', source: grantApproval, reversible: false, outcome: 'success', detail: JSON.stringify(toolParams).slice(0, 120) });
+            logAutonomousAction({ action: `grant_used:${toolName}`, tier: 'act_then_notify', source: grantApproval, reversible: false, outcome: 'success', detail: JSON.stringify(toolParams).slice(0, 120), approval: 'granted', resource: grantTargetFor(registry.get(toolName), toolParams) ?? undefined });
             return scopedExecutor(toolName, toolParams, ctx);
           }
           const preview = JSON.stringify(toolParams, null, 2);
@@ -1016,6 +1019,8 @@ RULES:
       userPriming: userPriming || undefined,
     },
     errorStore,
+    onProgress: params.onProgress,
+    pollSteering: params.pollSteering,
     summarizeObservations: config.session.summarizeToolObservations
       ? { enabled: true, client, model: config.session.summarizationModel ?? config.router.model }
       : undefined,
@@ -1142,7 +1147,7 @@ async function runPipelineDispatch(
           );
           if (grantApproval) {
             console.log(`[Dispatch] ${toolName} auto-approved (${grantApproval}, pipeline)`);
-            logAutonomousAction({ action: `grant_used:${toolName}`, tier: 'act_then_notify', source: grantApproval, reversible: false, outcome: 'success', detail: JSON.stringify(toolParams).slice(0, 120) });
+            logAutonomousAction({ action: `grant_used:${toolName}`, tier: 'act_then_notify', source: grantApproval, reversible: false, outcome: 'success', detail: JSON.stringify(toolParams).slice(0, 120), approval: 'granted', resource: grantTargetFor(registry.get(toolName), toolParams) ?? undefined });
             return scopedExecutor(toolName, toolParams, ctx);
           }
           const preview = JSON.stringify(toolParams, null, 2);

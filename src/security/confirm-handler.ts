@@ -68,7 +68,7 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     const pending = store.findById(denyMatch[1].toLowerCase(), principal);
     if (!pending) return { handled: false };
     store.consume(pending.id);
-    logAutonomousAction({ action: `denied:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'rejected', detail: JSON.stringify(pending.params).slice(0, 120) });
+    logAutonomousAction({ action: `denied:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'rejected', detail: JSON.stringify(pending.params).slice(0, 120), approval: 'rejected' });
     const reply = `🚫 Cancelled — **${pending.tool}** will not run.`;
     if (ctx.sessionStore) {
       try {
@@ -123,7 +123,7 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     // a ✅ on an error observation told the user a send succeeded when the
     // adapter had refused it (July 7)
     const toolReportedFailure = /^(Error|Failed)/i.test(observation.trim());
-    logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: toolReportedFailure ? 'failure' : 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120) });
+    logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: toolReportedFailure ? 'failure' : 'confirmed', detail: JSON.stringify(pending.params).slice(0, 120), approval: 'confirmed' });
     reply = toolReportedFailure
       ? `❌ Confirmed, but **${pending.tool}** did not succeed: ${observation}`
       : `✅ Ran **${pending.tool}**: ${observation}`;
@@ -144,7 +144,7 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
           channel: ctx.channel,
           source: 'confirm',
         });
-        logAutonomousAction({ action: `grant_minted:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'confirmed', detail: grantTarget });
+        logAutonomousAction({ action: `grant_minted:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'confirmed', detail: grantTarget, approval: 'confirmed', resource: grantTarget });
         reply += `\n🔓 Standing grant: **${pending.tool}** → \`${grantTarget}\` will no longer ask. Revoke with \`!grants revoke ${grant.id}\`.`;
       } else {
         reply += `\n⚠️ No standing grant created — **${pending.tool}** doesn't support target-bound grants (ran once only).`;
