@@ -18,7 +18,7 @@ import {
 } from './sessions/state-tracker.js';
 import { resolveWorkspacePath } from './agents/scope.js';
 import { buildWorkspaceContext, type WorkspaceCategory } from './agents/workspace.js';
-import { logDispatch, logRouterClassification } from './metrics.js';
+import { logDispatch, logRouterClassification, logAutonomousAction } from './metrics.js';
 
 /**
  * Cached compaction results per session — used for async compaction.
@@ -88,6 +88,7 @@ export function clearCompactionCache(agentId: string, sessionKey: string): void 
 }
 import { computeBudget, trimHistoryToFit } from './context/budget.js';
 import { pendingActions } from './security/pending-actions.js';
+import { resolveGrantApproval } from './security/grants.js';
 import { resolvePrincipal, isOwner as isOwnerPrincipal } from './identity/principal.js';
 import { buildCompactedHistory } from './context/compactor.js';
 import { PipelineRegistry } from './pipeline/registry.js';
@@ -842,12 +843,15 @@ async function runSpecialist(
   const { client, registry, message, agentId = 'main', sessionKey = 'default', config } = params;
   const { category } = classification;
 
+  // Expand mcp:<server> tokens BEFORE filtering — filters and the scoped
+  // executor must operate on real tool names
+  const expandedTools = registry.expandToolNames(specialist.tools);
   // Cron mode: strip write tools so automated tasks can't mutate state
   const tools = params.cronMode
-    ? filterCronTools(specialist.tools, category)
-    : specialist.tools;
-  if (params.cronMode && tools.length !== specialist.tools.length) {
-    const stripped = specialist.tools.filter(t => !tools.includes(t));
+    ? filterCronTools(expandedTools, category)
+    : expandedTools;
+  if (params.cronMode && tools.length !== expandedTools.length) {
+    const stripped = expandedTools.filter(t => !tools.includes(t));
     console.log(`[Dispatch] Cron mode: stripped [${stripped.join(', ')}] from tool set`);
   }
 
@@ -866,17 +870,27 @@ async function runSpecialist(
   const executor: import('./tools/types.js').ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
+          const principal = resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown';
+          const grantApproval = resolveGrantApproval(
+            registry.get(toolName), toolParams, principal,
+            params.sourceContext ? { channel: params.sourceContext.channel, channelId: params.sourceContext.channelId } : undefined,
+          );
+          if (grantApproval) {
+            console.log(`[Dispatch] ${toolName} auto-approved (${grantApproval})`);
+            logAutonomousAction({ action: `grant_used:${toolName}`, tier: 'act_then_notify', source: grantApproval, reversible: false, outcome: 'success', detail: JSON.stringify(toolParams).slice(0, 120) });
+            return scopedExecutor(toolName, toolParams, ctx);
+          }
           const preview = JSON.stringify(toolParams, null, 2);
           console.log(`[Dispatch] Confirmation required for ${toolName}`);
-          pendingActions.record({
+          const recorded = pendingActions.record({
             tool: toolName,
             params: toolParams,
-            sender: resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown',
+            sender: principal,
             channel: params.sourceContext?.channel ?? 'unknown',
             agentId,
             sessionKey,
           });
-          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nTell the user what you're about to do and ask them to reply "confirm" to proceed (expires in 10 minutes).`;
+          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nTell the user what you're about to do and ask them to reply "confirm ${recorded.id}" to proceed once, or "always ${recorded.id}" to also stop asking for this exact target (expires in 10 minutes).`;
         }
         return scopedExecutor(toolName, toolParams, ctx);
       }
@@ -1093,10 +1107,11 @@ async function runPipelineDispatch(
     return runSpecialist(params, classification, specialist, history, statePreamble, userPriming);
   }
 
-  // Cron mode: strip write tools
+  // Cron mode: strip write tools (mcp:<server> tokens expanded first)
+  const pipelineTools = registry.expandToolNames(specialist.tools);
   const tools = params.cronMode
-    ? filterCronTools(specialist.tools, category)
-    : specialist.tools;
+    ? filterCronTools(pipelineTools, category)
+    : pipelineTools;
 
   // Scoped executor — final enforcement gate for pipelines too
   const allowedToolSet = new Set(tools);
@@ -1112,17 +1127,27 @@ async function runPipelineDispatch(
   const gatedExecutor: ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
+          const principal = resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown';
+          const grantApproval = resolveGrantApproval(
+            registry.get(toolName), toolParams, principal,
+            params.sourceContext ? { channel: params.sourceContext.channel, channelId: params.sourceContext.channelId } : undefined,
+          );
+          if (grantApproval) {
+            console.log(`[Dispatch] ${toolName} auto-approved (${grantApproval}, pipeline)`);
+            logAutonomousAction({ action: `grant_used:${toolName}`, tier: 'act_then_notify', source: grantApproval, reversible: false, outcome: 'success', detail: JSON.stringify(toolParams).slice(0, 120) });
+            return scopedExecutor(toolName, toolParams, ctx);
+          }
           const preview = JSON.stringify(toolParams, null, 2);
           console.log(`[Dispatch] Confirmation required for ${toolName} (pipeline)`);
-          pendingActions.record({
+          const recorded = pendingActions.record({
             tool: toolName,
             params: toolParams,
-            sender: resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown',
+            sender: principal,
             channel: params.sourceContext?.channel ?? 'unknown',
             agentId,
             sessionKey,
           });
-          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nReply "confirm" to proceed (expires in 10 minutes).`;
+          return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nReply "confirm ${recorded.id}" to proceed once, or "always ${recorded.id}" to also stop asking for this exact target (expires in 10 minutes).`;
         }
         return scopedExecutor(toolName, toolParams, ctx);
       }
@@ -1214,6 +1239,7 @@ async function runPipelineDispatch(
     contextSize: specialist.contextSize ?? config.session.contextSize,
     routerModel: config.router?.model,
     sourceContext: params.sourceContext,
+    cronMode: params.cronMode,
     onStream: params.onStream,
     onProgress: params.onProgress,
     conversational: !params.cronMode && (() => {

@@ -4,6 +4,8 @@
  */
 
 import type { SkillStore } from './store.js';
+import type { OllamaClient } from '../ollama/client.js';
+import { findSkillBySimilarity } from './semantic.js';
 
 interface SkillMatch {
   slug: string;
@@ -31,12 +33,15 @@ export function findMatchingSkill(
   if (skills.length === 0) return null;
 
   // Extract keywords from goal (drop stop words, lowercase)
+  // NOTE: 'make'/'create'/'search'/'report' were once stop-words — but the
+  // save-time generalizer produces descriptions built ALMOST ENTIRELY of those
+  // words, so banning them guaranteed misses. They are load-bearing here.
   const stopWords = new Set([
     'a', 'an', 'the', 'to', 'for', 'and', 'or', 'in', 'on', 'at', 'of',
     'is', 'it', 'my', 'me', 'i', 'do', 'go', 'then', 'from', 'with',
-    'this', 'that', 'can', 'you', 'please', 'find', 'get', 'add', 'one',
+    'this', 'that', 'can', 'you', 'please', 'get', 'add', 'one',
     'first', 'next', 'near', 'them', 'their', 'some', 'using',
-    'make', 'create', 'search', 'report', 'today', 'current', 'latest',
+    'today', 'current', 'latest',
   ]);
 
   const keywords = goal
@@ -78,4 +83,30 @@ export function findMatchingSkill(
   }
 
   return best;
+}
+
+export interface HybridSkillMatch extends SkillMatch {
+  method: 'semantic' | 'keyword';
+}
+
+/**
+ * Hybrid matching: dense similarity first (survives the generalized
+ * descriptions), keyword overlap as fallback (works when the embedding
+ * backend is down or the index hasn't been built yet).
+ */
+export async function findMatchingSkillHybrid(
+  store: SkillStore,
+  client: OllamaClient,
+  goal: string,
+): Promise<HybridSkillMatch | null> {
+  const semantic = await findSkillBySimilarity(client, store, goal);
+  if (semantic) {
+    const skill = store.get(semantic.slug);
+    if (skill) {
+      console.log(`[Skills] Semantic match "${skill.name}" (cosine ${semantic.score.toFixed(3)}) for: "${goal.slice(0, 60)}..."`);
+      return { slug: skill.slug, name: skill.name, score: semantic.score, method: 'semantic' };
+    }
+  }
+  const keyword = findMatchingSkill(store, goal);
+  return keyword ? { ...keyword, method: 'keyword' } : null;
 }
