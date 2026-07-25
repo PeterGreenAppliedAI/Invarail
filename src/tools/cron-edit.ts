@@ -1,8 +1,7 @@
 import { Cron } from 'croner';
 import type { LocalClawTool } from './types.js';
 import type { CronService } from '../cron/service.js';
-
-const VALID_CATEGORIES = ['chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'config'] as const;
+import { CRON_JOB_CATEGORIES as VALID_CATEGORIES } from '../cron/types.js';
 
 export function createCronEditTool(cronService: CronService): LocalClawTool {
   return {
@@ -19,6 +18,7 @@ export function createCronEditTool(cronService: CronService): LocalClawTool {
         category: { type: 'string', description: `New specialist category. Must be one of: ${VALID_CATEGORIES.join(', ')}`, enum: [...VALID_CATEGORIES] },
         message: { type: 'string', description: 'New prompt/message to run when triggered' },
         enabled: { type: 'string', description: 'Enable (true) or disable (false) the job' },
+        once: { type: 'boolean', description: 'One-shot: run once at the next matching time, then auto-disable. Set true to convert a recurring job into a single reminder.' },
       },
       required: ['id'],
     },
@@ -57,6 +57,10 @@ export function createCronEditTool(cronService: CronService): LocalClawTool {
         changes.enabled = val === true || val === 'true';
       }
 
+      if (params.once !== undefined) {
+        changes.once = params.once === true || params.once === 'true';
+      }
+
       if (Object.keys(changes).length === 0) {
         return 'Error: No changes provided. Specify at least one field to update (name, schedule, category, message, enabled).';
       }
@@ -64,7 +68,7 @@ export function createCronEditTool(cronService: CronService): LocalClawTool {
       const updated = cronService.edit(id, changes);
       if (!updated) return `Job ${id} not found`;
 
-      return `Updated job "${updated.name}" (${updated.id}): schedule="${updated.schedule}", category="${updated.category}", enabled=${updated.enabled}, message="${updated.message.slice(0, 80)}"`;
+      return `Updated job "${updated.name}" (${updated.id}): schedule="${updated.schedule}", category="${updated.category}", ${updated.once ? 'one-shot' : 'recurring'}, enabled=${updated.enabled}, message="${updated.message.slice(0, 80)}"`;
     },
   };
 }

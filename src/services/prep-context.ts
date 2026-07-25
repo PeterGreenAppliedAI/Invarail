@@ -53,10 +53,12 @@ export class PrepContextStore {
     return new PrepContextStore(join(workspacePath, 'memory', principal, 'prep-context.json'));
   }
 
-  private load(): PrepContextEntry[] {
+  // now is injected (not Date.now()) so retention pruning is testable with fixed
+  // fixtures — the July 8 test dates aged out of the 7-day unanswered window and
+  // four tests silently rotted on main before this was threaded through.
+  private load(now: number): PrepContextEntry[] {
     try {
       const all = JSON.parse(readFileSync(this.path, 'utf-8')) as PrepContextEntry[];
-      const now = Date.now();
       return all.filter(e => {
         const retention = e.answer ? ANSWERED_RETENTION_MS : UNANSWERED_RETENTION_MS;
         return new Date(e.eventStartISO).getTime() > now - retention;
@@ -75,14 +77,14 @@ export class PrepContextStore {
     }
   }
 
-  get(eventKey: string): PrepContextEntry | undefined {
-    return this.load().find(e => e.eventKey === eventKey);
+  get(eventKey: string, now = new Date()): PrepContextEntry | undefined {
+    return this.load(now.getTime()).find(e => e.eventKey === eventKey);
   }
 
   /** Known context for an event: exact instance first, else the most recent
    *  ANSWERED entry with the same title (recurring-meeting carryover). */
-  contextFor(title: string, start: Date): PrepContextEntry | undefined {
-    const entries = this.load();
+  contextFor(title: string, start: Date, now = new Date()): PrepContextEntry | undefined {
+    const entries = this.load(now.getTime());
     const exact = entries.find(e => e.eventKey === eventKeyFor(title, start));
     if (exact?.answer) return exact;
     const t = normalizedTitle(title);
@@ -94,12 +96,12 @@ export class PrepContextStore {
 
   /** All entries with an unanswered question for a still-upcoming event. */
   openQuestions(now = new Date()): PrepContextEntry[] {
-    return this.load().filter(e => !e.answer && new Date(e.eventStartISO).getTime() > now.getTime());
+    return this.load(now.getTime()).filter(e => !e.answer && new Date(e.eventStartISO).getTime() > now.getTime());
   }
 
   /** Record that a question was asked (creates or appends an askedAt). */
   recordAsked(eventKey: string, eventTitle: string, eventStart: Date, question: string, now = new Date()): void {
-    const entries = this.load();
+    const entries = this.load(now.getTime());
     const existing = entries.find(e => e.eventKey === eventKey);
     if (existing) {
       existing.askedAtISO.push(now.toISOString());
@@ -117,7 +119,7 @@ export class PrepContextStore {
   }
 
   recordAnswer(eventKey: string, answer: string, now = new Date()): boolean {
-    const entries = this.load();
+    const entries = this.load(now.getTime());
     const entry = entries.find(e => e.eventKey === eventKey);
     if (!entry) return false;
     entry.answer = answer;
@@ -135,9 +137,9 @@ export class PrepContextStore {
    *    provided we haven't already asked that day → then silent forever
    */
   shouldAsk(eventTitle: string, eventStart: Date, timeZone: string, now = new Date()): boolean {
-    const carried = this.contextFor(eventTitle, eventStart);
+    const carried = this.contextFor(eventTitle, eventStart, now);
     if (carried?.answer) return false;
-    const entry = this.get(eventKeyFor(eventTitle, eventStart));
+    const entry = this.get(eventKeyFor(eventTitle, eventStart), now);
     if (!entry) return true;
 
     const dayIn = (d: Date) => d.toLocaleDateString('en-US', { timeZone });

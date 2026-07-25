@@ -63,6 +63,7 @@ export class CronStore {
     if (changes.category !== undefined) job.category = changes.category;
     if (changes.message !== undefined) job.message = changes.message;
     if (changes.enabled !== undefined) job.enabled = changes.enabled;
+    if (changes.once !== undefined) job.once = changes.once;
     this.save();
     return job;
   }

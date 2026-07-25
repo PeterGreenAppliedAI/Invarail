@@ -21,7 +21,9 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
   { pattern: /\b(screenshot|browse|go to|navigate to|visit)\b.*\b(\.com|\.org|\.net|\.io|site|website|page)\b/i, category: 'multi' },
   // Specific action categories before broad ones
   // NOTE: bare "workspace" removed — it captured exec requests like "run ls in the workspace"
-  { pattern: /\b(config|configure|setting|settings|preference|edit.*cron|modify.*cron|update.*cron|change.*cron|enable|disable|tools\.md)\b/i, category: 'config' },
+  // "settings?(?! up)" — plain "setting up a business" is everyday English, not a
+  // config request (it broke sticky and misrouted a reminder paste, July 20)
+  { pattern: /\b(config|configure|settings?(?! up)|preference|edit.*cron|modify.*cron|update.*cron|change.*cron|enable|disable|tools\.md)\b/i, category: 'config' },
   { pattern: /\b(add.*heartbeat|remove.*heartbeat|list.*heartbeat|periodic check|periodic task|autonomous check)\b/i, category: 'cron' },
   { pattern: /\b(execute|compile|deploy|install|sudo|npm|pip|git|mkdir|rm|ls|pwd|chmod)\b/i, category: 'exec' },
   { pattern: /\b(run|build)\b.*\b(command|script|code|program|server|docker|container)\b/i, category: 'exec' },
@@ -135,7 +137,12 @@ function isGreeting(message: string): boolean {
  *  reply like "I just need to get him a link" classified as `message` and the
  *  pipeline tried to SEND the user's own words to a fabricated target (caught
  *  by the confirm gate, July 7). Imperatives still break through sticky. */
-const STICKY_CATEGORIES = new Set(['chat', 'memory', 'briefing']);
+/* 'cron' — after a scheduling action, follow-ups ("did we do all three?",
+ * a re-paste of the jobs that didn't get created) belong back in the cron
+ * pipeline, whose list branch answers questions about jobs from cron_list.
+ * Without this, "did we do all three?" routed to memory and confabulated
+ * from a saved fact (July 20). */
+const STICKY_CATEGORIES = new Set(['chat', 'memory', 'briefing', 'cron']);
 
 /** Sticky target per category — briefing replies land in chat (there is no 'briefing' specialist) */
 const STICKY_TARGET: Record<string, string> = { briefing: 'chat' };

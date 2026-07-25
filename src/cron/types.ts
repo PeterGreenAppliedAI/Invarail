@@ -1,3 +1,13 @@
+/**
+ * Single source of truth for which specialist categories a cron job may run.
+ * cron_add/cron_edit validation AND the cron pipeline's extraction enum all
+ * import this — they drifted once (tool rejected "task" while the extractor
+ * offered it, July 20 incident) and must never be maintained separately again.
+ */
+export const CRON_JOB_CATEGORIES = [
+  'chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'config', 'task', 'research', 'personal',
+] as const;
+
 export interface CronJob {
   id: string;
   name: string;
@@ -33,4 +43,5 @@ export interface CronJobUpdate {
   category?: string;
   message?: string;
   enabled?: boolean;
+  once?: boolean;
 }

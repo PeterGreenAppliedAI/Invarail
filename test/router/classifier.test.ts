@@ -118,6 +118,29 @@ describe('classifyMessage', () => {
     expect(result.category).toBe('website');
     expect(result.confidence).toBe('keyword');
   });
+
+  it('sticky: cron follow-up question stays in cron (July 20 incident)', async () => {
+    const client = createMockClient('memory');
+    const result = await classifyMessage(client, defaultConfig, 'We did all three or just the one?', 'cron');
+    expect(result.category).toBe('cron');
+    expect(result.confidence).toBe('sticky');
+  });
+
+  it('sticky: "setting up a business" does not trip the config keyword', async () => {
+    const client = createMockClient('personal');
+    const paste = 'September 15, 2026 — Follow up with Anthony. Context: he proposed presenting my product and setting up a business structure to split revenue. Remind me to prepare before reaching out with a rough structure in mind rather than negotiating from a handshake.';
+    const result = await classifyMessage(client, defaultConfig, paste, 'cron');
+    expect(result.category).toBe('cron');
+    expect(result.confidence).toBe('sticky');
+  });
+
+  it('keyword: "settings" still routes to config', async () => {
+    const client = createFailingClient();
+    const config = { ...defaultConfig, categories: { ...defaultConfig.categories, config: { description: 'Config' } } };
+    const result = await classifyMessage(client, config, 'change my notification settings');
+    expect(result.category).toBe('config');
+    expect(result.confidence).toBe('keyword');
+  });
 });
 
 describe('capForClassification', () => {

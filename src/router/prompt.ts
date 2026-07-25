@@ -25,11 +25,11 @@ User message: ${message}
 Category:`;
 }
 
-const DEFAULT_CATEGORIES = `- chat: Talk — conversation, opinions, explanations, questions about Peter. No tools; use when the user is discussing, not asking to produce/fetch/do something.
+const DEFAULT_CATEGORIES = `- chat: Talk — conversation, opinions, explanations, questions about the user. No tools; use when the user is discussing, not asking to produce/fetch/do something.
 - web_search: Look something up on the live internet now (search + read pages). READ-only.
 - memory: Recall past conversations or stored facts about the user. READ-only.
 - exec: Run shell commands, scripts, and file operations in a sandbox.
-- cron: Schedule, list, or manage recurring tasks and heartbeats.
+- cron: Schedule, list, or manage recurring tasks, heartbeats, and reminders — including one-time reminders for a future date ("remind me on Sept 15 to renew the token"), even when the reminder content is personal or business context.
 - message: Send a message to another channel or user.
 - website: Fetch and summarize a specific web page or teaching material.
 - task: Create, list, update, or complete to-do tasks.
@@ -37,7 +37,7 @@ const DEFAULT_CATEGORIES = `- chat: Talk — conversation, opinions, explanation
 - multi: Full-toolset worker for COMPLEX multi-step tasks needing several different tools chained (search + save + send, browse + extract + file). Not for a single artifact.
 - config: Edit settings, cron jobs, workspace files, agent configuration.
 - research: Deep multi-source research that PRODUCES a polished PDF report with citations and charts.
-- personal: READ-ONLY access to Peter's Gmail + Google Calendar (search/read email, list/search events). CANNOT create files, PDFs, or run commands.
+- personal: READ-ONLY access to the user's Gmail + Google Calendar (search/read email, list/search events). CANNOT create files, PDFs, run commands, or schedule anything — scheduling and reminders are cron.
 - image: Generate an image, picture, or illustration.
 - code_gen: Build, scaffold, or write code for a project or feature.
 - analytics: Analyze an uploaded data file (CSV/Excel/JSON) — stats, charts, insights.`;
