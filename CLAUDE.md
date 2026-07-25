@@ -134,6 +134,8 @@ Channel security is enforced in `src/dispatch.ts` via 6 layered filters applied 
 
 **Autonomy ladder (structural):** tools may declare `autonomy: {tier: silent|act_then_notify|propose_confirm, reversible, blastRadius: self|owner|external}` (`src/tools/types.ts`). New externally-visible tools should declare `propose_confirm`. Every autonomous action (heartbeat auto-complete/cancel, cron runs, stale-fact proposals, ledger confirmations) logs via `logAutonomousAction()` in metrics.ts — the track record that justifies promoting an action type up the ladder via `autoApproveTools`. Bounds are code gates, never model judgment.
 
+**Target-bound standing grants** (`src/security/grants.ts`): the rung between propose_confirm and blanket autoApproveTools. Tools declaring `targetArgs` (the params naming their external target — `send_message` → `['channel','channelId']`) are grant-eligible; replying `always <id>` to a confirm preview executes AND mints a grant for that exact tool→target key, so future identical-target calls run silently (logged `grant_used`). Tools without targetArgs (exec) are structurally ineligible. Grants mint only on successful execution, are principal-bound, exact-match, revocable via `!grants revoke <id>`. Implicit reply-origin approval: a send to the exact conversation the request came from never asks.
+
 **Owner-only tier:** `ownerId` in config is a single string (not a list). Tools in `ownerOnlyTools` are completely invisible to non-owners — the model never sees them in the tool list. This is a **code gate** checked before any model involvement.
 
 Additional security:
@@ -168,7 +170,8 @@ Additional security:
     parameters?: ToolParameterSchema;  // structured params for native tool calling
     example?: string;
     category: string;
-    autonomy?: ToolAutonomy;           // {tier, reversible, blastRadius} — ladder position; propose_confirm tools are confirm-gated everywhere
+    requiresConfirm?: boolean;         // the one autonomy bit — confirm-gated everywhere unless a channel's autoApproveTools promotes it
+    resultLimit?: number;              // per-tool truncation cap; static TOOL_RESULT_LIMITS map wins for built-ins
     execute: (params: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
   }
   ```
@@ -178,6 +181,15 @@ Additional security:
 - Tool results are truncated to `MAX_TOOL_RESULT_CHARS` (2000, 8000 for browser) by the tool-loop engine.
 - Tool params are validated and type-coerced at runtime (`validateToolParams()` in engine.ts).
 - `[FILE:path]` tokens in tool output are stripped before the model sees them and re-appended after the final answer for media delivery.
+
+### MCP bridge (`src/mcp/`)
+
+- External MCP servers (configured in `tools.mcp.servers[]`) are spawned as stdio children and their tools auto-registered as `LocalClawTool`s named `<server>_<tool>`, category `mcp:<server>`.
+- Protocol client is a **zero-dep** JSON-RPC 2.0 implementation (initialize → tools/list → tools/call only) — deliberately not the official SDK; swap path stays behind `McpManager`.
+- **Security default:** tools without `annotations.readOnlyHint` get `requiresConfirm: true`; per-server `trust: 'auto'` in config waives it (owner-authored config = code gate). Channel-layer gates work unchanged (name-based).
+- **Small-model layer:** descriptions capped at 500 chars on a sentence boundary; per-server `toolAllowlist`, `toolDescriptions` (hand-curated rewrites), `maxResultChars`.
+- Specialist tool lists may use the token `mcp:<server>` to include a server's entire toolset (expanded in dispatch via `registry.expandToolNames`).
+- A failing server never blocks boot; a crashed server is lazily respawned on next call (3 attempts, 5s backoff).
 
 ### Dependencies
 
@@ -259,12 +271,18 @@ src/
     types.ts                #   OllamaMessage, OllamaTool, OllamaToolCall
 
   skills/                   # Self-improving procedural memory
-    store.ts                #   SkillStore — save/load/update/archive/merge skill files
-    matcher.ts              #   findMatchingSkill() — keyword scoring with threshold + ratio check
+    store.ts                #   SkillStore — save/load/update/archive/merge; triggers frontmatter (concrete past requests)
+    matcher.ts              #   findMatchingSkillHybrid() — dense similarity first, keyword scoring fallback
+    semantic.ts             #   Skill embeddings in EmbeddingStore (source='skill'); floor via scripts/skill-match-check.ts
 
   plugins/                  # Plugin system — dynamic tool discovery
     loader.ts               #   Scan plugins/ and ~/.localclaw/plugins/, dynamic import, auto-register
     types.ts                #   PluginManifest, PluginExport interfaces
+
+  mcp/                      # MCP client bridge — external tool servers as LocalClaw tools
+    client.ts               #   McpStdioClient — zero-dep JSON-RPC 2.0 over newline-delimited stdio
+    manager.ts              #   McpManager — server lifecycle (lazy respawn) + tool translation layer
+    types.ts                #   McpToolDefinition, McpContent, McpCallResult, JsonRpcResponse
 
   agents/                   # Agent routing & workspace
     resolve-route.ts        #   Binding-based agent routing
