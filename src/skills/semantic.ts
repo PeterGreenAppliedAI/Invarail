@@ -13,8 +13,11 @@ import type { OllamaClient } from '../ollama/client.js';
 import type { Skill, SkillStore } from './store.js';
 
 const SKILL_SOURCE = 'skill';
-/** Measured-floor placeholder — validate with scripts/skill-match-check.ts before trusting in prod. */
-export const SKILL_MATCH_FLOOR = 0.6;
+/** MEASURED 2026-07-25 vs real qwen3-embedding (scripts/skill-match-check.ts):
+ *  noise band ≤0.604, signal band ≥0.700 — the initial 0.60 guess would have
+ *  matched "what did we talk about yesterday" (0.604). Re-measure if the
+ *  embedding model changes. */
+export const SKILL_MATCH_FLOOR = 0.65;
 
 let sharedStore: EmbeddingStore | null = null;
 
