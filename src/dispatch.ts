@@ -152,6 +152,9 @@ export interface DispatchResult {
   /** Token usage from Ollama (prompt + completion) */
   promptTokens?: number;
   completionTokens?: number;
+  /** Confirm-gate previews recorded during this dispatch — delivery surfaces
+   *  attach confirm/always/deny buttons for the most recent one */
+  pendingActions?: Array<{ id: string; tool: string }>;
 }
 
 /**
@@ -867,6 +870,7 @@ async function runSpecialist(
   // executes the STORED params, never a model-regenerated call.
   const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
   const confirmSet = resolveConfirmSet(registry, channelSecurity, { cronMode: params.cronMode, category });
+  const recordedPending: Array<{ id: string; tool: string }> = [];
   const executor: import('./tools/types.js').ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
@@ -889,7 +893,9 @@ async function runSpecialist(
             channel: params.sourceContext?.channel ?? 'unknown',
             agentId,
             sessionKey,
+            category,
           });
+          recordedPending.push({ id: recorded.id, tool: recorded.tool });
           return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nTell the user what you're about to do and ask them to reply "confirm ${recorded.id}" to proceed once, or "always ${recorded.id}" to also stop asking for this exact target (expires in 10 minutes).`;
         }
         return scopedExecutor(toolName, toolParams, ctx);
@@ -1027,6 +1033,7 @@ RULES:
       params: s.action!.params,
       observation: s.observation,
     })),
+    ...(recordedPending.length > 0 ? { pendingActions: recordedPending } : {}),
   };
 }
 
@@ -1124,6 +1131,7 @@ async function runPipelineDispatch(
   // bypassed confirmTools entirely.
   const channelSecurity = resolveChannelSecurity(config, params.sourceContext?.channel);
   const confirmSet = resolveConfirmSet(registry, channelSecurity, { cronMode: params.cronMode, category });
+  const recordedPending: Array<{ id: string; tool: string }> = [];
   const gatedExecutor: ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
         if (confirmSet.has(toolName)) {
@@ -1146,7 +1154,9 @@ async function runPipelineDispatch(
             channel: params.sourceContext?.channel ?? 'unknown',
             agentId,
             sessionKey,
+            category,
           });
+          recordedPending.push({ id: recorded.id, tool: recorded.tool });
           return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nReply "confirm ${recorded.id}" to proceed once, or "always ${recorded.id}" to also stop asking for this exact target (expires in 10 minutes).`;
         }
         return scopedExecutor(toolName, toolParams, ctx);
@@ -1301,6 +1311,7 @@ async function runPipelineDispatch(
     iterations: pipelineResult.iterations,
     hitMaxIterations: pipelineResult.hitMaxIterations,
     steps: pipelineResult.steps,
+    ...(recordedPending.length > 0 ? { pendingActions: recordedPending } : {}),
   };
 }
 

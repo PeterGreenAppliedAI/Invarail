@@ -235,6 +235,10 @@ export const SessionConfigSchema = z.object({
   summarizeToolObservations: z.boolean().default(false),
   /** Model for observation summarization (defaults to router model if not set). */
   summarizationModel: z.string().optional(),
+  /** After a confirmed action executes, dispatch ONE follow-up turn in the
+   *  originating session (with the original category's tools) so multi-step
+   *  work survives the confirm gap instead of dying at the preview. */
+  continueAfterConfirm: z.boolean().default(true),
 });
 
 export const WebSearchConfigSchema = z.object({

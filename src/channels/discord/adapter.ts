@@ -1,7 +1,11 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   Client,
   GatewayIntentBits,
   Partials,
+  type Interaction,
   type Message,
 } from 'discord.js';
 import type {
@@ -112,6 +116,36 @@ export class DiscordAdapter implements ChannelAdapter {
       }
     });
 
+    // Button presses synthesize the equivalent TYPED message ("confirm <id>")
+    // and flow through the normal inbound path — buttons are reply sugar, never
+    // a second security surface. The ledger's sender-binding and single-use
+    // semantics apply unchanged (a second press gets "doesn't match").
+    this.client.on('interactionCreate', async (interaction: Interaction) => {
+      if (!interaction.isButton() || !this.handler) return;
+      const command = interaction.customId;
+      console.log(`[Discord] Button press from=${interaction.user.tag} command="${command}"`);
+      // Ack + strip the buttons so the message shows it was acted on
+      await interaction.update({ components: [] }).catch((err: unknown) => {
+        console.warn('[Discord] Button ack failed:', err instanceof Error ? err.message : err);
+      });
+      const inbound: InboundMessage = {
+        id: interaction.id,
+        channel: 'discord',
+        content: command,
+        senderId: interaction.user.id,
+        senderName: interaction.user.displayName ?? interaction.user.username,
+        guildId: interaction.guildId ?? undefined,
+        channelId: interaction.channelId ?? undefined,
+        timestamp: new Date(),
+        raw: interaction,
+      };
+      try {
+        await this.handler(inbound);
+      } catch (err) {
+        console.warn('[Discord] Button handler failed:', err instanceof Error ? err.message : err);
+      }
+    });
+
     // Track connection state changes (discord.js handles reconnection internally)
     this.client.on('error', (err) => {
       console.warn('[Discord] Client error:', err.message);
@@ -178,11 +212,25 @@ export class DiscordAdapter implements ChannelAdapter {
 
       const chunks = splitMessage(content.text, DISCORD_MAX_LENGTH);
 
+      // Buttons ride on the LAST chunk so they sit under the full message
+      const styleMap = { primary: ButtonStyle.Primary, success: ButtonStyle.Success, danger: ButtonStyle.Danger } as const;
+      const components = content.actions?.length
+        ? [new ActionRowBuilder<ButtonBuilder>().addComponents(
+            content.actions.slice(0, 5).map(a =>
+              new ButtonBuilder()
+                .setCustomId(a.command)
+                .setLabel(a.label)
+                .setStyle(styleMap[a.style ?? 'primary']),
+            ),
+          )]
+        : undefined;
+
       for (let i = 0; i < chunks.length; i++) {
         await sendable.send({
           content: chunks[i],
           reply: target.replyToId ? { messageReference: target.replyToId } : undefined,
           files: i === 0 && files.length > 0 ? files : undefined,
+          components: i === chunks.length - 1 ? components : undefined,
         });
       }
     } catch (err) {

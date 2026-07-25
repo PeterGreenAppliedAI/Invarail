@@ -19,6 +19,9 @@ export interface PendingAction {
   channel: string;
   agentId: string;
   sessionKey: string;
+  /** Router category of the originating dispatch — the continuation turn after
+   *  a confirm re-enters with the SAME toolset (optional: pre-existing entries lack it) */
+  category?: string;
   createdAt: string;
   expiresAt: string;
 }
@@ -34,6 +37,9 @@ export const CONFIRMATION_PATTERN = /^(?:confirm|yes,?\s*do it|approved?|go ahea
  *  a typo'd id). These must get an error reply, never fall through to chat where
  *  the model may hallucinate "Done!". Longer phrases ("confirm my flight") still
  *  route to chat as normal requests. */
+// NOTE: deny/cancel/reject are deliberately NOT near-miss verbs — "cancel it" /
+// "cancel the daily search" are legitimate cron/task requests and must reach the
+// router. Deny-with-unknown-id falls through instead (no execution risk on deny).
 export const CONFIRMATION_NEAR_MISS = /^(?:confirm|approved?|ok|always)\s+([a-z0-9]{1,12})\s*[.!]?$/i;
 
 /** Bare confirms ("go ahead") only fire on RECENT interactive previews. Without
@@ -45,6 +51,11 @@ export const BARE_CONFIRM_MAX_AGE_MS = 10 * 60 * 1000;
  *  exact tool→target pair never asks again. Id is REQUIRED (no bare "always"):
  *  a standing grant must never attach to an implicitly-selected action. */
 export const ALWAYS_PATTERN = /^always\s+([a-f0-9]{6,12})\s*[.!]?$/i;
+
+/** "deny <id>" — explicitly cancel a pending action (consume without executing).
+ *  Before this, denial was only expiry — a denied preview lingered confirmable
+ *  for its whole TTL. Id required so a casual "no" never cancels something. */
+export const DENY_PATTERN = /^(?:deny|cancel|reject)\s+([a-f0-9]{6,12})\s*[.!]?$/i;
 
 /** Extract the optional action id from a confirmation message (null = bare confirm). */
 export function parseConfirmationId(message: string): string | null {
