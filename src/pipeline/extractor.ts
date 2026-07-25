@@ -1,13 +1,7 @@
 import JSON5 from 'json5';
 import type { OllamaClient } from '../ollama/client.js';
+import type { ExtractFieldSchema as FieldSchema } from './types.js';
 import { pipelineExtractFailure } from '../errors.js';
-
-interface FieldSchema {
-  type: string;
-  description: string;
-  required?: boolean;
-  enum?: string[];
-}
 
 /**
  * Validate and coerce extracted params against the schema.
@@ -31,6 +25,26 @@ export function validateExtractedParams(
       continue;
     }
     if (val === undefined || val === null || val === '') continue;
+
+    if (field.type === 'array') {
+      if (!Array.isArray(val)) {
+        errors.push(`Field "${name}" should be an array, got ${typeof val}`);
+        continue;
+      }
+      if (field.items) {
+        const itemSchema = field.items;
+        coerced[name] = val.map((el, i) => {
+          if (typeof el !== 'object' || el === null || Array.isArray(el)) {
+            errors.push(`"${name}[${i}]" should be an object`);
+            return el;
+          }
+          const sub = validateExtractedParams(itemSchema, el as Record<string, unknown>);
+          errors.push(...sub.errors.map(e => `${name}[${i}]: ${e}`));
+          return sub.params;
+        });
+      }
+      continue;
+    }
 
     if ((field.type === 'number' || field.type === 'integer') && typeof val === 'string') {
       const num = Number(val);
@@ -58,12 +72,17 @@ export function buildExtractionPrompt(
   examples?: Array<{ input: string; output: Record<string, unknown> }>,
   extraContext?: string,
 ): { system: string; user: string } {
+  const renderField = (name: string, field: FieldSchema, indent: string): string => {
+    let line = `${indent}- "${name}" (${field.type}${field.required ? ', required' : ', optional'}): ${field.description}`;
+    if (field.enum) line += ` — one of: ${field.enum.join(', ')}`;
+    if (field.type === 'array' && field.items) {
+      line += `. Each element is an object with:\n`
+        + Object.entries(field.items).map(([n, f]) => renderField(n, f, `${indent}  `)).join('\n');
+    }
+    return line;
+  };
   const fields = Object.entries(schema)
-    .map(([name, field]) => {
-      let line = `- "${name}" (${field.type}${field.required ? ', required' : ', optional'}): ${field.description}`;
-      if (field.enum) line += ` — one of: ${field.enum.join(', ')}`;
-      return line;
-    })
+    .map(([name, field]) => renderField(name, field, ''))
     .join('\n');
 
   let system = `Extract the following parameters from the user's message as a JSON object.\n\n${fields}\n\nReturn ONLY a valid JSON object. No explanation, no markdown, no extra text.`;
@@ -86,6 +105,10 @@ export function buildExtractionPrompt(
 function buildJsonSchema(schema: Record<string, FieldSchema>): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const [name, f] of Object.entries(schema)) {
+    if (f.type === 'array') {
+      properties[name] = { type: 'array', items: f.items ? buildJsonSchema(f.items) : { type: 'string' } };
+      continue;
+    }
     const prop: Record<string, unknown> = {
       type: f.type === 'integer' ? 'integer'
         : f.type === 'number' ? 'number'
@@ -104,13 +127,14 @@ function buildJsonSchema(schema: Record<string, FieldSchema>): Record<string, un
 let structuredOutputsSupported = true;
 
 /** Chat with grammar-constrained JSON output when supported; plain chat otherwise. */
-async function chatMaybeStructured(
+export async function chatMaybeStructured(
   client: OllamaClient,
   model: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   jsonSchema: Record<string, unknown>,
+  maxTokens = 256,
 ): Promise<string> {
-  const options = { temperature: 0.1, num_predict: 256 };
+  const options = { temperature: 0.1, num_predict: maxTokens };
   if (structuredOutputsSupported) {
     try {
       const response = await client.chat({ model, messages, format: jsonSchema, options });
@@ -137,6 +161,7 @@ export async function extractParams(
   userMessage: string,
   examples?: Array<{ input: string; output: Record<string, unknown> }>,
   extraContext?: string,
+  maxTokens?: number,
 ): Promise<Record<string, unknown>> {
   const { system, user } = buildExtractionPrompt(schema, userMessage, examples, extraContext);
   const jsonSchema = buildJsonSchema(schema);
@@ -144,7 +169,7 @@ export async function extractParams(
   const raw = await chatMaybeStructured(client, model, [
     { role: 'system', content: system },
     { role: 'user', content: user },
-  ], jsonSchema);
+  ], jsonSchema, maxTokens);
 
   const parsed = tryParseJson(raw);
   if (parsed) {
@@ -152,11 +177,11 @@ export async function extractParams(
     if (validated.errors.length === 0) return validated.params;
     // Fall through to repair with specific validation errors
     return repairExtraction(client, model, system, user, raw,
-      `The JSON was parseable but invalid: ${validated.errors.join('; ')}. Return a corrected JSON object only.`, schema, validated.params);
+      `The JSON was parseable but invalid: ${validated.errors.join('; ')}. Return a corrected JSON object only.`, schema, validated.params, maxTokens);
   }
 
   return repairExtraction(client, model, system, user, raw,
-    'That was not valid JSON. Return ONLY a JSON object like {"key": "value"}, nothing else.', schema);
+    'That was not valid JSON. Return ONLY a JSON object like {"key": "value"}, nothing else.', schema, undefined, maxTokens);
 }
 
 /** One repair round-trip. Validation errors on the repaired output are tolerated
@@ -171,13 +196,14 @@ async function repairExtraction(
   repairInstruction: string,
   schema: Record<string, FieldSchema>,
   bestEffortParams?: Record<string, unknown>,
+  maxTokens?: number,
 ): Promise<Record<string, unknown>> {
   const repairRaw = await chatMaybeStructured(client, model, [
     { role: 'system', content: system },
     { role: 'user', content: user },
     { role: 'assistant', content: priorRaw },
     { role: 'user', content: repairInstruction },
-  ], buildJsonSchema(schema));
+  ], buildJsonSchema(schema), maxTokens);
 
   const repairParsed = tryParseJson(repairRaw);
   if (repairParsed) {
