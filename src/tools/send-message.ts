@@ -20,6 +20,9 @@ export function createSendMessageTool(channelRegistry: ChannelRegistry): LocalCl
     // Irreversible and visible to other people — asks first. Promote per
     // channel with autoApproveTools once the track record supports it.
     requiresConfirm: true,
+    // Grant key is channel:channelId — "always" on a confirm grants THIS
+    // destination only, never the tool wholesale
+    targetArgs: ['channel', 'channelId'],
 
     async execute(params: Record<string, unknown>): Promise<string> {
       const channel = params.channel as string;

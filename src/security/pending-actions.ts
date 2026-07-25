@@ -34,12 +34,17 @@ export const CONFIRMATION_PATTERN = /^(?:confirm|yes,?\s*do it|approved?|go ahea
  *  a typo'd id). These must get an error reply, never fall through to chat where
  *  the model may hallucinate "Done!". Longer phrases ("confirm my flight") still
  *  route to chat as normal requests. */
-export const CONFIRMATION_NEAR_MISS = /^(?:confirm|approved?|ok)\s+([a-z0-9]{1,12})\s*[.!]?$/i;
+export const CONFIRMATION_NEAR_MISS = /^(?:confirm|approved?|ok|always)\s+([a-z0-9]{1,12})\s*[.!]?$/i;
 
 /** Bare confirms ("go ahead") only fire on RECENT interactive previews. Without
  *  this, a casual "go ahead" hours later executes a stale 12h briefing proposal
  *  as a non-sequitur. Long-TTL proposals always require "confirm <id>". */
 export const BARE_CONFIRM_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** "always <id>" — confirm AND mint a target-bound standing grant so this
+ *  exact tool→target pair never asks again. Id is REQUIRED (no bare "always"):
+ *  a standing grant must never attach to an implicitly-selected action. */
+export const ALWAYS_PATTERN = /^always\s+([a-f0-9]{6,12})\s*[.!]?$/i;
 
 /** Extract the optional action id from a confirmation message (null = bare confirm). */
 export function parseConfirmationId(message: string): string | null {

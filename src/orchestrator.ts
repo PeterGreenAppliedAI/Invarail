@@ -14,6 +14,7 @@ import { TaskStore } from './tasks/store.js';
 import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
 import { pendingActions } from './security/pending-actions.js';
+import { standingGrants } from './security/grants.js';
 import { handleConfirmation } from './security/confirm-handler.js';
 import { PrepContextStore, captureBriefingAnswer } from './services/prep-context.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
@@ -69,6 +70,7 @@ export class Orchestrator {
   private messageDebouncer = new MessageDebouncer();
   private heartbeatCron?: Cron;
   private embeddingStore?: EmbeddingStore;
+  private mcpManager?: import('./mcp/manager.js').McpManager;
   private factStore?: FactStore;
   private graphMemory?: GraphMemoryStore;
   private taskStore?: TaskStore;
@@ -185,7 +187,7 @@ export class Orchestrator {
     const taskStore = this.taskStore;
 
     // Register all tools
-    const { embeddingStore } = await registerAllTools(this.toolRegistry, this.config, {
+    const { embeddingStore, mcpManager } = await registerAllTools(this.toolRegistry, this.config, {
       cronService: this.cronService,
       channelRegistry: this.channelRegistry,
       ollamaClient: this.client,
@@ -195,6 +197,7 @@ export class Orchestrator {
       graphMemory: this.graphMemory,
     });
     this.embeddingStore = embeddingStore;
+    this.mcpManager = mcpManager;
 
     // Set up message handler
     this.channelRegistry.onMessage(async (msg) => {
@@ -268,6 +271,7 @@ export class Orchestrator {
     this.heartbeatCron?.stop();
     this.cronService?.stop();
     this.embeddingStore?.close();
+    await this.mcpManager?.stop();
     await this.channelRegistry.disconnectAll();
     console.log('[Orchestrator] Stopped');
   }
@@ -981,6 +985,30 @@ export class Orchestrator {
         { text: replyText },
       ).catch((err) => {
         console.warn('[Orchestrator] Failed to send autonomy report:', err instanceof Error ? err.message : err);
+      });
+      return;
+    }
+
+    if (trimmed.startsWith('!grants')) {
+      const args = trimmed.slice('!grants'.length).trim();
+      let replyText: string;
+      const revokeMatch = args.match(/^revoke\s+([a-f0-9]{6,12})$/i);
+      if (revokeMatch) {
+        const revoked = standingGrants.revoke(revokeMatch[1].toLowerCase(), principal);
+        replyText = revoked
+          ? `🔒 Revoked standing grant: **${revoked.tool}** → \`${revoked.target}\` — it will ask for confirmation again.`
+          : `No grant with id \`${revokeMatch[1]}\` found for you.`;
+      } else {
+        const grants = standingGrants.listFor(principal);
+        replyText = grants.length > 0
+          ? `🔓 **Standing grants** (auto-approved tool→target pairs):\n${grants.map(g => `- \`${g.id}\` **${g.tool}** → \`${g.target}\` (since ${g.createdAt.split('T')[0]})`).join('\n')}\n\nRevoke with \`!grants revoke <id>\`.`
+          : 'No standing grants. Reply `always <id>` to a confirmation preview to create one for that exact tool→target.';
+      }
+      await this.channelRegistry.send(
+        { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+        { text: replyText },
+      ).catch((err) => {
+        console.warn('[Orchestrator] Failed to send grants reply:', err instanceof Error ? err.message : err);
       });
       return;
     }
