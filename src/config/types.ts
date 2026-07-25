@@ -25,6 +25,8 @@ import type {
   WebFetchConfigSchema,
   WebsiteConfigSchema,
   KnowledgeConfigSchema,
+  McpConfigSchema,
+  McpServerConfigSchema,
   ReasoningConfigSchema,
   BrowserConfigSchema,
   TTSConfigSchema,
@@ -60,6 +62,8 @@ export type SessionExecConfig = z.infer<typeof SessionExecConfigSchema>;
 export type DockerConfig = z.infer<typeof DockerConfigSchema>;
 export type WebSearchConfig = z.infer<typeof WebSearchConfigSchema>;
 export type WebFetchConfig = z.infer<typeof WebFetchConfigSchema>;
+export type McpConfig = z.infer<typeof McpConfigSchema>;
+export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 export type WebsiteConfig = z.infer<typeof WebsiteConfigSchema>;
 export type KnowledgeConfig = z.infer<typeof KnowledgeConfigSchema>;
 export type ReasoningConfig = z.infer<typeof ReasoningConfigSchema>;

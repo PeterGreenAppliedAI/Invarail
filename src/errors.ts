@@ -13,7 +13,8 @@ export type ErrorCode =
   | 'SSRF_BLOCKED'
   | 'SESSION_IO_ERROR'
   | 'PIPELINE_STAGE_ERROR'
-  | 'PIPELINE_EXTRACT_FAILURE';
+  | 'PIPELINE_EXTRACT_FAILURE'
+  | 'MCP_SERVER_ERROR';
 
 export class LocalClawError extends Error {
   constructor(
@@ -87,4 +88,9 @@ export function pipelineStageError(stage: string, cause?: unknown): LocalClawErr
 
 export function pipelineExtractFailure(stage: string, raw: string): LocalClawError {
   return new LocalClawError('PIPELINE_EXTRACT_FAILURE', `Pipeline extraction at "${stage}" returned unparseable output: "${raw.slice(0, 100)}"`);
+}
+
+export function mcpServerError(server: string, cause: unknown): LocalClawError {
+  const msg = cause instanceof Error ? cause.message : String(cause);
+  return new LocalClawError('MCP_SERVER_ERROR', `MCP server "${server}" error: ${msg}`, cause);
 }

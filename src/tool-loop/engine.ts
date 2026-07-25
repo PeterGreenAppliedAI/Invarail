@@ -724,7 +724,9 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
         // Tool result normalization: proactively truncate large outputs (ChatGPT feedback §5).
         // Per-tool budget — research/analysis tools (reason, web_fetch, code_session) get room so
         // their long output isn't guillotined; everything else stays lean at the default.
-        const effectiveLimit = TOOL_RESULT_LIMITS[toolName] ?? MAX_TOOL_RESULT_CHARS;
+        const effectiveLimit = TOOL_RESULT_LIMITS[toolName]
+          ?? tools.find(t => t.name === toolName)?.resultLimit
+          ?? MAX_TOOL_RESULT_CHARS;
         if (observation.length > effectiveLimit) {
           const original = observation.length;
           observation = observation.slice(0, effectiveLimit) + `\n... [truncated from ${original} chars]`;

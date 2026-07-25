@@ -133,7 +133,7 @@ async function runOrchestrator(config: ReturnType<typeof loadConfig>) {
 async function runRepl(config: ReturnType<typeof loadConfig>) {
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
   const registry = new ToolRegistry();
-  await registerAllTools(registry, config);
+  const { mcpManager } = await registerAllTools(registry, config);
 
   const available = await client.isAvailable();
   if (!available) {
@@ -192,7 +192,8 @@ async function runRepl(config: ReturnType<typeof loadConfig>) {
     rl.prompt();
   });
 
-  rl.on('close', () => {
+  rl.on('close', async () => {
+    await mcpManager?.stop();
     console.log('\n[LocalClaw] Goodbye!');
     process.exit(0);
   });
