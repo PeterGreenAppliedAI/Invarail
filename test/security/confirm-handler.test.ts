@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handleConfirmation } from '../../src/security/confirm-handler.js';
 import { PendingActionStore } from '../../src/security/pending-actions.js';
+import { GrantStore } from '../../src/security/grants.js';
 import type { LocalClawConfig } from '../../src/config/types.js';
 import type { ToolRegistry } from '../../src/tools/registry.js';
 
@@ -87,5 +88,69 @@ describe('handleConfirmation', () => {
     expect(out.reply).toContain('❌');
     expect(out.reply).toContain('channel offline');
     expect(store.listFor('peter')).toHaveLength(0);
+  });
+});
+
+describe('handleConfirmation — always (standing grants)', () => {
+  function grantCtx(executorResult = 'Message sent to discord:123') {
+    const registry = {
+      createScopedExecutor: () => vi.fn().mockResolvedValue(executorResult),
+      get: () => ({
+        name: 'send_message',
+        description: '',
+        parameterDescription: '',
+        category: 'message',
+        targetArgs: ['channel', 'channelId'],
+        execute: async () => 'ok',
+      }),
+    } as unknown as ToolRegistry;
+    const grants = new GrantStore(join(mkdtempSync(join(tmpdir(), 'grants-')), 'grants.json'));
+    return { registry, grants };
+  }
+
+  it('always <id> executes AND mints a target-bound grant', async () => {
+    const entry = record({ params: { channel: 'discord', channelId: '123', text: 'hi' } });
+    const { registry, grants } = grantCtx();
+    const out = await handleConfirmation({ ...baseCtx, store, toolRegistry: registry, grants, message: `always ${entry.id}`, senderId: 'discord-1' });
+    expect(out.handled).toBe(true);
+    expect(out.reply).toContain('✅');
+    expect(out.reply).toContain('Standing grant');
+    expect(grants.findMatch('send_message', 'discord:123', 'peter')).not.toBeNull();
+    expect(store.listFor('peter')).toHaveLength(0); // consumed
+  });
+
+  it('always on a grant-ineligible tool executes once but mints nothing', async () => {
+    const entry = record({ tool: 'exec', params: { command: 'ls' } });
+    const registry = {
+      createScopedExecutor: () => vi.fn().mockResolvedValue('done'),
+      get: () => ({ name: 'exec', description: '', parameterDescription: '', category: 'exec', execute: async () => 'ok' }),
+    } as unknown as ToolRegistry;
+    const grants = new GrantStore(join(mkdtempSync(join(tmpdir(), 'grants-')), 'grants.json'));
+    const out = await handleConfirmation({ ...baseCtx, store, toolRegistry: registry, grants, message: `always ${entry.id}`, senderId: 'discord-1' });
+    expect(out.reply).toContain('✅');
+    expect(out.reply).toContain('No standing grant');
+    expect(grants.listFor('peter')).toHaveLength(0);
+  });
+
+  it('always with a failed execution mints NO grant', async () => {
+    const entry = record({ params: { channel: 'discord', channelId: '123', text: 'hi' } });
+    const { registry, grants } = grantCtx('Error: adapter refused');
+    const out = await handleConfirmation({ ...baseCtx, store, toolRegistry: registry, grants, message: `always ${entry.id}`, senderId: 'discord-1' });
+    expect(out.reply).toContain('❌');
+    expect(grants.listFor('peter')).toHaveLength(0);
+  });
+
+  it('bare "always" is not a confirmation (id required for standing grants)', async () => {
+    record();
+    const out = await handleConfirmation({ ...baseCtx, store, message: 'always', senderId: 'discord-1' });
+    expect(out.handled).toBe(false);
+    expect(store.listFor('peter')).toHaveLength(1);
+  });
+
+  it('always with an invalid short id is a near-miss error, not chat fall-through', async () => {
+    record();
+    const out = await handleConfirmation({ ...baseCtx, store, message: 'always 2', senderId: 'discord-1' });
+    expect(out.handled).toBe(true);
+    expect(out.reply).toContain("doesn't match");
   });
 });

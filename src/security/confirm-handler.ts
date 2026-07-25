@@ -9,9 +9,11 @@ import {
   PendingActionStore,
   CONFIRMATION_PATTERN,
   CONFIRMATION_NEAR_MISS,
+  ALWAYS_PATTERN,
   BARE_CONFIRM_MAX_AGE_MS,
   parseConfirmationId,
 } from './pending-actions.js';
+import { standingGrants, grantTargetFor, GrantStore } from './grants.js';
 
 /**
  * THE confirm entry point — every channel path calls this one function.
@@ -45,17 +47,19 @@ export interface ConfirmContext {
   toolRegistry: ToolRegistry;
   sessionStore?: SessionStore;
   store?: PendingActionStore;
+  grants?: GrantStore;
 }
 
 export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOutcome> {
   const trimmed = ctx.message.trim();
-  const isStrict = CONFIRMATION_PATTERN.test(trimmed);
-  const isNearMiss = !isStrict && CONFIRMATION_NEAR_MISS.test(trimmed);
-  if (!isStrict && !isNearMiss) return { handled: false };
+  const alwaysMatch = trimmed.match(ALWAYS_PATTERN);
+  const isStrict = !alwaysMatch && CONFIRMATION_PATTERN.test(trimmed);
+  const isNearMiss = !alwaysMatch && !isStrict && CONFIRMATION_NEAR_MISS.test(trimmed);
+  if (!alwaysMatch && !isStrict && !isNearMiss) return { handled: false };
 
   const store = ctx.store ?? pendingActions;
   const principal = resolvePrincipal(ctx.senderId, ctx.config);
-  const targetId = isStrict ? parseConfirmationId(trimmed) : null;
+  const targetId = alwaysMatch ? alwaysMatch[1].toLowerCase() : isStrict ? parseConfirmationId(trimmed) : null;
 
   const pending = targetId
     ? store.findById(targetId, principal)
@@ -95,6 +99,26 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     reply = toolReportedFailure
       ? `❌ Confirmed, but **${pending.tool}** did not succeed: ${observation}`
       : `✅ Ran **${pending.tool}**: ${observation}`;
+
+    // "always <id>": mint a target-bound standing grant — only for tools that
+    // declare targetArgs (exec never does), and never off a failed execution
+    if (alwaysMatch && !toolReportedFailure) {
+      const tool = ctx.toolRegistry.get(pending.tool);
+      const grantTarget = grantTargetFor(tool, pending.params);
+      if (grantTarget) {
+        const grant = (ctx.grants ?? standingGrants).record({
+          tool: pending.tool,
+          target: grantTarget,
+          principal,
+          channel: ctx.channel,
+          source: 'confirm',
+        });
+        logAutonomousAction({ action: `grant_minted:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'confirmed', detail: grantTarget });
+        reply += `\n🔓 Standing grant: **${pending.tool}** → \`${grantTarget}\` will no longer ask. Revoke with \`!grants revoke ${grant.id}\`.`;
+      } else {
+        reply += `\n⚠️ No standing grant created — **${pending.tool}** doesn't support target-bound grants (ran once only).`;
+      }
+    }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logAutonomousAction({ action: `confirmed:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: errMsg.slice(0, 120) });
