@@ -142,7 +142,8 @@ High-confidence patterns that the router model gets wrong often enough to warran
 Multi-turn conversations should stay in the same category. If you're chatting about cooking and ask "what about chicken?", that should stay in `chat`, not route to `web_search` because the model sees a question.
 
 **How it works:**
-- Only `chat` and `memory` categories are sticky. Pipeline categories (web_search, exec, research) finish in one turn — no sticking needed.
+- Sticky categories: `chat`, `memory`, `briefing` (replies are answers, target `chat`), and `cron`. Most pipeline categories (web_search, exec, research) finish in one turn — no sticking needed.
+- `cron` is sticky because post-scheduling follow-ups ("did we do all three?", a re-paste of jobs that didn't get created) belong back in the cron pipeline, whose list branch answers from `cron_list` — without it, "did we do all three?" routed to memory and confabulated from a saved fact (July 20 incident).
 - Short follow-up messages stay on the previous category.
 - Long messages (>200 chars) also stay sticky — they're likely continuing a discussion.
 
@@ -150,7 +151,7 @@ Multi-turn conversations should stay in the same category. If you're chatting ab
 - Imperative commands: "search for X", "create a report", "run this command"
 - Greetings: "hi", "hey", "hello" — starts fresh classification
 - New-topic signals: "search the web for", "look up", "find me a"
-- Keyword matches that point to a different category than the current one
+- Keyword matches that point to a different category than the current one. Keyword patterns that can break sticky need pre-model-override precision — plain `\bsetting\b` matched "setting up a business" and hijacked a reminder paste, so the config pattern is now `settings?(?! up)`.
 
 **Why sticky exists:** Without it, every message mid-conversation gets re-classified independently. "What do you think about the trade-offs?" during an AI discussion gets classified as `research` because "trade-offs" sounds analytical. Sticky keeps the conversation flowing.
 

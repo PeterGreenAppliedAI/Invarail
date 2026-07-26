@@ -38,12 +38,15 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
-| Next | **SearXNG integration** | Self-hosted meta-search engine replacing paid Brave API. Zero cost, no rate limits |
+| ✅ Done | **SearXNG integration** | Self-hosted meta-search at 192.168.1.239:8080 is the web_search provider (replaced Brave) |
+| ✅ Done | **MCP client bridge** | stdio + streamable-HTTP transports, zero-dep client, small-model translation layer, DCR OAuth (no broker), SecretStore. July 2026 |
+| ✅ Done | **Proactive actions — ladder complete** | Ledger + buttons (Discord/Telegram) + deny + continuation-after-confirm + target-bound standing grants (`always <id>`, `!grants`) + auditable cron run sessions/artifacts + approval/resource metrics columns. July 2026 |
+| ✅ Done | **Skill system (rebuilt)** | Semantic matching (measured 0.65 floor), triggers frontmatter, save-time dedup judge, skill_find progressive disclosure. July 2026 |
 | Next | **Firecrawl integration** | Self-hosted web fetching between web_fetch (basic) and browser (heavy). Handles JS rendering without full Chromium |
-| ✅ Done | **Provider abstraction** | MultiBackendClient + OpenAICompatClient — routes by model id across Ollama gateway + vLLM. Adding LM Studio / other OpenAI-compatible endpoints is now config-only (`inference.backends[]`) |
-| Planned | **Proactive actions** | Agent initiates actions based on observations (heartbeat findings, memory patterns) instead of just reporting. Foundation landed July 2026 (ledger, autonomy metadata, action metrics); next rungs: intake/clarification flow, promotion tooling reading the metrics, remaining tool annotations |
+| Next | **Blender MCP demo** | First real MCP consumer: `uvx blender-mcp` + Blender on the Mini; then MCP self-service setup (agent proposes+validates server config, confirm-gated) |
+| Planned | **Self-wake** | `sleep_until`/`wake_on` tools with quotas (max pending, min interval, cronMode-filtered resume) — continuation machinery landed July 25 |
 | Blocked | **Gateway passthrough** | Constrained decoding + keep_alive + full num_ctx blocked on the gateway's normalization-layer refactor (GATEWAY-REQUIREMENTS.md has the contract + acceptance tests) |
-| Planned | **Cross-channel sessions** | Map user IDs across Discord/Telegram/WhatsApp to shared sessions. Continue conversations across platforms |
+| Planned | **Cross-channel sessions** | Map user IDs across Discord/Telegram/WhatsApp to shared sessions (Slice 3 — principal layer landed; dragons documented in CONTINUATION.md) |
 | Planned | **Rebrand** | Rename from LocalClaw to new identity (plan exists, 357 references mapped across 80 files) |
 
 ---
@@ -57,14 +60,14 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 | **Audit logging** | Structured log of all security decisions, tool executions, user actions |
 | **Google Sheets tools** | Read/write cells, append rows. Useful for CRM and reporting |
 | **Gmail compose** | Outbound email tool (currently read-only) |
-| **MCP client support** | Consume external MCP servers as tools (Jira, Notion, GitHub) |
 | **Video pipeline** | Multimodal video/meeting summarization via nemotron |
 | **Memory namespacing** | Scoped search across facts, preferences, conversations, knowledge |
-| **Hybrid retrieval** | BM25 + vector fusion for exact keyword matches alongside semantic search |
+| **ConnectorDescriptor pattern** | Data-driven token connectors (Notion/Linear/HubSpot ≈ 30 lines + whoami validator) — from the OpenWorker harvest |
+| **Persona manifests** | User-authorable specialists as markdown frontmatter over a closed tool catalog |
 
 ---
 
 ## Known Issues
 
-- **Double message delivery on Discord** — Intermittent duplicate messages from stream preview + final send race condition
-- **WhatsApp connection drops** — Baileys disconnect can trigger unhandled rejection, crashing the process. Needs global rejection handler
+- **Double message delivery on Discord** — Intermittent duplicates; July 20 instance was the model writing its answer twice in one completion (watch item — look at engine answer path, not delivery, if it recurs)
+- ~~**WhatsApp connection drops**~~ — Fixed July 14: process-level unhandledRejection/uncaughtException handlers + FalkorDB error listener with lazy reconnect

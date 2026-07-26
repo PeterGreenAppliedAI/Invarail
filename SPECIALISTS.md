@@ -2,6 +2,8 @@
 
 12-point specification for each specialist. A developer should be able to read a spec and implement or debug the specialist with zero follow-up questions.
 
+**Tool list notes (apply to every specialist):** a `tools:` entry may use the token `mcp:<server>` to include an MCP server's entire registered toolset (expanded at dispatch via `registry.expandToolNames`). The `skill_find` tool (registered globally) gives any ReAct specialist progressive-disclosure access to saved workflow skills — add it to a specialist's tools list to enable.
+
 ---
 
 ## chat
