@@ -174,7 +174,7 @@ Models that emit thinking blocks (`<think>` for Qwen, `<|channel>thought` for Ge
 
 - **Heartbeat** (every 2h) — Transcript review, fact extraction, learning promotion, media cleanup, memory consolidation, task urgency computation, review candidates. Model-flagged stale facts are PROPOSED into the `!heartbeat yes/no` review flow, never auto-deleted.
 - **Briefing** (8am, 1:15pm, 5pm) — Calendar + tasks + memory → CoT reasoning → contextual insights
-- **Cron** — User-defined recurring tasks with retry (2x exponential backoff) + failure notification. Jobs only get `exec`/`send_message` when explicitly scheduled as that category (the owner-authored schedule is the code gate).
+- **Cron** — User-defined recurring tasks with retry (2x exponential backoff) + failure notification. Jobs only get `exec`/`send_message` when explicitly scheduled as that category (the owner-authored schedule is the code gate). Multi-job adds extract `jobs[]` in one pass with partial-creation disclosure; `once: true` jobs auto-disable after their first successful run. **Every run persists its own session** (`cron:<job>:<run>` — fresh context via a unique key, continuable transcript); deliverables are captured by code (workspace mtime-window scan) into `data/cron-runs.jsonl` and the delivery message. Scheduler: skip-on-overlap, catch-up-once at boot (a reboot can't eat a one-shot reminder); final failures land in the `data/unrouted.jsonl` dead-letter store surfaced by `!autonomy`.
 
 ### Autonomy Ladder (structural, code-enforced)
 
@@ -187,7 +187,15 @@ Effective confirm set = channel `confirmTools` ∪ metadata `propose_confirm` to
 
 ### Pending-Action Ledger
 
-confirmTools previews record `{id, tool, params, sender, expiresAt}` to a file-backed ledger (`src/security/pending-actions.ts`). A "confirm" reply executes the **stored** call — sender-bound, single-use, 10-minute expiry — never a model-regenerated one. Wired into both dispatch paths (ReAct + pipeline) and both confirm surfaces (orchestrator channels + Web console).
+confirmTools previews record `{id, tool, params, sender, category, expiresAt}` to a file-backed ledger (`src/security/pending-actions.ts`). A "confirm <id>" reply executes the **stored** call — sender-bound, single-use, 10-minute expiry — never a model-regenerated one. `deny|cancel|reject <id>` consumes without executing. Wired into both dispatch paths (ReAct + pipeline) and both confirm surfaces (orchestrator channels + Web console). **Buttons:** Discord components / Telegram inline keyboards render Confirm / Always / Deny under previews; a press synthesizes the equivalent *typed* message through the same choke point — an interactive affordance is never a second security surface. **Continuation:** after a confirmed action succeeds, one follow-up turn dispatches into the originating session with the original category's toolset (`session.continueAfterConfirm`), so multi-step work survives the confirm gap; new gated calls inside it are gated again.
+
+### Target-Bound Standing Grants (`src/security/grants.ts`)
+
+The ladder rung between propose_confirm and blanket `autoApproveTools`. Tools declaring `targetArgs` (params naming their external target; `send_message` → `channel:channelId`) are grant-eligible — replying `always <id>` executes AND mints a grant for that exact tool→target key; identical-target calls then run silently (logged `grant_used` with approval/resource audit columns). Tools without targetArgs (exec) are structurally ineligible. Grants mint only on successful execution, are principal-bound, exact-match, revocable via `!grants revoke <id>`. Implicit reply-origin approval: sending to the conversation the request came from never asks.
+
+### Skill System (procedural memory, `src/skills/`)
+
+Successful plan-pipeline runs are distilled into markdown skills (generalized description + `triggers:` preserving up to 5 concrete past requests). Matching is **semantic-first** (embeddings in the shared EmbeddingStore under `source:'skill'`, floor 0.65 — measured, not guessed) with keyword scoring as fallback; save-time dedup runs a ladder (slug → hybrid match → grammar-constrained judge) that *revises* existing skills instead of minting near-duplicates. `cronMode` structurally blocks heartbeat/cron from matching or saving skills. ReAct specialists reach skills via the `skill_find` tool (progressive disclosure — catalog stays out of the prompt). All skill events flow through `logAutonomousAction` so the log shows the system living.
 
 ## Security (6 layers in dispatch)
 
@@ -197,6 +205,24 @@ confirmTools previews record `{id, tool, params, sender, expiresAt}` to a file-b
 4. `blockedTools` — stripped for everyone on this channel
 5. `restrictedTools` — stripped for untrusted users
 6. `confirmTools` — preview + pending-action ledger; confirmation executes the exact previewed call (see Autonomy Ladder above). Applies to pipeline dispatches as well as the ReAct loop.
+
+## MCP Bridge (`src/mcp/`)
+
+External MCP servers become first-class LocalClaw tools:
+
+```
+tools.mcp.servers[] → McpManager
+  ├── transport: stdio  → McpStdioClient (zero-dep JSON-RPC 2.0, spawned child)
+  ├── transport: http   → McpHttpClient  (streamable HTTP: JSON + SSE, Mcp-Session-Id)
+  └── translation layer → LocalClawTool per server tool
+        names <server>_<tool>, sanitized to [A-Za-z0-9_-]{1,64} (OpenAI-path charset)
+        descriptions capped 500 chars on sentence boundary (small-model budget)
+        readOnlyHint → silent · everything else requiresConfirm (trust:'auto' waives)
+        per-server toolAllowlist / toolDescriptions / maxResultChars
+        image content → [FILE:] tokens on the existing media pipeline
+```
+
+Deliberately NOT the official SDK — ~10% of the protocol (initialize/tools-list/tools-call), owned end to end; swap path stays behind `McpManager`. Failing servers never block boot; crashed servers lazily respawn (3×, 5s backoff). Specialists opt in per server with the `mcp:<server>` token (expanded at dispatch). Remote auth is OAuth 2.1 + PKCE + **Dynamic Client Registration**, fully local (no broker); tokens in the 0600 SecretStore, silent refresh at runtime — the browser-opening flow exists ONLY in `scripts/mcp-oauth-setup.ts`, so background paths can never pop an authorize page.
 
 ## Chrome Extension (Browser Companion)
 

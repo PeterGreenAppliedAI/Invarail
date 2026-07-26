@@ -156,6 +156,7 @@ The extraction prompt includes:
 - **Importance tier reference** (5=critical health/family, 4=identity job/projects, 3=preference, 2=context, 1=ephemeral)
 - **Already-stored facts** — prevents re-extracting what we already know
 - **Recently-removed facts** — prevents re-extracting what the user deleted
+- **Absolute dates only** — "yesterday"/"next Thursday" are meaningless when a fact is read weeks later; the model must convert to the actual date (relative dates were a real staleness bug class for TTL'd facts)
 
 The model outputs structured JSON:
 
@@ -332,7 +333,9 @@ The context is injected as a preamble before the specialist's system prompt:
 - decision pattern: data-driven, iterates through options
 ```
 
-The header "do NOT reference unless directly relevant" is critical — without it, the model tries to work every fact into its response.
+The header "do NOT reference unless directly relevant" is critical — without it, the model tries to work every fact into its response. The block also ends with a staleness caveat — "these facts reflect when they were written; verify a mentioned file/URL/plan still exists before relying on it" — because a fact is a point-in-time observation, not live state.
+
+**Other tenants of the EmbeddingStore:** the same SQLite vector store (`data/memory.db`, scoped by a `source` column) also holds vault document chunks (`source='vault'`) and skill embeddings (`source='skill'`, semantic skill matching at a measured 0.65 floor) — one embedding pipeline, three retrieval systems.
 
 ---
 

@@ -69,7 +69,9 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 | Vision | *(automatic)* | Image analysis via multimodal model — descriptions injected into context for natural Q&A |
 | Voice | TTS/STT | Kokoro TTS + faster-whisper STT — voice in, voice out, with toggle hands-free mode |
 | Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from success |
-| Skills | *(automatic)* | Self-improving procedural memory — successful plan executions are saved and reused for similar future tasks |
+| Skills | `skill_find` *(+ automatic)* | Self-improving procedural memory — successful runs are saved (semantic matching with a measured floor, save-time dedup) and reused; specialists can look up proven step sequences on demand |
+| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become LocalClaw tools — stdio (spawned) or remote streamable-HTTP, small-model description curation, readOnlyHint-aware confirm gating, fully-local OAuth (PKCE + DCR, no cloud broker) |
+| Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` to a confirmation and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
 | Heartbeat | *(autonomous)* | Deterministic fact diff + LLM reasoning, auto-expire stale facts, interactive memory review via `!heartbeat` |
 | Briefing | *(scheduled)* | 3x daily (8am, 1:15pm, 5pm) CoT reasoning about calendar + tasks + memory — contextual insights, not status dumps |
 | Data Analytics | `code_session`, `read_file`, `reason` | Upload CSV/Excel/JSON → auto-route to analytics pipeline → pandas computes totals, breakdowns, top items → matplotlib charts → LLM executive analysis with insights and recommendations |
@@ -814,7 +816,8 @@ See `CLAUDE.md` for the full set of patterns, anti-patterns, and review checklis
 - **Path traversal prevention** — Writes validated to stay within workspace; file serving endpoint validates resolved paths
 - **Rate limiting** — 10 messages per minute per user
 - **Cron safety** — Automated tasks run in `cronMode` which strips mutation tools (`write_file`, `task_add`, `task_update`, `memory_save`, etc.) — cron jobs report, they don't modify. Jobs retry up to 2 times with exponential backoff on failure, and notify the delivery channel on final failure
-- **Confirmation mode** — Configurable `confirmTools` per channel — listed tools return a preview instead of executing, requiring user confirmation before proceeding
+- **Confirmation mode** — Configurable `confirmTools` per channel — listed tools return a preview instead of executing. Confirm/Always/Deny buttons on Discord/Telegram (a press synthesizes the equivalent typed reply — never a second security path); a confirmed multi-step task continues in its session instead of dying at the preview
+- **Standing grants** — `always <id>` mints a target-bound grant (exact tool→target, principal-bound, revocable via `!grants`); exec is structurally grant-ineligible
 - **Owner-only tier** — `ownerId` config + `ownerOnlyTools` per channel. Sensitive tools (gmail, calendar) are invisible to non-owners — stripped before the model sees the tool list. Code gate, not model-level
 - **Channel security** — Per-channel category restrictions, tool blocking, and per-user trust levels
 - **Web API auth** — Bearer token validation on HTTP endpoints
