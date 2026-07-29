@@ -4,6 +4,18 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Lessons: The Agent Gets Its Own DECISIONS.md (July 29 2026)
+
+### Negative procedural memory — "approach X failed for task-shape Y; the boundary is Z"
+**Origin:** a conversation about why the BUILD agent stays coherent across sessions — DECISIONS.md is its causal memory of failures and boundaries. Peter's realization: LocalClaw's runtime agent had no equivalent ("huh, shit you're right"). errors.jsonl records raw tool failures and LEARNINGS.md gets tool-level one-liners, but nothing captured approach-level boundaries. This applies the project's best pattern one level down: the system now has THREE memory systems — FalkorDB (who the user is), skills (what worked), lessons (what didn't and where the line is).
+**The three hard questions and their answers:**
+1. *How does the agent know a failure happened?* It doesn't — CODE does. Candidates are harvested (`lesson-harvester.ts`, pure code, marker-tracked) from evidence already on disk: max-iteration dispatches (logDispatch now carries a `messagePreview` so failures have a request SHAPE), repeated tool failures at the existing ≥3 threshold, narration-repair clusters, rejected/failed autonomous actions, dead letters. The model's only job is filling a grammar-constrained lesson slot in the heartbeat — it never self-assesses in the hot path, and a 9B-honest limitation is accepted: these are observations-with-wounds, not root-cause diagnoses; the deep entries still come from build sessions.
+2. *Storage?* Markdown files (`workspace/lessons/*.md`), skill-store shape: boundary one-liner in frontmatter (the ONLY text ever injected), `model` at time of observation (a phi4-era lesson may be false under DeepSeek — lessons are point-in-time, same doctrine as facts), evidence_count, triggers. Embeddings are the fourth EmbeddingStore tenant (`source='lesson'`; skill semantic helpers generalized to serve both).
+3. *When sourced, on a small-model budget?* Never the corpus. Floor-gated KNN one-liners (max 2) in user priming — zero hits = zero tokens — plus tool-tagged boundaries through the existing `findHints` pre-execution seam (lessons outrank raw error strings there: they carry the synthesized boundary).
+**The intake decision (Peter's call):** auto-save at evidence:1, but **injection requires evidence ≥ 2** — a one-off failure is noise until it recurs, and recurrence is a code gate, not model judgment. This threads between the two bad options: propose-confirm-everything (review fatigue → the July-10 firehose / reflex-confirm problem) and inject-immediately (one hallucinated boundary silently steers every matching dispatch). Reversibility justifies the auto-save: heartbeat report lists new lessons, `!lessons drop <slug>` kills one. Firehose guards ported from stale-facts: max 3 new per cycle, batch-distrust when the synthesis model marks everything worth keeping.
+**Floor:** starts at the measured skill floor 0.65 (same embedding model, same text shape); `scripts/lesson-floor-check.ts` re-measures once ~5 real lessons exist — floors are measured, never guessed.
+**Deferred with triggers:** transcript-level user-correction harvesting (fuzzy — needs its own precision work once code-signal lessons prove out); `lesson_find` pull tool (if one-liners prove insufficient).
+
 ## The Skill System Was Dead for Three Months — Resurrection by Autopsy (July 25 2026)
 
 ### Peter: "I dont see that actually working. It just keeps either skipping it or making a fresh skill"

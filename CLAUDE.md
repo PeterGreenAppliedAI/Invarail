@@ -86,6 +86,8 @@ Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primar
 
 **Self-improvement store:** `.learnings/errors.jsonl` records tool failures. Before tool execution, `findHints()` checks for matching past errors and prepends hints. `enrichObservation()` scans tool output for 8 known error patterns (permission denied, timeout, 404, rate limit, etc.) and enriches with **tool-specific recovery instructions** via `TOOL_RECOVERY_MAP` (e.g., web_fetch 404 → "use web_search to find correct URL"). Falls back to generic suggestions for unknown tools. Recurring patterns (3+ occurrences) promoted to `LEARNINGS.md` via heartbeat.
 
+**Lessons (negative procedural memory, `src/learnings/lesson-*.ts`):** approach-level boundaries learned from observed failures — the runtime agent's own DECISIONS.md. Code detects (harvester over metrics/dead-letters, never model self-assessment); the heartbeat's extraction model fills a grammar-constrained lesson slot (max 3 new/cycle, batch-distrust guard, dedup-or-reinforce ladder). **Injection is gated on recurrence: evidence ≥ 2** — floor-gated KNN one-liners (max 2) in user priming + tool-tagged boundaries via findHints. Lessons record the model that produced the failure (point-in-time observations). `!lessons` lists/drops; `memory.lessons.enabled` gates everything.
+
 ---
 
 ## Code Standards
@@ -245,8 +247,12 @@ src/
     *.ts                    #   Individual tool factories (createXxxTool)
 
   learnings/                # Self-improvement system
-    error-store.ts          #   ErrorLearningStore — JSONL store for tool failures
+    error-store.ts          #   ErrorLearningStore — JSONL store for tool failures (findHints also surfaces tool-tagged lessons)
     pattern-matcher.ts      #   detectErrorPattern() + enrichObservation()
+    lesson-store.ts         #   LessonStore — negative procedural memory (boundary lessons, evidence counts, model-at-observation)
+    lesson-harvester.ts     #   Code-driven failure-candidate detection from metrics.jsonl/unrouted.jsonl (marker-tracked)
+    lesson-synthesis.ts     #   Heartbeat: grammar-constrained lesson synthesis + dedup ladder + firehose guards
+    lesson-semantic.ts      #   Lesson embeddings (EmbeddingStore source='lesson'); injection requires evidence ≥ 2
 
   channels/                 # Channel adapters (all support file attachments)
     types.ts                #   ChannelAdapter, InboundMessage, MessageTarget, MessageContent

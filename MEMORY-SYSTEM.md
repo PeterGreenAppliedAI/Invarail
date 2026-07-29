@@ -335,7 +335,7 @@ The context is injected as a preamble before the specialist's system prompt:
 
 The header "do NOT reference unless directly relevant" is critical — without it, the model tries to work every fact into its response. The block also ends with a staleness caveat — "these facts reflect when they were written; verify a mentioned file/URL/plan still exists before relying on it" — because a fact is a point-in-time observation, not live state.
 
-**Other tenants of the EmbeddingStore:** the same SQLite vector store (`data/memory.db`, scoped by a `source` column) also holds vault document chunks (`source='vault'`) and skill embeddings (`source='skill'`, semantic skill matching at a measured 0.65 floor) — one embedding pipeline, three retrieval systems.
+**Other tenants of the EmbeddingStore:** the same SQLite vector store (`data/memory.db`, scoped by a `source` column) also holds vault document chunks (`source='vault'`), skill embeddings (`source='skill'`, semantic skill matching at a measured 0.65 floor), and lesson embeddings (`source='lesson'`, failure-boundary one-liners injected only at evidence ≥ 2) — one embedding pipeline, four retrieval systems.
 
 ---
 
