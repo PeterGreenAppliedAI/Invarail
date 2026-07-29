@@ -21,7 +21,9 @@ export const SKILL_MATCH_FLOOR = 0.65;
 
 let sharedStore: EmbeddingStore | null = null;
 
-function embeddingStore(): EmbeddingStore {
+/** Shared singleton over data/memory.db — tenants scoped by `source` column
+ *  (memory / vault / skill / lesson). */
+export function embeddingStore(): EmbeddingStore {
   sharedStore ??= new EmbeddingStore();
   return sharedStore;
 }
@@ -31,6 +33,51 @@ export function setEmbeddingStoreForTests(store: EmbeddingStore | null): void {
   sharedStore = store;
 }
 
+/** Generic per-source upsert — stable id `<source>:<key>` makes re-indexing idempotent. */
+export async function upsertSourceEmbedding(client: OllamaClient, source: string, key: string, text: string): Promise<void> {
+  try {
+    const embedding = await generateEmbedding(client, text);
+    if (embedding.length === 0) return;
+    embeddingStore().add({
+      id: `${source}:${key}`,
+      text,
+      file: key,
+      section: source,
+      embedding,
+      savedAt: new Date().toISOString(),
+      source,
+    });
+  } catch (err) {
+    console.warn(`[Semantic:${source}] Embedding upsert failed (keyword/degraded paths still active):`, err instanceof Error ? err.message : err);
+  }
+}
+
+export function deleteSourceEmbedding(source: string, key: string): void {
+  try {
+    embeddingStore().deleteBySourceFile(source, key);
+  } catch { /* best-effort */ }
+}
+
+/** Generic per-source dense match. Returns candidate keys above the floor —
+ *  callers MUST validate the key still exists in its backing store (embeddings
+ *  can outlive archived entries) and prune with deleteSourceEmbedding. */
+export async function findBySourceSimilarity(
+  client: OllamaClient,
+  source: string,
+  query: string,
+  floor: number,
+  maxResults = 3,
+): Promise<Array<{ key: string; score: number }>> {
+  try {
+    const queryEmbedding = await generateEmbedding(client, query);
+    if (queryEmbedding.length === 0) return [];
+    return embeddingStore().search(queryEmbedding, maxResults, floor, source).map(r => ({ key: r.file, score: r.score }));
+  } catch (err) {
+    console.warn(`[Semantic:${source}] Dense match unavailable:`, err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
 function skillText(skill: Skill): string {
   const triggers = skill.triggers.length ? ` Triggers: ${skill.triggers.join('; ')}` : '';
   return `${skill.name}. ${skill.description}${triggers}`;
@@ -38,28 +85,11 @@ function skillText(skill: Skill): string {
 
 /** Insert-or-replace the skill's embedding (stable id → idempotent re-index). */
 export async function upsertSkillEmbedding(client: OllamaClient, skill: Skill): Promise<void> {
-  try {
-    const embedding = await generateEmbedding(client, skillText(skill));
-    if (embedding.length === 0) return;
-    embeddingStore().add({
-      id: `skill:${skill.slug}`,
-      text: skillText(skill),
-      file: skill.slug,
-      section: 'skill',
-      embedding,
-      savedAt: new Date().toISOString(),
-      source: SKILL_SOURCE,
-    });
-  } catch (err) {
-    // Embedding backend down → keyword fallback still works; never block a save
-    console.warn('[Skills] Embedding upsert failed (keyword matching still active):', err instanceof Error ? err.message : err);
-  }
+  await upsertSourceEmbedding(client, SKILL_SOURCE, skill.slug, skillText(skill));
 }
 
 export function deleteSkillEmbedding(slug: string): void {
-  try {
-    embeddingStore().deleteBySourceFile(SKILL_SOURCE, slug);
-  } catch { /* best-effort */ }
+  deleteSourceEmbedding(SKILL_SOURCE, slug);
 }
 
 export interface SemanticSkillMatch {
@@ -78,17 +108,10 @@ export async function findSkillBySimilarity(
   goal: string,
   floor = SKILL_MATCH_FLOOR,
 ): Promise<SemanticSkillMatch | null> {
-  try {
-    const queryEmbedding = await generateEmbedding(client, goal);
-    if (queryEmbedding.length === 0) return null;
-    const results = embeddingStore().search(queryEmbedding, 3, floor, SKILL_SOURCE);
-    for (const r of results) {
-      if (store.get(r.file)) return { slug: r.file, score: r.score };
-      deleteSkillEmbedding(r.file); // stale index entry for an archived skill
-    }
-    return null;
-  } catch (err) {
-    console.warn('[Skills] Semantic match unavailable (falling back to keywords):', err instanceof Error ? err.message : err);
-    return null;
+  const results = await findBySourceSimilarity(client, SKILL_SOURCE, goal, floor);
+  for (const r of results) {
+    if (store.get(r.key)) return { slug: r.key, score: r.score };
+    deleteSkillEmbedding(r.key); // stale index entry for an archived skill
   }
+  return null;
 }

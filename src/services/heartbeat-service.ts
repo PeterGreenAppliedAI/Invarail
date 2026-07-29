@@ -157,6 +157,31 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
       console.log(`[Heartbeat] Promoted ${promoted} learnings from error patterns`);
     }
 
+    // Synthesize boundary lessons from code-detected failure evidence.
+    // Lessons auto-save at evidence:1 but only steer dispatches at evidence≥2
+    // (recurrence is the code gate) — see src/learnings/lesson-synthesis.ts.
+    let lessonSummary = '';
+    if (config.memory?.lessons?.enabled !== false) {
+      try {
+        const { synthesizeLessons } = await import('../learnings/lesson-synthesis.js');
+        const lessons = await synthesizeLessons({
+          client,
+          model: config.memory?.extractionModel ?? config.router.model,
+          workspacePath,
+        });
+        if (lessons.newLessons.length > 0 || lessons.reinforced.length > 0) {
+          lessonSummary = `📚 **Lessons**: ${lessons.newLessons.length} new${lessons.newLessons.length ? ` (${lessons.newLessons.join(', ')})` : ''}, ${lessons.reinforced.length} reinforced`;
+          console.log(`[Heartbeat] ${lessonSummary}`);
+        }
+        const lessonCount = new (await import('../learnings/lesson-store.js')).LessonStore(workspacePath).list().length;
+        if (lessonCount > 30) {
+          console.warn(`[Heartbeat] Lesson catalog at ${lessonCount} — consider pruning via !lessons`);
+        }
+      } catch (err) {
+        console.warn('[Heartbeat] Lesson synthesis failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
     // Reindex the document vault — mtime/hash driven, so an unchanged vault
     // costs a directory walk and nothing else
     if (deps.embeddingStore) {
@@ -536,6 +561,10 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
         const memLines = memorySection.split('\n').filter((l: string) => l.trim());
         const formatted = memLines.map((l: string) => `> ${l}`).join('\n');
         reportParts.push(`🧠 **Memory**\n${formatted}`);
+      }
+
+      if (lessonSummary) {
+        reportParts.push(lessonSummary);
       }
 
       let reportText = reportParts.join('\n\n');

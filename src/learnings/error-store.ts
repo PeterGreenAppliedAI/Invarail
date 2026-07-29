@@ -1,5 +1,6 @@
 import { readFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { LessonStore, LESSON_EVIDENCE_FLOOR } from './lesson-store.js';
 
 export interface ErrorLearningEntry {
   timestamp: string;
@@ -19,14 +20,38 @@ export interface ErrorLearningEntry {
  */
 export class ErrorLearningStore {
   private readonly filePath: string;
+  private readonly workspacePath: string;
   private cache: ErrorLearningEntry[] | null = null;
   private cacheLoadedAt = 0;
+  private lessonHintCache: Map<string, string[]> | null = null;
+  private lessonHintLoadedAt = 0;
   private static readonly CACHE_TTL_MS = 60_000;
 
   constructor(workspacePath: string) {
+    this.workspacePath = workspacePath;
     const dir = join(workspacePath, '.learnings');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     this.filePath = join(dir, 'errors.jsonl');
+  }
+
+  /** Tool-tagged LESSON boundaries (evidence ≥ floor) — cached like errors.
+   *  Lessons are richer than raw error hints: they carry the synthesized
+   *  boundary, not just the error text. */
+  private lessonHintsFor(tool: string): string[] {
+    const now = Date.now();
+    if (!this.lessonHintCache || now - this.lessonHintLoadedAt >= ErrorLearningStore.CACHE_TTL_MS) {
+      this.lessonHintCache = new Map();
+      this.lessonHintLoadedAt = now;
+      try {
+        for (const l of new LessonStore(this.workspacePath).list()) {
+          if (!l.tool || l.evidenceCount < LESSON_EVIDENCE_FLOOR) continue;
+          const existing = this.lessonHintCache.get(l.tool) ?? [];
+          existing.push(`Lesson (${l.evidenceCount}x): ${l.description.slice(0, 150)}`);
+          this.lessonHintCache.set(l.tool, existing);
+        }
+      } catch { /* lessons optional */ }
+    }
+    return this.lessonHintCache.get(tool) ?? [];
   }
 
   /** Append a structured error entry to the JSONL file. */
@@ -48,6 +73,10 @@ export class ErrorLearningStore {
    * Returns human-readable hint strings, most recent first.
    */
   findHints(tool: string, params: Record<string, unknown>, limit = 3): string[] {
+    // Boundary lessons first — they outrank raw error strings
+    const lessonHints = this.lessonHintsFor(tool).slice(0, limit);
+    if (lessonHints.length >= limit) return lessonHints;
+
     const entries = this.loadAll();
     const paramKeys = new Set(Object.keys(params));
 
@@ -59,7 +88,7 @@ export class ErrorLearningStore {
 
     // Deduplicate by error message (keep first = most recent)
     const seen = new Set<string>();
-    const hints: string[] = [];
+    const hints: string[] = [...lessonHints];
     for (const m of matches) {
       const key = m.error.slice(0, 100);
       if (seen.has(key)) continue;

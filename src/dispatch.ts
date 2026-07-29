@@ -298,6 +298,21 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     if (allPriming.length > 0) {
       primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${allPriming.join('\n')}\nThese facts reflect when they were written — a file, URL, or plan they mention may have changed since; verify before relying on one.`);
     }
+
+    // Lessons: floor-gated one-liners from past failures that have RECURRED
+    // (evidence ≥ 2 — a one-off never steers). Zero hits = zero tokens.
+    if (params.config.memory?.lessons?.enabled !== false && message.length > 10) {
+      try {
+        const { LessonStore } = await import('./learnings/lesson-store.js');
+        const { relevantLessonLines } = await import('./learnings/lesson-semantic.js');
+        const workspacePath = resolveWorkspacePath(params.agentId ?? params.config.agents.default, params.config);
+        const lessonLines = await relevantLessonLines(params.client, new LessonStore(workspacePath), message);
+        if (lessonLines.length > 0) {
+          console.log(`[Dispatch] Lesson injection: ${lessonLines.length}`);
+          primingParts.push(`## Lessons from past failures (steer around these)\n${lessonLines.join('\n')}`);
+        }
+      } catch { /* lessons are best-effort */ }
+    }
     if (modelSummary) {
       primingParts.push(`## User preferences (adapt your style accordingly)\n${modelSummary}`);
     }
@@ -739,6 +754,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     hitMaxIterations: result.hitMaxIterations,
     durationMs: Date.now() - dispatchStart,
     toolCalls: result.steps?.map(s => s.tool).filter(Boolean) as string[] | undefined,
+    messagePreview: message.slice(0, 120),
   });
 
   // Store conversation turns in graph for cross-session search (stripped — graph is for search, not reasoning)
