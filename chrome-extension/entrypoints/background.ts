@@ -2,17 +2,22 @@ export default defineBackground(() => {
   // Open side panel on toolbar icon click
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-  // Register context menus on install
+  // Register context menus on install/update. Menu registrations PERSIST
+  // across MV3 service-worker restarts, so re-creating without removeAll()
+  // throws "duplicate id" on every extension reload — clear first, recreate
+  // inside the callback (create-before-clear races otherwise).
   chrome.runtime.onInstalled.addListener(() => {
-    chrome.contextMenus.create({
-      id: 'ask-localclaw',
-      title: 'Ask LocalClaw about "%s"',
-      contexts: ['selection'],
-    });
-    chrome.contextMenus.create({
-      id: 'summarize-page',
-      title: 'Summarize this page',
-      contexts: ['page'],
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: 'ask-localclaw',
+        title: 'Ask LocalClaw about "%s"',
+        contexts: ['selection'],
+      });
+      chrome.contextMenus.create({
+        id: 'summarize-page',
+        title: 'Summarize this page',
+        contexts: ['page'],
+      });
     });
   });
 
