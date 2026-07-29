@@ -41,6 +41,9 @@ export function logDispatch(data: {
   toolCalls?: string[];
   repairUsed?: boolean;
   abortReason?: string;
+  /** First 120 chars of the user request — gives lesson harvesting the
+   *  REQUEST SHAPE behind a failure, not just the failure */
+  messagePreview?: string;
 }): void {
   logMetric({
     timestamp: new Date().toISOString(),

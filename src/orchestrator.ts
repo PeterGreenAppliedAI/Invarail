@@ -1068,6 +1068,44 @@ export class Orchestrator {
       return;
     }
 
+    if (trimmed.startsWith('!lessons')) {
+      const args = trimmed.slice('!lessons'.length).trim();
+      const route = resolveRoute(
+        { channel: msg.channel, senderId: msg.senderId, guildId: msg.guildId, channelId: msg.channelId },
+        this.config,
+      );
+      const workspacePath = resolveWorkspacePath(route.agentId, this.config);
+      const { LessonStore, LESSON_EVIDENCE_FLOOR } = await import('./learnings/lesson-store.js');
+      const { deleteLessonEmbedding } = await import('./learnings/lesson-semantic.js');
+      const lessonStore = new LessonStore(workspacePath);
+      let replyText: string;
+      const dropMatch = args.match(/^drop\s+([a-z0-9-]+)$/i);
+      if (dropMatch) {
+        const slug = dropMatch[1].toLowerCase();
+        if (lessonStore.archive(slug)) {
+          deleteLessonEmbedding(slug);
+          logAutonomousAction({ action: 'lesson_dropped', tier: 'propose_confirm', source: 'user_command', reversible: false, outcome: 'confirmed', detail: slug });
+          replyText = `🗑️ Dropped lesson \`${slug}\` — it will no longer steer anything.`;
+        } else {
+          replyText = `No lesson named \`${slug}\`.`;
+        }
+      } else {
+        const lessons = lessonStore.list();
+        replyText = lessons.length > 0
+          ? `📚 **Lessons** (steer at evidence ≥ ${LESSON_EVIDENCE_FLOOR}):\n${lessons.map(l =>
+              `- \`${l.slug}\` (${l.evidenceCount}x${l.evidenceCount >= LESSON_EVIDENCE_FLOOR ? ', LIVE' : ''}${l.tool ? `, tool: ${l.tool}` : ''}, ${l.model}) — ${l.description.slice(0, 100)}`,
+            ).join('\n')}\n\nDrop one with \`!lessons drop <slug>\`.`
+          : 'No lessons recorded yet — the heartbeat writes them when failure patterns recur.';
+      }
+      await this.channelRegistry.send(
+        { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+        { text: replyText },
+      ).catch((err) => {
+        console.warn('[Orchestrator] Failed to send lessons reply:', err instanceof Error ? err.message : err);
+      });
+      return;
+    }
+
     if (trimmed.startsWith('!forget')) {
       const query = msg.content.trim().slice('!forget'.length).trim();
       if (!query || query.length < 3) {
