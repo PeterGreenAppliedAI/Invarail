@@ -4,7 +4,7 @@ import { Message } from './Message.js';
 
 interface ChatProps {
   messages: ChatMessage[];
-  onSend: (text: string) => void;
+  onSend: (text: string, includeScreenshot?: boolean) => void;
   streaming: boolean;
   connected: boolean;
   settings: SettingsType;
@@ -12,6 +12,9 @@ interface ChatProps {
 
 export function Chat({ messages, onSend, streaming, connected, settings }: ChatProps) {
   const [input, setInput] = useState('');
+  // 📷 sticky toggle: while on, every message ships a screenshot of the
+  // current tab to the vision model. Off = zero vision cost.
+  const [screenshotOn, setScreenshotOn] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -27,7 +30,7 @@ export function Chat({ messages, onSend, streaming, connected, settings }: ChatP
 
   const handleSubmit = () => {
     if (!input.trim() || streaming || !connected) return;
-    onSend(input.trim());
+    onSend(input.trim(), screenshotOn);
     setInput('');
     // Reset textarea height
     if (inputRef.current) inputRef.current.style.height = 'auto';
@@ -111,6 +114,20 @@ export function Chat({ messages, onSend, streaming, connected, settings }: ChatP
               fontFamily: 'inherit', maxHeight: 120,
             }}
           />
+          <button
+            onClick={() => setScreenshotOn(v => !v)}
+            disabled={!connected}
+            title={screenshotOn ? 'Screenshot ON — each message includes what you see (vision model)' : 'Include a screenshot with each message'}
+            style={{
+              background: screenshotOn ? 'var(--accent)' : 'none',
+              border: screenshotOn ? 'none' : '1px solid var(--border)',
+              borderRadius: 6, padding: '6px 8px', cursor: connected ? 'pointer' : 'default',
+              fontSize: 14, lineHeight: 1,
+              opacity: connected ? 1 : 0.5,
+            }}
+          >
+            📷
+          </button>
           <button
             onClick={handleSubmit}
             disabled={!input.trim() || streaming || !connected}

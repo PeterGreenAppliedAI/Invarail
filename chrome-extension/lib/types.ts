@@ -17,6 +17,13 @@ export interface ChatMessage {
   files?: FileAttachment[];
 }
 
+/** Base64 attachment for /console/api/chat — screenshots ride this to the vision model */
+export interface ChatAttachment {
+  name: string;
+  mimeType: string;
+  data: string;
+}
+
 export interface PageContext {
   url: string;
   title: string;

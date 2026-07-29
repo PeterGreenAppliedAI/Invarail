@@ -1,4 +1,4 @@
-import type { Settings, ChatEvent } from './types.js';
+import type { Settings, ChatEvent, ChatAttachment } from './types.js';
 
 function headers(token: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -21,11 +21,12 @@ export async function* streamChat(
   settings: Settings,
   message: string,
   senderId: string,
+  attachments?: ChatAttachment[],
 ): AsyncGenerator<ChatEvent> {
   const res = await fetch(`${settings.host}/console/api/chat`, {
     method: 'POST',
     headers: headers(settings.token),
-    body: JSON.stringify({ message, senderId }),
+    body: JSON.stringify({ message, senderId, ...(attachments?.length ? { attachments } : {}) }),
   });
 
   if (!res.ok) {
