@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Chat } from './components/Chat.js';
 import { Settings } from './components/Settings.js';
-import type { Settings as SettingsType, ChatMessage, PageContext } from '../../lib/types.js';
+import type { Settings as SettingsType, ChatMessage, PageContext, ChatAttachment } from '../../lib/types.js';
 import { DEFAULT_SETTINGS } from '../../lib/types.js';
 import { getSettings, saveSettings, getMessages, saveMessages, clearMessages, getSenderId } from '../../lib/storage.js';
 import { streamChat, healthCheck, connectBrowser, disconnectBrowser, pollBrowserAction, postBrowserResult } from '../../lib/api.js';
@@ -85,7 +85,7 @@ export default function App() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, [settings, senderId, streaming]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, includeScreenshot = false) => {
     if (!text.trim() || streaming) return;
 
     // Get page context
@@ -93,6 +93,21 @@ export default function App() {
     try {
       context = await chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT' });
     } catch { /* may fail on restricted pages */ }
+
+    // 📷 toggle: capture what the user is SEEING and ship it to the vision
+    // model. Reuses the browser-bridge screenshot handler in background.ts —
+    // the backend's /console/api/chat already runs vision on image attachments.
+    let attachments: ChatAttachment[] | undefined;
+    if (includeScreenshot) {
+      try {
+        const shot = await chrome.runtime.sendMessage({ type: 'RELAY_BROWSER_ACTION', action: 'screenshot' });
+        const dataUrl: string | undefined = shot?.success ? shot.result : undefined;
+        const base64 = dataUrl?.match(/^data:image\/png;base64,(.+)$/)?.[1];
+        if (base64) {
+          attachments = [{ name: 'screenshot.png', mimeType: 'image/png', data: base64 }];
+        }
+      } catch { /* restricted page or capture denied — send text-only */ }
+    }
 
     // Build message with page context injected
     // Only inject full page content on first message or when URL changes — follow-ups use session history
@@ -113,7 +128,7 @@ export default function App() {
     const userMsg: ChatMessage = {
       id: Date.now().toString(36),
       role: 'user',
-      content: text, // Show clean text in UI
+      content: attachments ? `${text} 📷` : text, // Show clean text in UI (camera marker when a screenshot rode along)
       timestamp: Date.now(),
     };
 
@@ -129,7 +144,7 @@ export default function App() {
     };
 
     try {
-      for await (const event of streamChat(settings, fullMessage, senderId)) {
+      for await (const event of streamChat(settings, fullMessage, senderId, attachments)) {
         if (event.type === 'done') {
           assistantMsg.content = event.answer ?? assistantMsg.content;
           assistantMsg.images = event.images;
