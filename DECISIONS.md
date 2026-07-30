@@ -4,6 +4,15 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## img2img: Correct Wiring, Broken Upstream (July 29 2026)
+
+### "Make this picture anime" now routes right — and the backend ignores the picture
+**Incident:** Discord user attached a photo + "make this picture animated in an anime style" → "I don't have image tools." Four stacked causes: (1) the unconditional image-attachment→chat override meant transform intent never reached the router while `image_generate` sat unreachable; (2) "But you can generate a picture of sonic" stuck to chat via sticky; (3) vision leaked gemma4's literal chain-of-thought as the image description (the qwen3 answer-in-thinking fallback backfiring); (4) the image box's IP had changed. All four fixed (transform-caption regex gates an `image` override with the saved path passed as reference_image_path; generation-ask keyword breaks sticky; CoT lead-in stripped from thinking fallback; Peter fixed the IP).
+**Then Peter challenged the design** ("you setup a pipeline for a vision model to describe a photo to generate an exact replica?") — and the empirical test proved him right for a reason we didn't expect: a geometric reference image (red circle/blue square) vs a text-only control produced **near-identical generic outputs**. The tool sends the documented base64 `images` payload correctly; **Ollama's Flux2-Klein serving discards the source image** — open upstream bug ollama/ollama#14306, broken since ~0.15.6, reproduced by users through 0.30.8; our server runs 0.21.2.
+**Response:** keep the (correct) wiring — img2img starts working the day upstream fixes it — and add an honesty caveat to the tool result whenever a reference was supplied, so the model tells the user the original was NOT preserved instead of claiming an edit it never performed (phantom-PDF over-claim class).
+**Lessons:** (1) "The tool has an img2img param" is a claim about the REQUEST, not the backend — verify the far side of every contract with a distinguishable probe (the geometric reference made ignoring it unmissable). (2) When a capability silently degrades, the first casualty is honesty — over-claim guards belong in the TOOL RESULT, where the model can't miss them. (3) Peter's design challenge caught what tests didn't: adversarial owner review, again.
+**Real img2img options (deferred, dial list):** wait for #14306; or ComfyUI/Forge on the image box with a proper init-image + denoise API (new tool client — the robust path if photo-editing becomes a real use case).
+
 ## Lessons: The Agent Gets Its Own DECISIONS.md (July 29 2026)
 
 ### Negative procedural memory — "approach X failed for task-shape Y; the boundary is Z"
