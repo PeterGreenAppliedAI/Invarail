@@ -953,33 +953,55 @@ export class Orchestrator {
 
         } else if (args.startsWith('no')) {
           const numMatch = args.match(/no\s+(\d+)/);
-          const toRemove = numMatch
-            ? [pending.facts[parseInt(numMatch[1]) - 1]].filter(Boolean)
-            : pending.facts;
+          const isNoAll = /^no\s+all$/.test(args);
 
-          for (const f of toRemove) {
-            this.factStore?.removeFact(f.text.slice(0, 40), pending.senderId);
-            this.factStore?.recordRemoval(f.text, 'user_denied', pending.senderId);
-            logAutonomousAction({ action: 'fact_review', tier: 'propose_confirm', source: 'heartbeat', reversible: false, outcome: 'rejected', detail: f.text.slice(0, 80) });
-          }
-          this.factStore?.rebuildFacts(pending.senderId);
-
-          if (numMatch && toRemove.length < pending.facts.length) {
-            pending.facts = pending.facts.filter(f => !toRemove.includes(f));
-            writeFileSync(reviewFile, JSON.stringify(pending, null, 2));
-            // Positions shift after removal — show the CURRENT numbering so a
-            // follow-up "!heartbeat no N" targets what the user is looking at
-            const renumbered = pending.facts
+          // Blast-radius guard (July 30 incident): bare "no" removed all 46
+          // accumulated candidates when the report displayed 2. Mass removal
+          // beyond a glanceable set requires seeing the list + "no all".
+          const MASS_REMOVAL_THRESHOLD = 5;
+          if (!numMatch && !isNoAll && pending.facts.length > MASS_REMOVAL_THRESHOLD) {
+            const listing = pending.facts
               .map((f, i) => `${i + 1}. \`${f.category}\` — ${f.text.slice(0, 80)}`)
               .join('\n');
-            replyText = `Removed "${toRemove[0]?.text.slice(0, 60)}". Still pending (numbers updated):\n${renumbered}`;
+            replyText = `⚠️ ${pending.facts.length} facts are pending review — bare \`no\` would remove ALL of them. Nothing was removed.\n${listing}\n↳ **!heartbeat no <number>** for one · **!heartbeat no all** to really remove all ${pending.facts.length} · **!heartbeat yes** to keep everything`;
           } else {
-            unlinkSync(reviewFile);
-            replyText = `Removed ${toRemove.length} fact(s) from memory. They won't come back.`;
+            const toRemove = numMatch
+              ? [pending.facts[parseInt(numMatch[1]) - 1]].filter(Boolean)
+              : pending.facts;
+
+            for (const f of toRemove) {
+              this.factStore?.removeFact(f.text.slice(0, 40), pending.senderId);
+              this.factStore?.recordRemoval(f.text, 'user_denied', pending.senderId);
+              // Flat/graph must not diverge — the graph kept "removed" facts
+              // alive (and injectable) until this sync landed
+              await this.graphMemory?.removeFact(f.text.slice(0, 60), pending.senderId).catch(() => 0);
+              logAutonomousAction({ action: 'fact_review', tier: 'propose_confirm', source: 'heartbeat', reversible: false, outcome: 'rejected', detail: f.text.slice(0, 80) });
+            }
+            this.factStore?.rebuildFacts(pending.senderId);
+
+            if (numMatch && toRemove.length < pending.facts.length) {
+              pending.facts = pending.facts.filter(f => !toRemove.includes(f));
+              writeFileSync(reviewFile, JSON.stringify(pending, null, 2));
+              // Positions shift after removal — show the CURRENT numbering so a
+              // follow-up "!heartbeat no N" targets what the user is looking at
+              const renumbered = pending.facts
+                .map((f, i) => `${i + 1}. \`${f.category}\` — ${f.text.slice(0, 80)}`)
+                .join('\n');
+              replyText = `Removed "${toRemove[0]?.text.slice(0, 60)}". Still pending (numbers updated):\n${renumbered}`;
+            } else {
+              unlinkSync(reviewFile);
+              replyText = `Removed ${toRemove.length} fact(s) from memory. They won't come back.`;
+            }
           }
 
+        } else if (args === '' || args === 'list') {
+          // Visibility: the full actionable set, numbered — what any command acts on
+          const listing = pending.facts
+            .map((f, i) => `${i + 1}. \`${f.category}\` — ${f.text.slice(0, 80)}`)
+            .join('\n');
+          replyText = `🕰️ **${pending.facts.length} fact(s) pending review:**\n${listing}\n↳ **!heartbeat yes** keep all · **!heartbeat no <number>** remove one · **!heartbeat no all** remove all`;
         } else {
-          replyText = 'Usage: **!heartbeat yes** (confirm all), **!heartbeat no** (remove all), or **!heartbeat no 2** (remove #2).';
+          replyText = 'Usage: **!heartbeat** (list pending), **!heartbeat yes** (keep all), **!heartbeat no 2** (remove #2), **!heartbeat no all** (remove all).';
         }
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
