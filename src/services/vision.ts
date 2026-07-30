@@ -117,8 +117,7 @@ export class VisionService {
         return null;
       }
 
-      // qwen3 models may put output in thinking field instead of content
-      const description = (data.message?.content || data.message?.thinking || '').trim();
+      const description = pickVisionText(data.message?.content, data.message?.thinking);
 
       if (!description) {
         console.warn(`[Vision] Empty response. Keys: ${JSON.stringify(Object.keys(data.message ?? {}))}, eval_count: ${(data as any).eval_count}`);
@@ -134,4 +133,28 @@ export class VisionService {
       return null;
     }
   }
+}
+
+/**
+ * Pick the usable description from a vision response.
+ * content is preferred; the thinking-field fallback exists because qwen3
+ * models sometimes put their whole answer there — but gemma4's thinking field
+ * is genuine chain-of-thought ("Here's a thinking process that leads to..."),
+ * which once leaked verbatim into an injected image description. When falling
+ * back, keep only the text AFTER the last blank-line break if it's substantial
+ * — CoT rambles first, the actual description comes last.
+ */
+export function pickVisionText(content?: string, thinking?: string): string {
+  const direct = (content ?? '').trim();
+  if (direct) return direct;
+
+  const raw = (thinking ?? '').trim();
+  if (!raw) return '';
+  const blocks = raw.split(/\n\s*\n/);
+  const last = blocks[blocks.length - 1].trim();
+  if (blocks.length > 1 && last.length >= 80) {
+    console.log('[Vision] Using tail of thinking field (CoT lead-in stripped)');
+    return last;
+  }
+  return raw;
 }

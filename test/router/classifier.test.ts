@@ -134,6 +134,14 @@ describe('classifyMessage', () => {
     expect(result.confidence).toBe('sticky');
   });
 
+  it('sticky: explicit generation ask breaks sticky-chat (July 29 sonic case)', async () => {
+    const client = createMockClient('image');
+    const config = { ...defaultConfig, categories: { ...defaultConfig.categories, image: { description: 'Image gen' } } };
+    const result = await classifyMessage(client, config, 'But you can generate a picture of sonic the hedgehog', 'chat');
+    expect(result.category).toBe('image');
+    expect(result.confidence).not.toBe('sticky');
+  });
+
   it('keyword: "settings" still routes to config', async () => {
     const client = createFailingClient();
     const config = { ...defaultConfig, categories: { ...defaultConfig.categories, config: { description: 'Config' } } };
