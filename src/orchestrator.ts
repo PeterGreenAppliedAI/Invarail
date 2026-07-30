@@ -43,7 +43,7 @@ import type { WebApiAdapter } from './channels/web/adapter.js';
 // Pipeline utilities kept in src/services/tts-stream.ts for future use with slower TTS models
 
 // Extracted utilities — imported from dedicated modules
-import { extractMediaAttachments } from './services/media-extraction.js';
+import { extractMediaAttachments, isImageTransformRequest } from './services/media-extraction.js';
 import { stripThinkingTags } from './utils/text.js';
 import { splitFinalMessage } from './utils/text.js';
 import { extractTrainingPairs } from './learnings/training-collector.js';
@@ -1228,6 +1228,7 @@ export class Orchestrator {
 
     // Attachment pre-processing: save files, route by file type
     let hasImageAttachment = false;
+    let attachedImagePath: string | undefined;
     let fileOverrideCategory: string | undefined;
     const DATA_EXTENSIONS = new Set(['csv', 'xlsx', 'xls', 'json', 'tsv']);
     const TEXT_EXTENSIONS = new Set(['md', 'txt', 'html', 'htm', 'log', 'xml', 'yaml', 'yml']);
@@ -1249,6 +1250,7 @@ export class Orchestrator {
 
         if (saved.isImage) {
           hasImageAttachment = true;
+          if (attachedImagePath === undefined) attachedImagePath = saved.localPath;
           if (this.visionService.enabled) {
             console.log(`[Orchestrator] Running vision on ${saved.filename} (${att.data.length} bytes, ${att.mimeType})`);
             const description = await this.visionService.describe(att.data, att.mimeType);
@@ -1440,6 +1442,19 @@ export class Orchestrator {
         }
       } catch { /* capture is best-effort */ }
 
+      // Image attachments default to chat+vision (ask ABOUT the image) — but a
+      // TRANSFORM caption ("make this picture anime style") routes to the image
+      // specialist with the saved file as the img2img reference. The July 29
+      // failure: the unconditional chat override meant the model truthfully
+      // said "I have no image tools" while image_generate sat unreachable.
+      const imageTransform = hasImageAttachment && attachedImagePath !== undefined && isImageTransformRequest(userCaption);
+      if (imageTransform) {
+        // Plain-text path note, deliberately NOT [FILE:] syntax — that token
+        // family is stripped before the model sees it
+        msg.content += `\n[Attached image saved at: ${attachedImagePath} — pass this path as reference_image_path to image_generate for img2img.]`;
+        console.log('[Orchestrator] Image transform intent → image specialist (img2img)');
+      }
+
       const dispatchBase = {
         client: this.client,
         registry: this.toolRegistry,
@@ -1452,6 +1467,7 @@ export class Orchestrator {
             executionMetrics: this.executionMetrics,
         classifyText: userCaption,
         ...(fromExtension ? { overrideCategory: 'chat' as const }
+          : imageTransform ? { overrideCategory: 'image' as const }
           : hasImageAttachment ? { overrideCategory: 'chat' as const }
           : fileOverrideCategory ? { overrideCategory: fileOverrideCategory }
           : {}),

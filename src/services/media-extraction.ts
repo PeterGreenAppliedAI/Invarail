@@ -57,3 +57,25 @@ export function extractMediaAttachments(text: string): {
 
   return { cleanText: cleanText.trim(), attachments };
 }
+
+/**
+ * Does this caption ask to TRANSFORM/GENERATE from an attached image (img2img)
+ * rather than ask ABOUT it? Gates the image-attachment routing override:
+ * plain captions keep the chat+vision flow; transform intent routes to the
+ * image specialist with the saved file as reference_image_path.
+ * Precision over recall — "what can I make with this?" (fridge photo) must
+ * NOT match, so the action verb requires an explicit picture/image object,
+ * with style keywords (anime, cartoon...) as the second, independent signal.
+ */
+const IMAGE_TRANSFORM_RE = new RegExp(
+  [
+    /\b(make|turn|convert|transform|animate|redraw|restyle|stylize|remix|reimagine|edit)\b[\s\S]{0,50}\b(picture|photo|image)\b/.source,
+    /\b(generate|create|draw)\b[\s\S]{0,40}\b(picture|photo|image|illustration|version)\b/.source,
+    /\b(anime|cartoon|ghibli|watercolor|pixel\s?art|comic|caricature)\b/.source,
+  ].join('|'),
+  'i',
+);
+
+export function isImageTransformRequest(caption: string): boolean {
+  return IMAGE_TRANSFORM_RE.test(caption);
+}

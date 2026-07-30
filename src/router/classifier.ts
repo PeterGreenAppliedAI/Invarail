@@ -39,6 +39,9 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
   { pattern: /\b(search (for|the web|online)|web search|google|look up|find out about)\b/i, category: 'web_search' },
   // Live-value lookups ("current price of bitcoin") need fresh data — chat default would answer stale
   { pattern: /\b(current|latest|live|today'?s)\s+(price|value|rate)\b|\bprice of\b/i, category: 'web_search' },
+  // Explicit generation asks must break sticky-chat — "But you can generate a
+  // picture of sonic" stuck to chat and the model denied having image tools (July 29)
+  { pattern: /\b(generate|create|draw|make)\s+(?:me\s+)?(?:a|an|another)?\s*(picture|image|illustration|drawing)\b/i, category: 'image' },
 ];
 
 const VALID_CATEGORIES = new Set([
