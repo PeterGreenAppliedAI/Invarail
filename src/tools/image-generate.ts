@@ -91,7 +91,14 @@ Returns a [FILE:path] token for the generated image.`,
         mkdirSync(dirname(outPath), { recursive: true });
         writeFileSync(outPath, buffer);
 
-        return `Generated image saved to ${outPath} (${Math.round(buffer.length / 1024)}KB)\n[FILE:${outPath}]`;
+        // Honesty guard: Ollama's Flux serving IGNORES the source image
+        // (upstream bug, open since ~0.15.6 — ollama/ollama#14306; verified
+        // empirically 2026-07-29 with a geometric reference). Without this
+        // caveat the model claims a faithful img2img edit it never performed.
+        const refCaveat = refPath
+          ? '\nNote: the image backend currently ignores reference images (known Ollama bug) — this result is generated from the text prompt only and will NOT preserve the original photo. Tell the user this honestly.'
+          : '';
+        return `Generated image saved to ${outPath} (${Math.round(buffer.length / 1024)}KB)${refCaveat}\n[FILE:${outPath}]`;
       } catch (err) {
         if (err instanceof Error && err.name === 'TimeoutError') {
           return 'Image generation timed out (5 minute limit).';
