@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { proposeStaleFactsForReview } from '../../src/services/heartbeat-service.js';
@@ -43,5 +43,37 @@ describe('proposeStaleFactsForReview guards (July 10 firehose incident)', () => 
     const pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
     expect(pending.facts).toHaveLength(2);
     expect(pending.facts[0].text).toBe(FACTS[0]);
+  });
+});
+
+describe('pending accumulation guards (July 30 incident — 46 invisible candidates)', () => {
+  it('hard-caps the pending file at ONE report\'s worth (5) across cycles', () => {
+    const store = makeFactStore(FACTS);
+    // 6 cycles × 3 proposals would be 18 unbounded — cap holds at 5, so any
+    // command can only ever act on what the user is looking at
+    for (let cycle = 0; cycle < 6; cycle++) {
+      proposeStaleFactsForReview(FACTS.slice(cycle * 3, cycle * 3 + 3), store, 'peter', pendingPath);
+    }
+    const pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
+    expect(pending.facts.length).toBeLessThanOrEqual(5);
+  });
+
+  it('expires unanswered proposals older than 7 days back to memory', () => {
+    const store = makeFactStore(FACTS);
+    proposeStaleFactsForReview([FACTS[0]], store, 'peter', pendingPath);
+    // Backdate the proposal past the expiry window
+    const pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
+    pending.facts[0].proposedAt = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString();
+    writeFileSync(pendingPath, JSON.stringify(pending));
+
+    proposeStaleFactsForReview([FACTS[10]], store, 'peter', pendingPath);
+    const after = JSON.parse(readFileSync(pendingPath, 'utf-8'));
+    expect(after.facts.map((f: { text: string }) => f.text)).toEqual([FACTS[10]]); // old one expired, not removed from memory
+  });
+
+  it('stamps proposedAt on every new pending entry', () => {
+    proposeStaleFactsForReview([FACTS[0]], makeFactStore(FACTS), 'peter', pendingPath);
+    const pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
+    expect(typeof pending.facts[0].proposedAt).toBe('string');
   });
 });

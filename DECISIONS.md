@@ -4,6 +4,19 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The 46-Fact Removal: Guards That Stop Floods Can Create Leaks (July 30 2026)
+
+### Bare "!heartbeat no" removed 46 facts when the report showed 2
+**Incident:** heartbeat proposed 2 stale facts; Peter replied `!heartbeat no`; the bot removed **46** — including most of his professional-identity layer (Sparks, Val partnership, Clearpath, workshops funnel) and health tracking. Root cause chain: the July 10 firehose guards capped stale proposals at 3 *per cycle* but the pending file MERGED across cycles — two-plus weeks unanswered quietly accumulated 46 candidates while each report displayed only the newest few (the "!heartbeat no 45" index was the visible tell nobody read). Bare `no` = remove-ALL by design, so consent was given against 2 visible items and executed against 46 invisible ones — the July 7 lesson ("the human is not a reliable validator of what they can't see") violated by our own accumulation.
+**What saved it:** the removal ledger (`removed.jsonl`) held every text, and the handler's flat/graph divergence BUG (removal never touched FalkorDB) accidentally preserved the highest-value facts with full metadata. Diff analysis showed 41/46 were still-valid; restored 44 through BOTH stores (write-through like `!save`, re-tagged via the extraction model — which promptly invented the category "business relationship", re-proving that a model must never be trusted with a schema boundary; coerce to the closed set). 2 genuinely stale facts stayed removed. Flat 40/44 + graph 40/44 (dedup rejects = survivors, correct).
+**Fixes (all structural):**
+1. **The pending set is capped at ONE report's worth (5)** — Peter's rule verbatim: "there is never a reason for it to surface that many facts for removal at the same time." Commands can now only act on what the user is looking at, by construction.
+2. Unanswered proposals **expire back to normal memory after 7 days** (cooldown ledger prevents instant re-proposal) — review is an offer, not a debt that compounds.
+3. Bare `no` on a legacy oversized set (>5) removes NOTHING — lists everything and requires `!heartbeat no all`. Bare `!heartbeat` now lists the full pending set.
+4. Reports state the TOTAL pending count when it exceeds what's shown.
+5. Review denial now **removes from the graph too** — the divergence that saved us was still a bug (removed facts stayed injectable via graph KNN).
+**Lessons:** (1) A per-cycle cap without a total cap converts a flood into a leak — guards must bound the ACCUMULATOR, not just the increment. (2) Any command's blast radius must equal the user's viewport, structurally. (3) Dual-store operations that only touch one store fail in both directions — this time divergence rescued data; next time it resurrects deleted data. (4) The removal ledger earned permanence: deletion without an undo trail would have made this unrecoverable.
+
 ## img2img: Correct Wiring, Broken Upstream (July 29 2026)
 
 ### "Make this picture anime" now routes right — and the backend ignores the picture

@@ -51,6 +51,13 @@ export interface HeartbeatDeps {
 /** Max stale-fact nominations shown per heartbeat — the positional !heartbeat
  *  interface is only usable at this scale. */
 const MAX_STALE_PROPOSALS = 3;
+/** Unanswered proposals expire back to normal memory — the pending set must
+ *  never outgrow what a report can display (July 30: it hit 46). Peter's rule:
+ *  "there is never a reason to surface that many facts for removal at the same
+ *  time" — the cap IS one report's worth, so commands can only ever act on
+ *  what the user is looking at. */
+const PENDING_PROPOSAL_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_PENDING_REVIEW_FACTS = 5;
 /** If the model nominates more than this, its staleness judgment is broken for
  *  this cycle (July 10: it nominated 40 — half the user's memory — after a
  *  migration made the diff look huge). Distrust the ENTIRE batch. */
@@ -110,18 +117,36 @@ export function proposeStaleFactsForReview(
   if (matched.length === 0) return [];
 
   // Merge into the pending review file (create if absent)
-  let pending: { type: string; createdAt: string; senderId: string; facts: Array<{ id: string; text: string; category: string }> };
+  let pending: { type: string; createdAt: string; senderId: string; facts: Array<{ id: string; text: string; category: string; proposedAt?: string }> };
   try {
     pending = JSON.parse(readFileSync(pendingPath, 'utf-8'));
   } catch {
     pending = { type: 'heartbeat_review', createdAt: new Date().toISOString(), senderId, facts: [] };
   }
 
+  // The July 30 incident: per-cycle caps held, but unanswered proposals
+  // ACCUMULATED across cycles to 46 while each report displayed only the
+  // newest few — then a bare "!heartbeat no" acted on all of them. Two
+  // structural guards: unanswered proposals EXPIRE back to normal memory
+  // after 7 days (the cooldown ledger stops instant re-proposal), and the
+  // file is hard-capped — the pending set stays reviewable at a glance.
+  const proposalCutoff = Date.now() - PENDING_PROPOSAL_EXPIRY_MS;
+  const before = pending.facts.length;
+  pending.facts = pending.facts.filter(f =>
+    new Date(f.proposedAt ?? pending.createdAt).getTime() >= proposalCutoff);
+  if (pending.facts.length < before) {
+    console.log(`[Heartbeat] ${before - pending.facts.length} unanswered proposal(s) expired back to memory (7d)`);
+  }
+
   const proposals: Array<{ index: number; text: string; category: string }> = [];
   for (const fact of matched) {
     let idx = pending.facts.findIndex(f => f.id === fact.id);
     if (idx === -1) {
-      pending.facts.push({ id: fact.id, text: fact.text, category: fact.category });
+      if (pending.facts.length >= MAX_PENDING_REVIEW_FACTS) {
+        console.log(`[Heartbeat] Pending review at cap (${MAX_PENDING_REVIEW_FACTS}) — deferring "${fact.text.slice(0, 50)}"`);
+        continue;
+      }
+      pending.facts.push({ id: fact.id, text: fact.text, category: fact.category, proposedAt: new Date().toISOString() });
       idx = pending.facts.length - 1;
     }
     proposals.push({ index: idx + 1, text: fact.text, category: fact.category });
@@ -583,7 +608,17 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
         const staleSection = staleProposals
           .map(p => `${p.index}. \`${p.category}\` — ${p.text}`)
           .join('\n');
-        reportText += `\n\n🕰️ **Possibly outdated** — I think these are stale, but they stay until you say so:\n${staleSection}\n↳ **!heartbeat no ${staleProposals[0].index}** to remove · **!heartbeat yes** to keep everything`;
+        // Consent honesty (July 30): commands act on the WHOLE pending set, so
+        // the report must say how big that set is — never show 2 and act on 46
+        let totalPending = staleProposals.length;
+        try {
+          const pf = JSON.parse(readFileSync(deps.heartbeatPendingPath(workspacePath, senderId!), 'utf-8')) as { facts: unknown[] };
+          totalPending = pf.facts.length;
+        } catch { /* file may be freshly consumed */ }
+        const backlogNote = totalPending > staleProposals.length
+          ? `\n(${totalPending} total awaiting review — **!heartbeat** to list them all)`
+          : '';
+        reportText += `\n\n🕰️ **Possibly outdated** — I think these are stale, but they stay until you say so:\n${staleSection}${backlogNote}\n↳ **!heartbeat no ${staleProposals[0].index}** to remove · **!heartbeat yes** to keep everything`;
       }
 
       await channelRegistry.send(
