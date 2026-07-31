@@ -347,33 +347,63 @@ export function applyTier1(v: VerificationResult, t: Tier1Result): VerificationR
   return next;
 }
 
-export function buildPatchSet(results: VerificationResult[]): PatchSet {
+export function buildPatchSet(results: VerificationResult[], sources: string[] = []): PatchSet {
   const patch: PatchSet = {};
   for (const v of results) {
     if (!needsCorrection(v)) continue;
-    patch[v.claim_id] = { verdict: v.verdict, instruction: instructionFor(v) };
+    patch[v.claim_id] = { verdict: v.verdict, instruction: instructionFor(v, sources) };
   }
   return patch;
 }
 
-function instructionFor(v: VerificationResult): string {
-  const src = v.cited_source ? ` (source: ${v.cited_source})` : '';
+/** Human-readable, prose-safe reference to a source: its citation marker when
+ *  the URL is in the report's source list, else the bare hostname. Raw URLs in
+ *  prose were the July 31 publishing artifact — never hand the model one. */
+function sourceLabel(url: string | undefined, sources: string[]): string {
+  if (!url) return 'the cited source';
+  const idx = sources.indexOf(url);
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { /* not a URL */ }
+  if (idx !== -1) return host ? `${host} [${idx + 1}]` : `source [${idx + 1}]`;
+  return host || 'the cited source';
+}
+
+function instructionFor(v: VerificationResult, sources: string[]): string {
+  const cited = sourceLabel(v.cited_source, sources);
   switch (v.recommended_action) {
     case 'correct': {
       const ev = v.tier1?.evidence ? ` Independent evidence: "${v.tier1.evidence}"` : '';
-      const url = v.tier1?.source_url ? ` (${v.tier1.source_url})` : src;
-      return `An independent source CONTRADICTS this claim${url}. Correct the claim to match the independent evidence${ev} — fix the specific wrong detail (e.g. a date, figure, or "acquisition" vs "license"). Keep the rest of the sentence.`;
+      const label = v.tier1?.source_url ? sourceLabel(v.tier1.source_url, sources) : cited;
+      return `An independent source (${label}) CONTRADICTS this claim. Correct the claim to match the independent evidence${ev} — fix the specific wrong detail (e.g. a date, figure, or "acquisition" vs "license"). Keep the rest of the sentence.`;
     }
     case 'attribute':
-      return `Attribute this claim to its source${src} — phrase it as "According to <source>, …" rather than stating it as established fact. Do NOT delete the claim.`;
+      return `Attribute this claim to its source — phrase it as "According to ${cited}, …" rather than stating it as established fact. Use that exact short label; NEVER write out a full URL. Do NOT delete the claim.`;
     case 'qualify':
       if (v.unsupported_elements.length > 0) {
         return `Partly supported: keep what is supported (${v.supported_elements.join('; ') || 'the supported part'}) and hedge or soften the unsupported part (${v.unsupported_elements.join('; ')}). Do NOT delete the whole claim.`;
       }
-      return `This claim could not be confirmed on the available source(s)${src}. Hedge the certainty (e.g. "reportedly", "according to secondary reporting") rather than stating it as established fact. Do NOT delete it.`;
+      return `This claim could not be confirmed on the available source(s) (${cited}). Hedge the certainty (e.g. "reportedly", "according to secondary reporting") rather than stating it as established fact. Do NOT delete it.`;
     default:
-      return `Hedge this claim's certainty against its source${src}. Do NOT delete it.`;
+      return `Hedge this claim's certainty against its source (${cited}). Do NOT delete it.`;
   }
+}
+
+/**
+ * Post-rewrite guard: reject model output that would re-introduce the July 31
+ * publishing artifacts. Returns the cleaned sentence or null (= skip the
+ * correction, keep the original — a skipped hedge is better than mangled prose).
+ */
+export function guardRewrite(rewritten: string, original: string): string | null {
+  const clean = rewritten.trim();
+  if (!clean || clean.includes('\n\n')) return null;
+  if (clean.length > original.length * 4 + 200) return null;
+  // Raw URLs belong in Sources, never prose
+  if (/https?:\/\//.test(clean) && !/https?:\/\//.test(original)) return null;
+  // Stacked hedges ("According to X.According to Y…") — one is the limit
+  if ((clean.match(/according to/gi) ?? []).length > 1) return null;
+  // A splice must not orphan formatting markers
+  if ((clean.match(/\*\*/g) ?? []).length % 2 !== 0) return null;
+  return clean;
 }
 
 /**
@@ -404,13 +434,20 @@ export function locateClaimSentence(md: string, claim: string): { start: number;
   const sourcesIdx = md.search(/^## Sources/m);
   const searchable = sourcesIdx === -1 ? md.length : sourcesIdx;
 
+  // URLs are full of periods — naive splitting saw "docs.octomil.com" as two
+  // sentence boundaries and spliced MID-URL (the July 31 report's duplicated
+  // "According to" / missing-space / broken-bold artifacts, all one wound).
+  // Mask URLs with same-LENGTH filler so segmentation ignores their dots
+  // while every offset still maps 1:1 onto the real markdown.
+  const masked = md.replace(/https?:\/\/\S+/g, u => 'u'.repeat(u.length));
+
   let best: { start: number; end: number; sentence: string; score: number } | null = null;
   // Candidate sentences: runs ending in ./!/? or at end-of-line
   const re = /[^.!?\n]+[.!?]+|[^.!?\n]+(?=\n|$)/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(md)) !== null) {
+  while ((m = re.exec(masked)) !== null) {
     if (m.index >= searchable) break;
-    const sentence = m[0];
+    const sentence = md.slice(m.index, m.index + m[0].length);
     const trimmed = sentence.trim();
     if (!trimmed || trimmed.startsWith('#') || trimmed.includes('{{chart:')) continue;
 
@@ -438,7 +475,7 @@ export function sentenceCorrectionPrompt(sentence: string, instruction: string):
   return {
     system: [
       'You rewrite EXACTLY ONE sentence from a research report.',
-      'Apply the instruction to the sentence. Keep any [n] citation markers.',
+      'Apply the instruction to the sentence. Keep any [n] citation markers. NEVER write a raw URL into the sentence — cite with [n] markers or a short source name.',
       'Hedge CONCISELY: at most ONE hedge (a single "According to <source>, …" OR one "reportedly"). Never stack qualifiers.',
       'Return ONLY the rewritten sentence — no explanation, no quotes around it, no strikethrough, no old text.',
       '/no_think',

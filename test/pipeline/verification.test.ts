@@ -9,6 +9,7 @@ import {
   pickRelevantSources,
   stripStrikethrough,
   locateClaimSentence,
+  guardRewrite,
   verificationSection,
   shouldEscalate,
   tier1Query,
@@ -306,5 +307,40 @@ describe('verificationSection', () => {
 
   it('returns empty string when no claims were checked', () => {
     expect(verificationSection([])).toBe('');
+  });
+});
+
+describe('July 31 publishing artifacts (URL-in-sentence splices)', () => {
+  it('locateClaimSentence does not split sentences at dots inside URLs', () => {
+    const md = 'Hardware crossed thresholds this week. According to https://docs.octomil.com/blog/on-device-llm-inference-2025-2026, Snapdragon delivers 100 TOPS and 220 tok/s decode [3]. More text follows.';
+    const loc = locateClaimSentence(md, 'Snapdragon delivers 100 TOPS NPU and 220 tok/s decode');
+    expect(loc).not.toBeNull();
+    // The WHOLE sentence including the full URL — not a fragment ending at ".octomil."
+    expect(loc!.sentence).toContain('2025-2026');
+    expect(loc!.sentence).toContain('220 tok/s');
+    expect(md.slice(loc!.start, loc!.end)).toBe(loc!.sentence);
+  });
+
+  it('attribute instructions cite by marker/hostname, never a raw URL', () => {
+    const sources = ['https://a.example/one', 'https://docs.octomil.com/blog/on-device-llm-inference-2025-2026/'];
+    const results: VerificationResult[] = [
+      { claim_id: 'v', claim: 'V', verdict: 'VENDOR_CLAIM', supported_elements: [], unsupported_elements: [], reason: '', recommended_action: 'attribute', cited_source: sources[1] },
+    ];
+    const patch = buildPatchSet(results, sources);
+    expect(patch.v.instruction).toContain('docs.octomil.com [2]');
+    expect(patch.v.instruction).not.toContain('https://');
+  });
+
+  it('guardRewrite rejects the artifact classes and passes clean rewrites', () => {
+    const original = 'Snapdragon 8 Elite Gen 5 delivers 100 TOPS with 220 tok/s decode [3].';
+    // Raw URL introduced
+    expect(guardRewrite('According to https://docs.octomil.com/blog/x, Snapdragon delivers 220 tok/s [3].', original)).toBeNull();
+    // Stacked hedge (the doubled "According to")
+    expect(guardRewrite('According to docs.octomil.According to benchmarks, Snapdragon delivers 220 tok/s [3].', original)).toBeNull();
+    // Orphaned bold marker
+    expect(guardRewrite('Dimensity adds native BitNet 1.58-bit processing**, claiming lower power [3].', original)).toBeNull();
+    // Clean attribution passes
+    expect(guardRewrite('According to docs.octomil.com [6], Snapdragon delivers 220 tok/s decode [3].', original))
+      .toContain('According to docs.octomil.com [6]');
   });
 });

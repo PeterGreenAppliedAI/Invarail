@@ -7,7 +7,7 @@ import {
   type Claim, type VerificationResult,
   extractClaimsPrompt, parseClaims, CLAIMS_JSON_SCHEMA, pickRelevantSources, entailmentPrompt, parseVerdict,
   shouldEscalate, tier1Query, tier1JudgePrompt, parseTier1, applyTier1,
-  buildPatchSet, locateClaimSentence, sentenceCorrectionPrompt, verificationSection, needsCorrection, stripStrikethrough,
+  buildPatchSet, locateClaimSentence, sentenceCorrectionPrompt, verificationSection, needsCorrection, stripStrikethrough, guardRewrite,
 } from '../verification.js';
 
 /**
@@ -496,7 +496,8 @@ export const researchPipeline: PipelineDefinition = {
         const claims = ctx.params._claims as Claim[];
         const vcfg = ctx.params._verification as VerificationConfig | undefined;
         let md = ctx.params._reportMarkdown as string;
-        const patch = buildPatchSet(results);
+        // Sources let attribution cite by marker ("[6]") instead of raw URLs
+        const patch = buildPatchSet(results, (ctx.params._allSources as string[]) ?? []);
         const claimText: Record<string, string> = {};
         for (const c of claims) claimText[c.claim_id] = c.claim;
 
@@ -517,11 +518,13 @@ export const researchPipeline: PipelineDefinition = {
               messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
               options: { temperature: 0.2, num_predict: 400 },
             });
-            let rewritten = stripStrikethrough(stripThinking(resp.message?.content ?? '')).trim()
+            const raw = stripStrikethrough(stripThinking(resp.message?.content ?? '')).trim()
               .replace(/^["'`]+|["'`]+$/g, '');
-            // Sanity: non-empty, single paragraph, bounded growth
-            if (!rewritten || rewritten.includes('\n\n') || rewritten.length > loc.sentence.length * 4 + 200) {
-              console.warn(`[Verify] rejected rewrite for ${id} (empty/multi-paragraph/oversized)`);
+            // Guard: reject rewrites that would mangle prose (raw URLs, stacked
+            // hedges, orphaned bold markers, oversized) — skip beats splice-scars
+            const rewritten = guardRewrite(raw, loc.sentence);
+            if (!rewritten) {
+              console.warn(`[Verify] rejected rewrite for ${id} (guard: URL/stacked-hedge/format/size)`);
               continue;
             }
             md = md.slice(0, loc.start) + rewritten + md.slice(loc.end);
