@@ -120,6 +120,9 @@ export interface DispatchParams {
   onStream?: (delta: string) => void;
   /** Progress callback — called with a user-facing note at labeled pipeline stage boundaries */
   onProgress?: (note: string) => void;
+  /** Granular per-stage timing events (console-only surface — channels stay
+   *  at milestone-level onProgress by design). */
+  onStageComplete?: (info: { stage: string; type: string; ms: number }) => void;
   /** Steering: drained by the ReAct loop each iteration — messages the user
    *  sent while this dispatch was running (orchestrator queues them). */
   pollSteering?: () => string[];
@@ -1273,6 +1276,7 @@ async function runPipelineDispatch(
     cronMode: params.cronMode,
     onStream: params.onStream,
     onProgress: params.onProgress,
+    onStageComplete: params.onStageComplete,
     conversational: !params.cronMode && (() => {
       const state = params.sessionStore?.loadState(agentId, sessionKey ?? 'default');
       return !!state && state.turnCount > 0;

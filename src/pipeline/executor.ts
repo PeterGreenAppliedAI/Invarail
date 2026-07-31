@@ -6,6 +6,7 @@ import type {
 } from './types.js';
 import { extractParams } from './extractor.js';
 import { pipelineStageError } from '../errors.js';
+import { logMetric } from '../metrics.js';
 
 /**
  * Execute a single pipeline stage against the shared context.
@@ -25,7 +26,21 @@ async function executeStage(stage: PipelineStage, ctx: PipelineContext): Promise
   }
 
   console.log(`[Pipeline] Running stage "${stage.name}" (${stage.type})`);
+  const stageStart = Date.now();
+  try {
+    return await executeStageInner(stage, ctx);
+  } finally {
+    // Granular timing: every stage, console-only surface + run profile.
+    // ("28 minutes is a bit long" is unanswerable without per-stage numbers.)
+    const ms = Date.now() - stageStart;
+    console.log(`[Pipeline] Stage "${stage.name}" done in ${(ms / 1000).toFixed(1)}s`);
+    (ctx.stageTimings ??= []).push({ stage: stage.name, type: stage.type, ms });
+    try { ctx.onStageComplete?.({ stage: stage.name, type: stage.type, ms }); }
+    catch { /* observer must never break the pipeline */ }
+  }
+}
 
+async function executeStageInner(stage: PipelineStage, ctx: PipelineContext): Promise<unknown> {
   switch (stage.type) {
     case 'extract': {
       const extraContext = stage.context ? stage.context(ctx) : undefined;
@@ -210,10 +225,26 @@ export async function runPipeline(
 ): Promise<PipelineResult> {
   console.log(`[Pipeline] Starting "${definition.name}" (${definition.stages.length} stages)`);
 
+  const runStart = Date.now();
   await executeStages(definition.stages, ctx);
 
   const answer = ctx.answer ?? '';
   console.log(`[Pipeline] Finished "${definition.name}" — answer length: ${answer.length}`);
+
+  // Run profile → metrics.jsonl (historical "where did the time go" is queryable)
+  if (ctx.stageTimings?.length) {
+    const totalMs = Date.now() - runStart;
+    const top = [...ctx.stageTimings].sort((a, b) => b.ms - a.ms).slice(0, 3)
+      .map(t => `${t.stage}=${(t.ms / 1000).toFixed(1)}s`).join(' ');
+    console.log(`[Pipeline] "${definition.name}" profile: total ${(totalMs / 1000).toFixed(1)}s · slowest: ${top}`);
+    logMetric({
+      timestamp: new Date().toISOString(),
+      type: 'pipeline_run',
+      pipeline: definition.name,
+      totalMs,
+      stages: ctx.stageTimings,
+    });
+  }
 
   return {
     answer,

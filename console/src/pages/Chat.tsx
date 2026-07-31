@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { getToken, fetchApi } from '../api/client';
 import { useStatus } from '../api/hooks';
 import ErrorBanner from '../components/shared/ErrorBanner';
-import type { ChatSseEvent, VoiceSseEvent } from '../types';
+import type { ChatSseEvent, VoiceSseEvent, StageTiming } from '../types';
 
 interface ChatMessage {
   id: string;
@@ -61,6 +61,10 @@ export default function Chat() {
   const [statusText, setStatusText] = useState('');
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  // Granular process timing — console-only surface (channels stay milestone-level)
+  const [liveStages, setLiveStages] = useState<Array<{ stage: string; ms: number }>>([]);
+  const [lastRunTimings, setLastRunTimings] = useState<StageTiming[] | null>(null);
+  const [showTimings, setShowTimings] = useState(false);
 
   // Get the default senderId from system status (primary user identity)
   const { data: sysStatus } = useStatus();
@@ -201,6 +205,8 @@ export default function Chat() {
     setInput('');
     setStatus('sending');
     setStatusText(pendingFiles.length > 0 ? 'Processing attachments...' : 'Thinking...');
+    setLiveStages([]);
+    setLastRunTimings(null);
 
     // Convert files to base64
     const attachments: { name: string; data: string; mimeType: string }[] = [];
@@ -270,10 +276,16 @@ export default function Chat() {
           if (!event) continue;
           if (event.type === 'done' && event.answer) {
             addMessage({ role: 'assistant', content: event.answer, images: event.images });
+            if (event.stageTimings?.length) setLastRunTimings(event.stageTimings);
           } else if (event.type === 'error') {
             addMessage({ role: 'assistant', content: `Error: ${event.error}` });
+          } else if (event.type === 'status') {
+            setStatusText(event.message);
+          } else if (event.type === 'stage') {
+            // Live process timeline as stages complete
+            setLiveStages(prev => [...prev, { stage: event.stage, ms: event.ms }]);
+            setStatusText(`${event.stage} · ${(event.ms / 1000).toFixed(1)}s`);
           }
-          // 'status' and unknown event types are ignored here
         }
       }
     } catch (err) {
@@ -685,9 +697,44 @@ export default function Chat() {
 
         {isProcessing && (
           <div className="flex justify-start">
-            <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-zinc-400 flex items-center gap-2">
-              <Loader2 size={14} className="animate-spin" />
-              {statusText || 'Thinking...'}
+            <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-zinc-400">
+              <div className="flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" />
+                {statusText || 'Thinking...'}
+              </div>
+              {liveStages.length > 0 && (
+                <div className="mt-2 space-y-0.5 text-xs text-zinc-500 font-mono">
+                  {liveStages.map((s, i) => (
+                    <div key={i} className="flex justify-between gap-6">
+                      <span>{s.stage}</span>
+                      <span>{(s.ms / 1000).toFixed(1)}s</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isProcessing && lastRunTimings && (
+          <div className="flex justify-start">
+            <div className="text-xs text-zinc-500">
+              <button
+                onClick={() => setShowTimings(v => !v)}
+                className="hover:text-zinc-300 font-mono"
+              >
+                ⏱ {(lastRunTimings.reduce((a, t) => a + t.ms, 0) / 1000).toFixed(1)}s across {lastRunTimings.length} stages {showTimings ? '▾' : '▸'}
+              </button>
+              {showTimings && (
+                <div className="mt-1 space-y-0.5 font-mono bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+                  {[...lastRunTimings].sort((a, b) => b.ms - a.ms).map((t, i) => (
+                    <div key={i} className="flex justify-between gap-6">
+                      <span>{t.stage}</span>
+                      <span>{(t.ms / 1000).toFixed(1)}s</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
