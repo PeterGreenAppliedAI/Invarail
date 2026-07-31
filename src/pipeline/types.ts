@@ -49,6 +49,11 @@ export interface PipelineContext {
   onStream?: (delta: string) => void;
   /** Progress callback — fired at labeled stage boundaries so channels can surface step-wise updates. */
   onProgress?: (note: string) => void;
+  /** Granular per-stage completion events — CONSOLE ONLY. Channels deliberately
+   *  get milestone-level onProgress; this fires for EVERY stage with timing. */
+  onStageComplete?: (info: { stage: string; type: string; ms: number }) => void;
+  /** Accumulated stage timings for the whole run (executor-populated) */
+  stageTimings?: Array<{ stage: string; type: string; ms: number }>;
   /** Execution metrics collector — plan pipeline records step-level data here */
   metricsCollector?: import('../metrics/collector.js').MetricsCollector;
   /** Sub-dispatch function — sends a message to a specialist and returns the result.

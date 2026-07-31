@@ -268,6 +268,7 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
     }
 
     // Let the router classify extension messages — it knows chat vs website vs web_search
+    const stageTimings: Array<{ stage: string; type: string; ms: number }> = [];
     const result = await deps.dispatch({
       message,
       classifyText: trimmed,  // route on the user's instruction, not injected attachment text
@@ -285,6 +286,13 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
       onProgress: (note: string) => {
         res.write(`data: ${JSON.stringify({ type: 'status', message: note })}\n\n`);
       },
+      // Granular per-stage timing — console-only surface (channels deliberately
+      // stay at milestone level). Front end renders a live process timeline.
+      onStageComplete: (info: { stage: string; type: string; ms: number }) => {
+        stageTimings.push(info);
+        // info.type is the STAGE type — don't let it clobber the SSE event type
+        res.write(`data: ${JSON.stringify({ type: 'stage', stage: info.stage, stageType: info.type, ms: info.ms })}\n\n`);
+      },
     });
 
     const images = extractImagePaths(result);
@@ -294,6 +302,7 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
       answer: result.answer,
       category: result.category,
       iterations: result.iterations,
+      ...(stageTimings.length > 0 ? { stageTimings } : {}),
       ...(images.length > 0 ? { images: images.map(p => `/console/api/files/${encodeURIComponent(p)}`) } : {}),
       ...(files.length > 0 ? { files: files.map(p => ({ path: `/console/api/files/${encodeURIComponent(p)}`, name: p.split('/').pop() })) } : {}),
     })}\n\n`);

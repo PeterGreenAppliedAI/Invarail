@@ -67,8 +67,17 @@ export interface CronJob {
 }
 
 // --- SSE events emitted by /console/api/chat (backend: src/console/handlers/chat.ts) ---
+export interface StageTiming {
+  stage: string;
+  /** Pipeline stage type on 'done'.stageTimings; sent as stageType on live events */
+  type?: string;
+  stageType?: string;
+  ms: number;
+}
+
 export type ChatSseEvent =
   | { type: 'status'; message: string }
+  | { type: 'stage'; stage: string; stageType: string; ms: number }
   | {
       type: 'done';
       answer: string;
@@ -76,6 +85,7 @@ export type ChatSseEvent =
       iterations?: number;
       images?: string[];
       files?: { path: string; name?: string }[];
+      stageTimings?: StageTiming[];
     }
   | { type: 'error'; error: string };
 
