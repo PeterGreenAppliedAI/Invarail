@@ -4,6 +4,18 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Agent Authored Flows — and Exposed Two of Our Bugs Doing It (August 1 2026)
+
+### LocalClaw read the FlowMCP repo and drafted a HubSpot integration; the run was a fuzzer
+**What happened:** asked about FlowMCP over Discord, the plan pipeline researched the public repo (step 1) and authored a complete HubSpot integration draft (step 2): `servers.json5` + five flows + README, now at `data/workspaces/main/flowmcp-hubspot/`. **The drafts are schema-valid against FlowMCP v0.4** — including the `env:` least-privilege field that shipped hours earlier (the agent's repo knowledge was fresher than its maintainer's). Doctrine absorbed from READING alone: WHEN-TO-USE-first descriptions with example phrasings, read-only downstream allowlist with the write tool deliberately excluded (the write FLOW exists but is inert until allowlisted — staged trust, unprompted), least-privilege env, a REST fallback flow for when the MCP server is down. Remaining gaps before "implementation-ready": HubSpot tool names unverified against the live server's tools/list; templates render raw JSON (needs transform steps); and it claimed "two-phase confirmation, no opt-out" — an overclaim against v0.4 that FlowMCP's v0.5 elicitation feature made true HOURS later.
+**The run exposed two real LocalClaw bugs (both fixed):**
+1. **Workspace path double-nesting** — the model echoed the workspace-prefixed path it saw in context; `write_file` joined it onto the workspace root again → `data/workspaces/main/data/workspaces/main/…`. read/write_file now strip a redundant workspace prefix deterministically before resolving (path-traversal validation unchanged, re-tested). Lesson: any tool that joins model-provided paths must assume the model echoes absolute-looking context paths.
+2. **Narration violated the channel-coarseness rule** — seven consecutive write_file calls narrated "Using write_file…" seven times to Discord. The per-tool-call narration (added July 31) lacked the milestone-level guard the channel design deliberately enforces. Now one narration per tool STREAK: consecutive same-tool calls collapse; a tool change narrates. Lesson: a new observability channel must inherit the coarseness contract of the surface it emits to — "we did that deliberately" applies to features added later, too.
+**Meta-observation worth keeping:** doctrine propagated agent-to-agent through nothing but a well-written public repo — the selection-surface and staged-trust rules arrived in a third agent that was never prompted with them. A repo's README/FORMAT is a training signal for every agent that reads it; write them as such.
+
+### FlowMCP production pin: track upstream deliberately, verify per pull
+The other Claude Code instance ships to FlowMCP main autonomously (v0.4→v0.5 in one day: elicitation, attestation drift-hash, hostile-ERP matrix). LocalClaw's exposure is bounded structurally: the bridge points at a dedicated clone (`~/FlowMCP`), updated by explicit pull + live `weekly_gather` verification per version (v0.4 ✓, v0.5 ✓ — compatible both times). Velocity upstream, promotion at our discretion — the same rung-by-rung trust model as everything else, applied to a collaborator that happens to be a model. Gotcha for the update drill: local `npm i` rewrites package-lock.json and blocks the pull — `git checkout -- package-lock.json` first (upstream's lockfile is truth).
+
 ## FlowMCP Integration: The Ossification Rung Above Skills (July 31 2026)
 
 ### Compiled workflows join the toolset — recurrence-proven paths stop paying inference prices
