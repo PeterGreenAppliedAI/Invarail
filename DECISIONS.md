@@ -4,6 +4,23 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Five Live Runs, Five Layers: Wiring a Compiled Flow Into Production (August 1 2026)
+
+### The integration was sound at every layer we'd tested — and broken at every layer we hadn't
+Getting `flows_weekly_gather` from "registered at boot" to "actually runs when asked" took five live attempts, each exposing a bug only reachable after the previous fix:
+1. **Reachability** — the tool sat on the multi specialist, whose list feeds the plan pipeline's executor, not any ReAct loop. Sub-dispatches run on OTHER specialists' toolsets. Moved to exec (the ReAct workhorse).
+2. **Selection surface** — upstream description was compiler provenance ("compiled candidate from gather.v0.json"), telling a small model nothing. The model looked for "weekly_gather", saw `flows_weekly_gather`, declared it unavailable, improvised 7 minutes of web fetching. Fixed with a `toolDescriptions` config override (WHEN TO USE + the bare name). The bridge's description-override layer earned its keep on day two.
+3. **Skill hijack + false credit** — a March skill matched at 0.847, derailed the plan, got the fallback's success credited AND our test request appended as a trigger → matched at 0.930 next run. Self-reinforcing capture. Fixed: fallback runs credit nothing; poisoned skill archived. A SECOND legit skill then hijacked the same way (0.786) — proving the class, not the instance, was the bug.
+4. **Param padding vs fail-closed** — DeepSeek invented `{"input":""}` for a zero-param flow; FlowMCP correctly rejected it, twice; the model abandoned the tool, scavenged a stale April payload from `.learnings/errors.jsonl`, and presented it as this week's news with fabricated URLs. Fixed in the bridge: params filtered to the declared schema before calling. Accommodation is the translation layer's job; strictness is the server's.
+5. **Downstream cwd** — FlowMCP resolves its downstream-server paths relative to process CWD; spawned from LocalClaw's directory, the searxng child died MODULE_NOT_FOUND. Lab tests had masked it (run from ~/FlowMCP). Fixed: `cwd` option on MCP stdio servers. Reported upstream (paths should anchor to the servers.json5 location).
+Also: gathering tools need `maxResultChars` — the default 2000-char cap cut 12K of gathered material to one facet of four, and the model narrated the missing sections as "a rate-limit error."
+**Meta:** every fix was small and correct, but by layer five Peter set the standing rule — ~3 failed live attempts on one feature means stop patching and go to plan mode for a full end-to-end trace. Live-fix loops find one bug per run; a paper trace of the whole path finds them all at once.
+
+### Flow-first gathering in the research pipeline — strict naming, no semantic matching (built from the plan)
+The plan→exec path structurally cannot produce the analytical Weekly report: no synthesis stages, no verification, model-improvised deliverable formats. The article factory is the research pipeline; its slowest stage is gathering. Built: when a request EXPLICITLY names an available flow tool, a `flow_gather` stage calls it once — its `##` sections become the facets, its links the source pool — then fetch/synthesis/verification/PDF run unchanged (`_sourceText` fills identically, so verification works on flow-gathered pages). Flow failure degrades to the normal decompose+search path.
+**The gate is strict by decision (Peter's call, asked directly): explicit naming only.** The same night's three skill hijacks demonstrated what "close enough" semantic selection does — silently routing around user intent. Cron messages are authored once and can name the flow forever; ambiguous phrasing keeps the normal path; the ReAct layer already provides semantic selection bounded by honest descriptions. A floor-gated semantic PROPOSAL ("I have a compiled gather for this — use it?") is the next rung, earned later with evidence. The shared primitive `findExplicitToolMentions` (word-boundary, bare-name aliasing for MCP prefixes) also guards plan `skill_check`: a matched skill whose steps never mention an explicitly named tool is ignored — explicit instruction outranks learned habit.
+Also fixed the same evening: `document` tool takes markdown and renders through `markdownToHtml` + the fixed stylesheet (model-authored HTML drifted per run); CSV misdetection scoped to spreadsheet targets; narration collapsed to one line per tool streak.
+
 ## The Agent Authored Flows — and Exposed Two of Our Bugs Doing It (August 1 2026)
 
 ### LocalClaw read the FlowMCP repo and drafted a HubSpot integration; the run was a fuzzer
