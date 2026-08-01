@@ -185,9 +185,33 @@ export class McpManager {
       // server marks it read-only or the owner set trust:'auto' in config
       requiresConfirm: !readOnly && config.trust !== 'auto',
       ...(config.maxResultChars ? { resultLimit: config.maxResultChars } : {}),
-      execute: (params) => this.callTool(config.name, def.name, params),
+      // Small models pad arguments (DeepSeek invented {"input":""} for a
+      // zero-param flow, Aug 1) and strict downstreams rightly fail-closed on
+      // unknown params — the bridge filters to the declared schema before
+      // calling. Accommodation is our layer's job, not the server's.
+      execute: (params) => this.callTool(config.name, def.name, filterToSchema(params, def.inputSchema)),
     };
   }
+}
+
+/** Drop params the tool's inputSchema doesn't declare. A schema with no
+ *  declared properties takes an empty call. Schemaless tools pass through. */
+export function filterToSchema(
+  params: Record<string, unknown>,
+  schema: McpToolDefinition['inputSchema'],
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return params;
+  const props = (schema as { properties?: Record<string, unknown> }).properties;
+  const declared = props && typeof props === 'object' ? Object.keys(props) : [];
+  const filtered: Record<string, unknown> = {};
+  for (const key of Object.keys(params)) {
+    if (declared.includes(key)) filtered[key] = params[key];
+  }
+  const dropped = Object.keys(params).filter(k => !declared.includes(k));
+  if (dropped.length > 0) {
+    console.log(`[MCP] Dropped undeclared param(s) [${dropped.join(', ')}] — schema declares [${declared.join(', ') || 'none'}]`);
+  }
+  return filtered;
 }
 
 /**

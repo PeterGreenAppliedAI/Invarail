@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
-import { McpManager, capDescription, translateInputSchema, buildParameterDescription, sanitizeToolName } from '../../src/mcp/manager.js';
+import { McpManager, capDescription, filterToSchema, translateInputSchema, buildParameterDescription, sanitizeToolName } from '../../src/mcp/manager.js';
 import { McpServerConfigSchema } from '../../src/config/schema.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import type { McpServerConfig } from '../../src/config/types.js';
@@ -174,5 +174,21 @@ describe('MCP tool translation (against real fixture server)', () => {
     const result = await manager.callTool('fake', 'screenshot', {});
     expect(result).toContain('here is your screenshot');
     expect(result).toMatch(/\[FILE:.*screenshot\.png\]/);
+  });
+});
+
+describe('filterToSchema', () => {
+  it('drops params the schema does not declare (zero-param tool)', () => {
+    expect(filterToSchema({ input: '' }, { type: 'object', properties: {} })).toEqual({});
+    expect(filterToSchema({ input: 'gather' }, { type: 'object' })).toEqual({});
+  });
+
+  it('keeps declared params, drops extras', () => {
+    const schema = { type: 'object', properties: { limit: { type: 'number' } } };
+    expect(filterToSchema({ limit: 5, input: 'x' }, schema)).toEqual({ limit: 5 });
+  });
+
+  it('passes through when tool has no schema', () => {
+    expect(filterToSchema({ anything: 1 }, undefined as never)).toEqual({ anything: 1 });
   });
 });
