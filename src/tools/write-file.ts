@@ -50,7 +50,17 @@ export function createWriteFileTool(): LocalClawTool {
         return 'Error: No workspace configured — cannot write files';
       }
 
-      const fullPath = resolve(workspace, path);
+      // Models often echo the workspace-prefixed path they saw in context
+      // ("data/workspaces/main/x") — joining that onto the workspace root
+      // double-nests (found: data/workspaces/main/data/workspaces/main/…).
+      // Strip a redundant workspace prefix before resolving.
+      const workspaceRel = relative(process.cwd(), resolve(workspace));
+      let cleanPath = path;
+      if (cleanPath.startsWith(`${workspaceRel}/`)) {
+        cleanPath = cleanPath.slice(workspaceRel.length + 1);
+      }
+
+      const fullPath = resolve(workspace, cleanPath);
       const rel = relative(resolve(workspace), fullPath);
       if (rel.startsWith('..') || isAbsolute(rel)) {
         return 'Error: Path traversal not allowed — must write within workspace';
