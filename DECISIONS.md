@@ -4,6 +4,14 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## FlowMCP Integration: The Ossification Rung Above Skills (July 31 2026)
+
+### Compiled workflows join the toolset — recurrence-proven paths stop paying inference prices
+**What:** FlowMCP (Peter's standalone workflow-first MCP server, github.com/PeterGreenAppliedAI/FlowMCP) is wired in as a bridge server: production clone at `~/FlowMCP`, config entry `tools.mcp.servers[name=flows]` pointing at the compiled-flows dir, `mcp:flows` token on the multi specialist. First flow: `weekly_gather` — the AI-news cron's gathering phase (4 SearXNG searches + render), COMPILED from a captured agentic trace by FlowMCP's compiler v0. Declares `readOnlyHint`, so the bridge runs it silently. Verified live from the tmux lab: real gathered material in ~4 seconds. (Direct-shell test failed with `fetch failed` — the macOS TCC node-LAN block again; FlowMCP's child processes inherit the same constraint. Lab or production launch context required, as ever.)
+**Why (the architecture, not just the plumbing):** skills and flows are two rungs of one hardening ladder. A skill is a SOFT recipe — "this sequence worked" — with the model still deciding each step: right for tasks with variation. A flow is a HARD program — zero model during execution, deterministic, ~free — and brittle to variation. The lifecycle: **explore agentically → recurrence makes it a skill → stability makes it a compilable flow → breakage demotes it back to exploration.** FlowMCP's own benchmark is the quantitative case: workflow-façade 79% vs 10% on a 40-tool primitive surface across local models; qwen2.5:7b went 6/6 @878 tokens on the façade vs 0/6 @6,768 on primitives — *selection is a different task than planning*. LocalClaw supplies discovery, trace evidence (skill successCount = the compilation signal), and the runtime; FlowMCP supplies ossification; the `.flow.json5` format is the portable membrane (deliberately agent-agnostic — no LocalClaw coupling in the flow format).
+**The honest boundary:** gathering compiles; judgment doesn't. The 28.8-minute research run's flaky 6-facet sweep is flow material; synthesis and claim verification remain model-work. The compiled flow's digest quality vs the full pipeline is UNPROVEN — the deal is an A/B: run the flow-fed variant beside the real cron, compare digest quality + stage timings (pipeline_run metrics), and only then switch the production job. Until that comparison exists, `weekly_gather` is an available tool, not a replacement.
+**Status:** wired + config-validated + live-verified at the tool level; restart pending; A/B pending. If the A/B shows snippets aren't enough, the finding is "the flow needs a fetch stage" — compiler work on FlowMCP's side, driven by observed pain.
+
 ## The 46-Fact Removal: Guards That Stop Floods Can Create Leaks (July 30 2026)
 
 ### Bare "!heartbeat no" removed 46 facts when the report showed 2
