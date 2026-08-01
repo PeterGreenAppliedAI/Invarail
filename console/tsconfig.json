@@ -10,11 +10,7 @@
     "noEmit": true,
     "isolatedModules": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "resolveJsonModule": true
   },
   "include": ["src"]
 }
