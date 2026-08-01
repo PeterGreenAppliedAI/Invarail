@@ -368,6 +368,10 @@ export const McpServerConfigSchema = z.object({
   transport: z.enum(['stdio', 'http']).default('stdio'),
   command: z.string().optional(),                     // stdio: e.g. "uvx"
   args: z.array(z.string()).default([]),              // stdio: e.g. ["blender-mcp"]
+  /** stdio: working directory for the spawned server. Servers that resolve
+   *  their own relative paths (config files, child processes) need to run
+   *  from their repo root, not LocalClaw's. */
+  cwd: z.string().optional(),
   url: z.string().optional(),                         // http: e.g. "https://mcp.linear.app/mcp"
   /** http: authorize via local OAuth 2.1 + PKCE + DCR (tokens in the secret
    *  store; run scripts/mcp-oauth-setup.ts once — background paths NEVER open a browser) */
