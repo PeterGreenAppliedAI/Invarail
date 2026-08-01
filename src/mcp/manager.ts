@@ -69,6 +69,7 @@ export class McpManager {
           command: config.command!,
           args: config.args,
           env: config.env,
+          cwd: config.cwd,
           timeoutMs: config.timeoutMs,
         });
     await client.connect();

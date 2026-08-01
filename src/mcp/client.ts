@@ -10,6 +10,9 @@ export interface McpClientOptions {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** Working directory for the spawned server — servers that resolve their own
+   *  relative paths (config, child processes) need their repo root, not ours */
+  cwd?: string;
   /** Per-request timeout (tool calls can be slow — Blender renders, etc.) */
   timeoutMs?: number;
 }
@@ -49,6 +52,7 @@ export class McpStdioClient {
     const child = spawn(this.opts.command, this.opts.args ?? [], {
       env: { ...process.env, ...this.opts.env },
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(this.opts.cwd ? { cwd: this.opts.cwd } : {}),
     });
     this.child = child;
 
