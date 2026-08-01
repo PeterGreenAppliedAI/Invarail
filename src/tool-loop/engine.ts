@@ -475,6 +475,10 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
   // Repair prompts don't consume tool-call budget — each one-shot repair
   // extends the loop by one iteration (bounded: each flag fires at most once)
   let extraIterations = 0;
+  // Narration coarseness: channels get ONE line per tool STREAK, not per call —
+  // a 7-write run narrated "Using write_file…" seven times to Discord (Aug 1),
+  // violating the deliberate milestone-level channel design
+  let lastNarratedTool = '';
   const driftTracker = new DriftTracker();
   const fileTokens: string[] = []; // Collect [FILE:] paths stripped from observations
   let lastActionHash = ''; // Action dedup: detect repeated identical tool calls
@@ -663,7 +667,10 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
 
         let observation: string;
         const toolStart = Date.now();
-        onProgress?.(`Using ${toolName}…`);
+        if (toolName !== lastNarratedTool) {
+          onProgress?.(`Using ${toolName}…`);
+          lastNarratedTool = toolName;
+        }
 
         // Short-circuit on validation errors
         if (validation.errors.length > 0) {
