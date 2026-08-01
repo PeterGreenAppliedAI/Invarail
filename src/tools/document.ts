@@ -3,6 +3,7 @@ import { join, basename, extname } from 'node:path';
 import { execSync } from 'node:child_process';
 import type { LocalClawTool, ToolContext } from './types.js';
 import { renderTemplate, AVAILABLE_TEMPLATES, type DocumentContent } from './document-templates.js';
+import { markdownToHtml } from '../utils/markdown-to-html.js';
 
 const SOFFICE = process.env.SOFFICE_PATH ?? '/opt/homebrew/bin/soffice';
 const OUTPUT_DIR = 'data/media/documents';
@@ -74,20 +75,20 @@ WHEN TO USE: User asks for a PDF, DOCX, spreadsheet, Word doc, slide deck, or an
 DO NOT: Use exec to install pandoc/wkhtmltopdf. Do not use write_file to create PDFs. This tool handles all document conversion.
 
 Common chains:
-- PDF report: write HTML content → document[{action: "create", content: "<html>...", format: "pdf", filename: "name"}]
+- PDF report: write MARKDOWN content → document[{action: "create", content: "# Title\\n\\n## Section\\n\\n- item", format: "pdf", filename: "name"}]
 - Spreadsheet: write CSV content → document[{action: "create", content: "col1,col2\\nval1,val2", format: "xlsx"}]
 - Convert existing file: document[{action: "convert", inputPath: "file.html", format: "pdf"}]`,
     parameterDescription: `action (required): "create" or "convert".
-content (for create): The document content. Use HTML for rich formatting, CSV for spreadsheets, plain text for simple docs.
+content (for create): The document content. Write MARKDOWN for documents (headings, lists, tables, links — professional styling is applied automatically; do NOT write HTML or CSS). Use CSV for spreadsheets.
 inputPath (for convert): Path to the file to convert (relative to workspace or absolute).
 format (required): Target format — pdf, docx, xlsx, pptx, html, csv, txt, odt, ods, odp.
 filename (optional): Output filename without extension (default: "document").`,
-    example: 'document[{"action": "create", "content": "<h1>Report</h1><p>Summary here</p>", "format": "pdf", "filename": "report"}]',
+    example: 'document[{"action": "create", "content": "# Report\\n\\n## Summary\\n\\nFindings here...", "format": "pdf", "filename": "report"}]',
     parameters: {
       type: 'object',
       properties: {
         action: { type: 'string', description: 'Action to perform', enum: ['create', 'convert'] },
-        content: { type: 'string', description: 'Document content for "create" action. Use HTML for rich formatting.' },
+        content: { type: 'string', description: 'Document content for "create" action. Write MARKDOWN — styling is applied automatically, do NOT write HTML/CSS.' },
         inputPath: { type: 'string', description: 'Input file path for "convert" action' },
         format: { type: 'string', description: 'Target output format', enum: SUPPORTED_FORMATS },
         filename: { type: 'string', description: 'Output filename without extension (default: "document")' },
@@ -126,14 +127,23 @@ filename (optional): Output filename without extension (default: "document").`,
 
         if (!content) return 'Missing "content" parameter for create action.';
 
-        // Determine source format from content
+        // Determine source format from content. CSV detection is scoped to
+        // spreadsheet targets — markdown full of commas+newlines was being
+        // misdetected as CSV and rendered as a table.
         const isHtml = content.trimStart().startsWith('<');
-        const isCsv = !isHtml && content.includes(',') && content.includes('\n');
-        const sourceExt = isHtml ? 'html' : isCsv ? 'csv' : 'txt';
+        const spreadsheetTarget = ['xlsx', 'ods', 'csv'].includes(format);
+        const isCsv = !isHtml && spreadsheetTarget && content.includes(',') && content.includes('\n');
+        let sourceExt = isHtml ? 'html' : isCsv ? 'csv' : 'txt';
 
-        // Inject default CSS into HTML that doesn't have its own styles
+        // Markdown path for document targets: code owns the styling — the
+        // model writes markdown, the same renderer as research reports
+        // produces the HTML. Model-authored HTML drifted per run (Aug 1).
         let finalContent = content;
-        if (isHtml && !content.includes('<style')) {
+        if (!isHtml && !isCsv && ['pdf', 'docx', 'html', 'odt'].includes(format)) {
+          finalContent = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${DEFAULT_DOC_CSS}</style></head><body>${markdownToHtml(content)}</body></html>`;
+          sourceExt = 'html';
+          console.log('[Document] Markdown content rendered through default stylesheet');
+        } else if (isHtml && !content.includes('<style')) {
           const hasDoctype = content.trimStart().toLowerCase().startsWith('<!doctype');
           const hasHead = content.includes('<head');
           if (hasHead) {
@@ -152,7 +162,7 @@ filename (optional): Output filename without extension (default: "document").`,
         // If target format matches source, just return the file
         if (sourceExt === format) {
           const finalPath = join(OUTPUT_DIR, `${filename}.${format}`);
-          writeFileSync(finalPath, content);
+          writeFileSync(finalPath, finalContent);
           return `Document created: ${finalPath} [FILE:${finalPath}]`;
         }
 
