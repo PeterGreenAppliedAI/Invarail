@@ -27,7 +27,15 @@ export function createReadFileTool(): LocalClawTool {
         return 'Error: No workspace configured — cannot read files';
       }
 
-      const fullPath = resolve(workspace, path);
+      // Same prefix normalization as write_file: models echo workspace-prefixed
+      // paths, and joining them onto the workspace root double-nests
+      const workspaceRel = relative(process.cwd(), resolve(workspace));
+      let cleanPath = path;
+      if (cleanPath.startsWith(`${workspaceRel}/`)) {
+        cleanPath = cleanPath.slice(workspaceRel.length + 1);
+      }
+
+      const fullPath = resolve(workspace, cleanPath);
       const rel = relative(resolve(workspace), fullPath);
       if (rel.startsWith('..') || isAbsolute(rel)) {
         return 'Error: Path traversal not allowed — must read within workspace';
