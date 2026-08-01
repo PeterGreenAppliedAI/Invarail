@@ -363,6 +363,11 @@ export const planPipeline: PipelineDefinition = {
           // document tool) instead of aborting with "be more specific".
           console.log('[Plan] No steps parsed — falling back to a single direct exec step');
           steps = [{ specialist: 'exec', message: ctx.userMessage, purpose: 'Carry out the request directly with the available tools' }];
+          // A matched skill whose plan produced nothing parseable must NOT be
+          // credited: fallback runs recorded success + appended the request as
+          // a trigger, so a wrong match got stronger every time it derailed
+          // (0.847 → 0.930 across two hijacked runs, Aug 1)
+          ctx.params._planFellBack = true;
         }
         ctx.params._plan = steps;
         ctx.params._stepIndex = 0;
@@ -678,8 +683,14 @@ RULES:
         const results = ctx.params._results as string[] | undefined;
         if (!plan || !results || plan.length < 2) return;
 
-        // Check if we already used a saved skill — if so, record success + trigger
+        // Check if we already used a saved skill — if so, record success + trigger.
+        // Skip entirely when the skill's plan failed to parse: the run succeeded
+        // DESPITE the skill, not because of it
         const skillSlug = ctx.params._skillSlug as string | undefined;
+        if (skillSlug && ctx.params._planFellBack) {
+          console.log(`[Plan] Skill "${skillSlug}" matched but its plan fell back — no success recorded`);
+          return;
+        }
         if (skillSlug) {
           try {
             const store = new SkillStore(workspacePath);
