@@ -72,6 +72,27 @@ export class ToolRegistry {
     return [...this.tools.keys()];
   }
 
+  /** Detect tools the user explicitly named in their message. Explicit naming
+   *  is a code gate: it outranks learned habit (skill matching) and enables
+   *  flow-first gathering. For MCP-prefixed tools the bare downstream name
+   *  also matches ("weekly_gather" → flows_weekly_gather) — users say the
+   *  bare name; the prefix is bridge plumbing. */
+  findExplicitToolMentions(message: string, candidateNames: string[]): string[] {
+    const mentioned: string[] = [];
+    for (const name of candidateNames) {
+      const tool = this.tools.get(name);
+      const aliases = [name];
+      if (tool?.category.startsWith('mcp:')) {
+        const server = tool.category.slice(4);
+        if (name.startsWith(`${server}_`)) aliases.push(name.slice(server.length + 1));
+      }
+      const hit = aliases.some(a =>
+        new RegExp(`(?<![A-Za-z0-9_])${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'i').test(message));
+      if (hit) mentioned.push(name);
+    }
+    return mentioned;
+  }
+
   /** Tools that declare requiresConfirm — the structural default for the
    *  confirm gate, independent of channel config. */
   getMetadataConfirmTools(): Set<string> {
