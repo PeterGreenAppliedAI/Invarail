@@ -305,6 +305,19 @@ export const planPipeline: PipelineDefinition = {
           const match = await findMatchingSkillHybrid(store, ctx.client, ctx.userMessage);
           if (match) {
             const skill = store.get(match.slug);
+            // Explicit tool naming outranks learned habit: a skill whose steps
+            // never mention the named tool would route around the user's
+            // stated intent (three hijacked runs on Aug 1 before this gate)
+            const mentions = (ctx.params._explicitToolMentions as string[] | undefined) ?? [];
+            if (skill && mentions.length > 0) {
+              const stepsText = skill.steps.map(s => `${s.tool} ${JSON.stringify(s.params)} ${s.purpose}`).join(' ').toLowerCase();
+              const covered = mentions.some(m => stepsText.includes(m.toLowerCase())
+                || stepsText.includes(m.replace(/^[a-z0-9-]+_/i, '').toLowerCase()));
+              if (!covered) {
+                console.log(`[Plan] Explicit tool mention (${mentions.join(', ')}) — skill "${match.slug}" ignored`);
+                return;
+              }
+            }
             if (skill && skill.steps.length > 0) {
               ctx.params._skillMatch = match;
               ctx.params._skillSteps = skill.steps;

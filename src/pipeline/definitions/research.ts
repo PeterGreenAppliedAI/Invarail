@@ -80,6 +80,32 @@ function wantsFreshness(text: string): boolean {
 
 interface AngleResult { angle: string; findings: string; sources: string[]; }
 
+export interface FlowFacet { angle: string; urls: string[]; }
+
+/** Parse a gathering flow's markdown into facets: "## <section>" headers become
+ *  facet names, URLs in the lines beneath become that facet's source pool.
+ *  Sections without URLs are dropped. Pure function — testable against the
+ *  real weekly_gather output shape. */
+export function parseFlowGather(md: string): FlowFacet[] {
+  const facets: FlowFacet[] = [];
+  let current: FlowFacet | null = null;
+  for (const line of md.split('\n')) {
+    const header = line.match(/^##\s+(.+)/);
+    if (header) {
+      if (current && current.urls.length > 0) facets.push(current);
+      current = { angle: header[1].trim(), urls: [] };
+      continue;
+    }
+    if (!current) continue;
+    for (const m of line.matchAll(/https?:\/\/[^\s)\]>"']+/g)) {
+      const url = m[0].replace(/[.,;:]+$/, '');
+      if (!current.urls.includes(url)) current.urls.push(url);
+    }
+  }
+  if (current && current.urls.length > 0) facets.push(current);
+  return facets;
+}
+
 /** Run async fn over items with bounded concurrency (avoid bursting external rate limits). */
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -94,24 +120,31 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
-/** Investigate ONE facet: search → deep fetch → focused synthesis. */
-async function researchAngle(ctx: PipelineContext, angle: string): Promise<AngleResult> {
+/** Investigate ONE facet: search → deep fetch → focused synthesis.
+ *  With presetUrls (flow-gathered), the search step is skipped — the compiled
+ *  flow already selected the sources; fetch/cache/synthesis are identical. */
+async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: string[]): Promise<AngleResult> {
   const label = angle.slice(0, 45);
   try {
-    // Plain facet query (no source bucket — it over-constrained queries). Research is
-    // recency-biased: default to a 1-year window, tighten to a month when the ask signals "latest".
-    const recency = wantsFreshness(angle) || wantsFreshness(ctx.params.topic as string);
-    const searchParams: Record<string, unknown> = {
-      query: angle,
-      count: '6',
-      freshness: recency ? 'month' : 'year',
-    };
+    let urls: string[];
+    if (presetUrls && presetUrls.length > 0) {
+      urls = presetUrls.slice(0, 3);
+    } else {
+      // Plain facet query (no source bucket — it over-constrained queries). Research is
+      // recency-biased: default to a 1-year window, tighten to a month when the ask signals "latest".
+      const recency = wantsFreshness(angle) || wantsFreshness(ctx.params.topic as string);
+      const searchParams: Record<string, unknown> = {
+        query: angle,
+        count: '6',
+        freshness: recency ? 'month' : 'year',
+      };
 
-    const searchResult = await ctx.executor('web_search', searchParams, ctx.toolContext);
-    const urls = extractUrls(searchResult).slice(0, 3);
-    if (urls.length === 0) {
-      console.warn(`[Research] Facet "${label}": no search results (${searchResult.slice(0, 80)})`);
-      return { angle, findings: '', sources: [] };
+      const searchResult = await ctx.executor('web_search', searchParams, ctx.toolContext);
+      urls = extractUrls(searchResult).slice(0, 3);
+      if (urls.length === 0) {
+        console.warn(`[Research] Facet "${label}": no search results (${searchResult.slice(0, 80)})`);
+        return { angle, findings: '', sources: [] };
+      }
     }
 
     // Fetch sequentially (small N) to avoid a fetch burst across facets
@@ -192,11 +225,45 @@ export const researchPipeline: PipelineDefinition = {
       },
     },
 
-    // 2. Decompose the topic into 4-6 distinct facets
+    // 1b. Flow-first gathering: when the user explicitly named a flow tool
+    // (code gate — no semantic guessing), call it ONCE; its sections become
+    // the facets and its links the source pool. Any failure falls through to
+    // the normal decompose path — degrade, never abort.
+    {
+      name: 'flow_gather',
+      progressLabel: '› Running the gathering flow…',
+      type: 'code',
+      when: (ctx) => ((ctx.params._explicitFlowMentions as string[] | undefined) ?? []).length > 0,
+      execute: async (ctx) => {
+        const flowTool = (ctx.params._explicitFlowMentions as string[])[0];
+        try {
+          const md = await ctx.executor(flowTool, {}, ctx.toolContext);
+          if (typeof md !== 'string' || md.startsWith('Error')) {
+            console.warn(`[Research] Flow gather "${flowTool}" failed (${String(md).slice(0, 100)}) — falling back to search`);
+            return;
+          }
+          const facets = parseFlowGather(md);
+          if (facets.length === 0) {
+            console.warn(`[Research] Flow gather "${flowTool}" returned no parseable facets — falling back to search`);
+            return;
+          }
+          ctx.params._flowFacets = facets;
+          ctx.params._angles = facets.map(f => f.angle);
+          const urlCount = facets.reduce((n, f) => n + f.urls.length, 0);
+          console.log(`[Research] Flow gather via ${flowTool}: ${facets.length} facets, ${urlCount} urls`);
+        } catch (err) {
+          console.warn(`[Research] Flow gather "${flowTool}" errored — falling back to search:`, err instanceof Error ? err.message : err);
+        }
+      },
+    },
+
+    // 2. Decompose the topic into 4-6 distinct facets (skipped when a flow
+    // already provided them)
     {
       name: 'decompose',
       progressLabel: '› Planning the research…',
       type: 'llm',
+      when: (ctx) => !ctx.params._flowFacets,
       temperature: 0.3,
       maxTokens: 700,
       buildPrompt: (ctx) => ({
@@ -213,10 +280,11 @@ export const researchPipeline: PipelineDefinition = {
       }),
     },
 
-    // 3. Parse facets
+    // 3. Parse facets (skipped when a flow already provided them)
     {
       name: 'parse_angles',
       type: 'code',
+      when: (ctx) => !ctx.params._flowFacets,
       execute: (ctx) => {
         const raw = stripThinking(ctx.stageResults.decompose as string);
         let angles: string[] = [];
@@ -236,12 +304,15 @@ export const researchPipeline: PipelineDefinition = {
       progressLabel: '› Searching the web and reading sources…',
       type: 'code',
       execute: async (ctx) => {
+        const flowFacets = ctx.params._flowFacets as FlowFacet[] | undefined;
         const angles = ctx.params._angles as string[];
-        console.log(`[Research] Investigating ${angles.length} facets (max 3 concurrent)...`);
+        console.log(`[Research] Investigating ${angles.length} facets (max 3 concurrent${flowFacets ? ', flow-gathered urls' : ''})...`);
         // url → raw page text, shared across facets so verification can reuse fetched pages.
         ctx.params._sourceText = {};
         // Bounded concurrency: 3 facets at a time avoids bursting Brave / fetch rate limits.
-        const results = await mapLimit(angles, 3, a => researchAngle(ctx, a));
+        const results = flowFacets
+          ? await mapLimit(flowFacets, 3, f => researchAngle(ctx, f.angle, f.urls))
+          : await mapLimit(angles, 3, a => researchAngle(ctx, a));
         const withFindings = results.filter(r => r.findings.trim().length > 0);
         ctx.params._angleResults = withFindings;
         const allSources = [...new Set(withFindings.flatMap(r => r.sources))];

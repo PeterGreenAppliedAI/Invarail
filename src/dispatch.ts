@@ -1258,9 +1258,23 @@ async function runPipelineDispatch(
     }
   }
 
+  // Explicit tool naming is a code gate: pipelines use it to outrank skill
+  // matching and to trigger flow-first gathering
+  const explicitToolMentions = registry.findExplicitToolMentions(pipelineMessage, tools);
+  const explicitFlowMentions = explicitToolMentions.filter(n => registry.get(n)?.category.startsWith('mcp:'));
+  if (explicitToolMentions.length > 0) {
+    console.log(`[Dispatch] Explicit tool mention(s): ${explicitToolMentions.join(', ')}`);
+  }
+
   const ctx: PipelineContext = {
     userMessage: pipelineMessage,
-    params: { _verification: config.verification, _pi: config.pi, _codeTargetSlug: params.codeTargetSlug },
+    params: {
+      _verification: config.verification,
+      _pi: config.pi,
+      _codeTargetSlug: params.codeTargetSlug,
+      _explicitToolMentions: explicitToolMentions,
+      _explicitFlowMentions: explicitFlowMentions,
+    },
     stageResults: {},
     steps: [],
     client,
