@@ -122,6 +122,40 @@ export default defineBackground(() => {
           return;
         }
 
+        // Navigation needs NO content script — chrome.tabs handles it natively,
+        // and it MUST work from restricted pages: when the active tab was
+        // chrome://extensions, the injection-first design meant the agent
+        // couldn't even leave the page (July 31 live failure). Navigate first,
+        // inject later — subsequent content actions land on the ready page.
+        if ((message.action === 'navigate' || message.action === 'open') && message.url) {
+          (async () => {
+            try {
+              const created = message.action === 'open'
+                ? await chrome.tabs.create({ url: message.url, active: true })
+                : await chrome.tabs.update(tab.id!, { url: message.url });
+              const navTabId = created?.id ?? tab.id!;
+              await new Promise<void>((resolveLoad) => {
+                const timer = setTimeout(() => {
+                  chrome.tabs.onUpdated.removeListener(onUpdated);
+                  resolveLoad(); // loaded "enough" — don't hang the agent on slow pages
+                }, 15000);
+                const onUpdated = (id: number, info: { status?: string }) => {
+                  if (id === navTabId && info.status === 'complete') {
+                    clearTimeout(timer);
+                    chrome.tabs.onUpdated.removeListener(onUpdated);
+                    resolveLoad();
+                  }
+                };
+                chrome.tabs.onUpdated.addListener(onUpdated);
+              });
+              sendResponse({ success: true, result: `Navigated to ${message.url}` });
+            } catch (err) {
+              sendResponse({ success: false, result: `Navigation failed: ${err}` });
+            }
+          })();
+          return;
+        }
+
         const sendAction = () => {
           chrome.tabs.sendMessage(tab.id!, {
             type: 'BROWSER_ACTION',
