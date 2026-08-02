@@ -282,7 +282,7 @@ The most nuanced layer. Prevents pipeline misroutes when a user is mid-conversat
 
 ## Layer 9: Dispatch Decision
 
-The final routing — how the message gets processed:
+The final routing — how the message gets processed. One code gate applies at this layer before any pipeline starts: **explicit tool mentions**. `findExplicitToolMentions` (registry) scans the message against the specialist's allowed tool names — word-boundary, case-insensitive, with bare-name aliasing for MCP-prefixed tools ("weekly_gather" matches `flows_weekly_gather`). Hits are injected into pipeline params and consumed twice: the research pipeline's `flow_gather` stage (a named gathering flow replaces decompose+search), and the plan pipeline's skill guard (a matched skill whose steps never mention an explicitly named tool is ignored — explicit instruction outranks learned habit). Like the pre-model overrides in Layer 2, this is deterministic string matching, not model judgment.
 
 ```
 ┌─────────────────┐     ┌──────────────────────────────┐

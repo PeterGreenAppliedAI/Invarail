@@ -119,7 +119,7 @@ Post-classification layers: sticky routing (keeps follow-ups on chat), conversat
 | Category | Pipeline | Flow |
 |----------|----------|------|
 | web_search | Linear | extract → search → pick URLs → parallel fetch → synthesize → quality review → [revision] |
-| research | Complex | decompose → per-facet research (search+fetch+synthesize) → gap-fill → analytical synthesis → claim verification (cited-source + Tier-1 cross-check) → charts → render PDF |
+| research | Complex | [flow_gather] → decompose → per-facet research (search+fetch+synthesize) → gap-fill → analytical synthesis → claim verification (cited-source + Tier-1 cross-check) → charts → render PDF. `flow_gather` fires only when the request EXPLICITLY names an available flow tool (code gate): the flow's `##` sections become the facets, its links the source pool, decompose is skipped, and everything downstream is unchanged — verification works on flow-gathered pages because the fetch/cache path is identical. Flow failure degrades to normal decompose+search. |
 | analytics | Data-driven | extract file → pandas report (code) → charts (code) → LLM interpretation |
 | exec | Linear | extract → tool → format |
 | task | Branched (5) | llm_branch → extract → tool → confirm |
@@ -138,7 +138,7 @@ After the research pipeline drafts its markdown report, an evidence-verification
 1. **Extract** atomic, checkable claims (fast model), prioritizing corporate events / market-share over routine specs.
 2. **Cited-source check** — each claim is judged against the *cached* pages that actually mention it (research persists fetched page text, so zero new searches). Overstated/single-sourced claims are **hedged or attributed** ("according to X") — never deleted.
 3. **Tier-1 cross-check** — a bounded set of high-impact, falsifiable claims (corporate events, market-share; capped at `maxCrossChecks`) get ONE independent search each; an authoritative contradiction (e.g. "license" vs "acquisition") flips the claim to `CONTRADICTED → correct`.
-4. **Correction pass** — code-driven sentence splice: `locateClaimSentence` fuzzy-locates each flagged claim's sentence by token overlap, the model rewrites ONE sentence, code splices it back with sanity bounds. The report body is never handed to a model for wholesale rewriting. Publishes with a `## Verification` appendix + auditable `verification.json`.
+4. **Correction pass** — code-driven sentence splice: `locateClaimSentence` fuzzy-locates each flagged claim's sentence by token overlap (URLs and decimal numbers are masked with same-length filler before segmentation — any dot that isn't a sentence terminator splices corrections mid-URL or mid-version-number otherwise), the model rewrites ONE sentence, code splices it back with sanity bounds. The report body is never handed to a model for wholesale rewriting. Publishes with a `## Verification` appendix + auditable `verification.json`.
 
 Config-gated via the `verification` block (`enabled`, `crossCheck` — both default on). Known ceiling: cited-source checking can't disprove a faithfully-cited wrong fact without the Tier-1 pass; Tier-1 itself trusts a single independent source, so disputed claims are better attributed than silently rewritten.
 
@@ -222,9 +222,16 @@ tools.mcp.servers[] → McpManager
         names <server>_<tool>, sanitized to [A-Za-z0-9_-]{1,64} (OpenAI-path charset)
         descriptions capped 500 chars on sentence boundary (small-model budget)
         readOnlyHint → silent · everything else requiresConfirm (trust:'auto' waives)
-        per-server toolAllowlist / toolDescriptions / maxResultChars
+        per-server toolAllowlist / toolDescriptions / maxResultChars / cwd
+        params filtered to the declared inputSchema before calling (small models
+          pad arguments; strict fail-closed servers reject them — accommodation
+          is the bridge's job, strictness the server's)
         image content → [FILE:] tokens on the existing media pipeline
 ```
+
+Stdio servers accept a `cwd` (servers that resolve their own relative paths — config files, downstream child processes — need their repo root, not LocalClaw's). Reference downstream: [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) — a workflow-first MCP server whose compiled flows power the research pipeline's `flow_gather` stage (see README "Add an MCP server" for setup).
+
+**Explicit tool mentions (code gate):** at pipeline dispatch, `findExplicitToolMentions` scans the message against the allowed tool names (word-boundary, case-insensitive; MCP-prefixed tools also match their bare downstream name — "weekly_gather" finds `flows_weekly_gather`). Hits are injected as `_explicitToolMentions`/`_explicitFlowMentions`. Two consumers: the research `flow_gather` gate, and the plan pipeline's skill guard — a matched skill whose steps never mention an explicitly named tool is ignored (explicit instruction outranks learned habit). Deliberately strict: no semantic flow-matching — "close enough" selection is the skill-hijack bug class, one layer up.
 
 Deliberately NOT the official SDK — ~10% of the protocol (initialize/tools-list/tools-call), owned end to end; swap path stays behind `McpManager`. Failing servers never block boot; crashed servers lazily respawn (3×, 5s backoff). Specialists opt in per server with the `mcp:<server>` token (expanded at dispatch). Remote auth is OAuth 2.1 + PKCE + **Dynamic Client Registration**, fully local (no broker); tokens in the 0600 SecretStore, silent refresh at runtime — the browser-opening flow exists ONLY in `scripts/mcp-oauth-setup.ts`, so background paths can never pop an authorize page.
 
