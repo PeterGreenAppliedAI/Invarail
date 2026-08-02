@@ -94,6 +94,7 @@ import { buildCompactedHistory } from './context/compactor.js';
 import { PipelineRegistry } from './pipeline/registry.js';
 import { runPipeline } from './pipeline/executor.js';
 import type { PipelineContext } from './pipeline/types.js';
+import { appendExecutionRecord } from './mcp/registry-feed.js';
 
 export interface DispatchParams {
   client: OllamaClient;
@@ -1046,6 +1047,22 @@ RULES:
     onStream: params.onStream,
   });
 
+  // FlowMCP detection feed: one execution record per tool-using dispatch
+  // (open contract — detect.ts nominates recurring procedures for compilation)
+  const executionsLog = config.tools?.mcp?.executionsLog;
+  const toolCalls = result.steps.filter(s => s.action);
+  if (executionsLog && toolCalls.length > 0) {
+    appendExecutionRecord(executionsLog, {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      task: message.slice(0, 100),
+      agent: specialist.model,
+      ts: new Date().toISOString(),
+      success: !result.hitMaxIterations && !!result.answer.trim(),
+      tokens: (result.promptTokens ?? 0) + (result.completionTokens ?? 0),
+      calls: toolCalls.map(s => ({ name: s.action!.tool, args: s.action!.params })),
+    });
+  }
+
   return {
     answer: result.answer,
     category,
@@ -1259,9 +1276,21 @@ async function runPipelineDispatch(
   }
 
   // Explicit tool naming is a code gate: pipelines use it to outrank skill
-  // matching and to trigger flow-first gathering
+  // matching and to trigger flow-first gathering. Flow mentions carry the bare
+  // flow name (registry keys upstream) + the server's registry-log path so the
+  // research pipeline can emit staleness signals per FlowMCP's open contract.
   const explicitToolMentions = registry.findExplicitToolMentions(pipelineMessage, tools);
-  const explicitFlowMentions = explicitToolMentions.filter(n => registry.get(n)?.category.startsWith('mcp:'));
+  const explicitFlowMentions = explicitToolMentions
+    .filter(n => registry.get(n)?.category.startsWith('mcp:'))
+    .map(n => {
+      const server = registry.get(n)!.category.slice(4);
+      const serverCfg = config.tools?.mcp?.servers?.find(s => s.name === server);
+      return {
+        tool: n,
+        flow: n.startsWith(`${server}_`) ? n.slice(server.length + 1) : n,
+        registryLog: serverCfg?.registryLog,
+      };
+    });
   if (explicitToolMentions.length > 0) {
     console.log(`[Dispatch] Explicit tool mention(s): ${explicitToolMentions.join(', ')}`);
   }
