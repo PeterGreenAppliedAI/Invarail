@@ -7,6 +7,7 @@ import { runServicesStep } from './steps/services.js';
 import { runWorkspaceStep } from './steps/workspace.js';
 import { runGenerateStep } from './steps/generate.js';
 import { runPreflightStep } from './steps/preflight.js';
+import { runTierStep, runStarterGenerate } from './steps/tier.js';
 
 async function main(): Promise<void> {
   printHeader('LocalClaw Setup Wizard');
@@ -24,8 +25,16 @@ async function main(): Promise<void> {
       printInfo('Install Docker: https://docs.docker.com/get-docker/\n');
     }
 
+    // Step 0: Tier — Starter short-circuits the full wizard
+    const tier = await runTierStep();
+
     // Step 1: Ollama
     const ollama = await runOllamaStep();
+
+    if (tier === 'starter') {
+      await runStarterGenerate(ollama.models.map(m => m.name));
+      return;
+    }
 
     // Step 2: Models
     const models = await runModelsStep(ollama.models);

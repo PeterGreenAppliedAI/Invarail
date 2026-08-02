@@ -1,0 +1,51 @@
+// LocalClaw starter preset — Tier 0 (see INSTALL.md).
+// One local model does everything; web console only; nothing else to install.
+// Every capability above this is one config block — the upgrade path is
+// commented inline. Copy to localclaw.config.json5 (or let the setup wizard
+// do it) and replace the model with one you have pulled in Ollama.
+{
+  timezone: "America/New_York",
+
+  ollama: {
+    host: "http://localhost:11434",
+  },
+
+  router: {
+    // One category = every message routes to chat. Add categories as you add
+    // capabilities (see localclaw.config.example.json5 for the full set).
+    model: "qwen3:8b",
+    timeout: 4000,
+    defaultCategory: "chat",
+    categories: {
+      chat: { description: "General conversation, questions, and assistance" },
+    },
+  },
+
+  specialists: {
+    chat: {
+      model: "qwen3:8b",
+      temperature: 0.7,
+      maxTokens: 2048,
+    },
+    // Tier 1: add web_search (needs SearXNG from docker-compose.yml or a
+    // hosted search key under tools.web.search) and a matching router category.
+    // Tier 2: add exec (Docker sandbox), personal (Google OAuth), research.
+  },
+
+  channels: {
+    // The web console needs no accounts or tokens. Open http://localhost:3100
+    // after `npm start`. Set a `token` here before exposing beyond localhost.
+    web: {
+      enabled: true,
+      port: 3100,
+    },
+    // Tier 1: discord: { enabled: true, token: "${DISCORD_TOKEN}" }, etc.
+  },
+
+  // Memory works out of the box: without FalkorDB (docker-compose.yml) it
+  // falls back to flat files under data/. Graph memory upgrades it in place.
+
+  session: {
+    contextSize: 16384,
+  },
+}
