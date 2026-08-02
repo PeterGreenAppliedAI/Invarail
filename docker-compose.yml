@@ -1,0 +1,26 @@
+# LocalClaw sidecar services (Tier 1+ — see INSTALL.md).
+# Both are OPTIONAL: without FalkorDB, memory falls back to flat files;
+# without SearXNG, configure a hosted search provider or skip web search.
+#   docker compose up -d
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: localclaw-falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkor-data:/data
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: localclaw-searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - searxng-config:/etc/searxng
+    restart: unless-stopped
+
+volumes:
+  falkor-data:
+  searxng-config:

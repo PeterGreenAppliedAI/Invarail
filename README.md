@@ -87,6 +87,12 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 
 ## Quick Start
 
+> **Fifteen minutes to a working agent:** [INSTALL.md](INSTALL.md) has the tier
+> ladder — Tier 0 is Node + Ollama + ONE model + the web console, nothing else
+> (`npm run setup`, choose **Starter**, or copy `localclaw.config.starter.json5`).
+> Everything below describes the full build; every piece of it is optional and
+> degrades gracefully when absent.
+
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 22+
