@@ -45,8 +45,8 @@
 1. **User story:** User requests deep analysis, a report, a slide deck, or data-driven research on a topic.
 2. **In scope:** "Research AAPL stock", "make me a deck on AI trends", "analyze the EV market", producing reports/decks with charts and citations.
 3. **Out of scope:** Simple web searches ("what's the weather"), casual questions about a topic, browsing URLs.
-4. **Data requirements:** Web search for sources, web_fetch for page content, code_session for charts (matplotlib/seaborn), write_file for deck output.
-5. **Tools:** web_search, web_fetch, code_session, write_file, read_file, document, reason.
+4. **Data requirements:** Web search for sources, web_fetch for page content, code_session for charts (matplotlib/seaborn), write_file for deck output. When the request explicitly names a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow ("use the weekly_gather tool"), the flow's compiled searches replace decompose+search — its sections become the facets, its links the sources; fetch/synthesis/verification unchanged.
+5. **Tools:** web_search, web_fetch, code_session, write_file, read_file, document, reason, mcp:flows.
 6. **Acceptance criteria:** Structured report/deck with thesis, evidence, charts, source citations with actual URLs (not homepages), actionable recommendations. Charts have titles, labels, legends.
 7. **Edge cases:** "Research" mentioned casually in conversation should NOT trigger research pipeline — only explicit research requests. Pre-model override handles compound intent (research + stock/market/trend).
 8. **Confidence threshold:** Quality review checks for 3+ substantive sections, source URLs cited, detail level, date accuracy.
@@ -80,7 +80,7 @@
 2. **In scope:** Shell commands (ls, git, npm, pip, sudo), file read/write, Docker operations, code execution.
 3. **Out of scope:** Web search, scheduling (→ cron), task management (→ task), research.
 4. **Data requirements:** Docker sandbox or command allowlist. Workspace file access.
-5. **Tools:** exec, code_session, read_file, write_file.
+5. **Tools:** exec, code_session, read_file, write_file, document, reason, mcp:flows (exec is the ReAct workhorse for plan sub-dispatches, so compiled flow tools live here too).
 6. **Acceptance criteria:** Command executed, output returned, errors explained. Doesn't over-explore (ls data → just ls, not find + chmod + which).
 7. **Edge cases:** "read the contents of config.json" routes to config instead of exec due to keyword order (KNOWN ISSUE — the word "config" in the filename). Fixed July 2026: bare "workspace" no longer hijacks exec requests to config ("run ls -la in the workspace" → exec); ls/pwd/chmod added to exec keyword hints. Model used 8 steps for simple `ls data` in ReAct — pipeline restored.
 8. **Confidence threshold:** N/A — deterministic tool execution.

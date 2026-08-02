@@ -41,7 +41,9 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 | ✅ Done | **SearXNG integration** | Self-hosted meta-search at 192.168.1.239:8080 is the web_search provider (replaced Brave) |
 | ✅ Done | **MCP client bridge** | stdio + streamable-HTTP transports, zero-dep client, small-model translation layer, DCR OAuth (no broker), SecretStore. July 2026 |
 | ✅ Done | **Proactive actions — ladder complete** | Ledger + buttons (Discord/Telegram) + deny + continuation-after-confirm + target-bound standing grants (`always <id>`, `!grants`) + auditable cron run sessions/artifacts + approval/resource metrics columns. July 2026 |
-| ✅ Done | **Skill system (rebuilt)** | Semantic matching (measured 0.65 floor), triggers frontmatter, save-time dedup judge, skill_find progressive disclosure. July 2026 |
+| ✅ Done | **Skill system (rebuilt)** | Semantic matching (measured 0.65 floor), triggers frontmatter, save-time dedup judge, skill_find progressive disclosure. July 2026. Guards added Aug 2026: explicit-tool-mention override + no-credit-on-fallback (self-reinforcing hijack class) |
+| ✅ Done | **FlowMCP integration** | [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) (Peter's workflow-first MCP server) as first real bridge consumer: compiled `weekly_gather` flow powers research-pipeline flow-first gathering (4s vs minutes) behind an explicit-naming code gate; verified live with a fabrication caught by verification. Aug 2026 |
+| Next | **Semantic flow proposal** | Floor-gated similarity check that PROPOSES a matching gathering flow for a research topic (asks, never silently selects) — the rung above strict naming |
 | Next | **Firecrawl integration** | Self-hosted web fetching between web_fetch (basic) and browser (heavy). Handles JS rendering without full Chromium |
 | Next | **Blender MCP demo** | First real MCP consumer: `uvx blender-mcp` + Blender on the Mini; then MCP self-service setup (agent proposes+validates server config, confirm-gated) |
 | Planned | **Self-wake** | `sleep_until`/`wake_on` tools with quotas (max pending, min interval, cronMode-filtered resume) — continuation machinery landed July 25 |

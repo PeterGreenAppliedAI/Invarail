@@ -70,7 +70,8 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 | Voice | TTS/STT | Kokoro TTS + faster-whisper STT — voice in, voice out, with toggle hands-free mode |
 | Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from success |
 | Skills | `skill_find` *(+ automatic)* | Self-improving procedural memory — successful runs are saved (semantic matching with a measured floor, save-time dedup) and reused; specialists can look up proven step sequences on demand |
-| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become LocalClaw tools — stdio (spawned) or remote streamable-HTTP, small-model description curation, readOnlyHint-aware confirm gating, fully-local OAuth (PKCE + DCR, no cloud broker) |
+| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become LocalClaw tools — stdio (spawned, with `cwd` support) or remote streamable-HTTP, small-model description curation (`toolDescriptions` overrides), schema-filtered params (model-padded args stripped before strict servers see them), per-server `maxResultChars`, readOnlyHint-aware confirm gating, fully-local OAuth (PKCE + DCR, no cloud broker) |
+| Flow-first research | explicit tool naming | Name a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow in a research request and the pipeline uses its compiled searches as the facets+sources (seconds instead of minutes), then synthesizes, verifies, and renders exactly as normal |
 | Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` to a confirmation and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
 | Heartbeat | *(autonomous)* | Deterministic fact diff + LLM reasoning, auto-expire stale facts, interactive memory review via `!heartbeat` |
 | Briefing | *(scheduled)* | 3x daily (8am, 1:15pm, 5pm) CoT reasoning about calendar + tasks + memory — contextual insights, not status dumps |
@@ -809,6 +810,34 @@ See `CLAUDE.md` for the full set of patterns, anti-patterns, and review checklis
 2. Add specialist config to `specialists` in config
 3. *(Optional)* Add keyword patterns in `src/router/classifier.ts`
 
+### Add an MCP server (external tools)
+
+Any MCP server's tools auto-register as LocalClaw tools — no tool factories needed:
+
+```json5
+tools: {
+  mcp: {
+    servers: [
+      {
+        name: "flows",                       // registry prefix: tools become flows_<name>
+        command: "npx",
+        args: ["tsx", "/path/to/server.ts"],
+        cwd: "/path/to/server-repo",         // servers that resolve their own relative paths need their repo root
+        env: { API_KEY: "${API_KEY}" },
+        maxResultChars: 14000,               // raise for tools that return bulk material
+        toolDescriptions: {                  // rewrite descriptions for small-model tool selection
+          my_tool: "my_tool — WHEN TO USE: ...",
+        },
+      },
+    ],
+  },
+}
+```
+
+Then add `"mcp:<name>"` to a specialist's `tools` array to expose the server's whole toolset. Tools without `readOnlyHint` are confirm-gated by default (`trust: 'auto'` waives it per server).
+
+**Worked example — [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP)**, a workflow-first MCP server where each tool is one deterministic multi-step workflow (built for exactly the small-model tool-sprawl problem LocalClaw fights): point `args` at its `src/server.ts` with `--flows <dir>`, set `cwd` to its repo root, and its compiled flows appear as tools. Naming a gathering flow in a research request ("use the weekly_gather tool") makes the research pipeline use the flow's output as its facets and sources — see `flow_gather` in `src/pipeline/definitions/research.ts`.
+
 ## Safety
 
 - **Exec allowlist** — Only approved commands can run (or Docker sandbox mode)
@@ -873,14 +902,14 @@ These frameworks solve similar problems but assume frontier models (GPT-4, Claud
 
 ## Roadmap
 
-**Recently shipped:** SearXNG self-hosted search (no API cost / no rate limit), two-backend inference (vLLM + Ollama gateway via `MultiBackendClient`), and the research evidence-verification layer (cited-source + Tier-1 cross-check).
+**Recently shipped:** MCP client bridge (stdio + streamable-HTTP + fully-local OAuth — external servers' tools auto-register, no custom factories), [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flow-first research gathering behind an explicit-naming code gate, target-bound standing grants + confirm buttons on the autonomy ladder, the Lessons system (negative procedural memory), SearXNG self-hosted search, two-backend inference (vLLM + Ollama via `MultiBackendClient`), and the research evidence-verification layer (cited-source + Tier-1 cross-check).
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
-| Next | **Weekly research newsletter** | Cron-scheduled research run → delivered digest (inline summary + attached PDF) over a channel, riding on the verified research pipeline. |
+| Next | **Weekly research newsletter** | Cron-scheduled research run → delivered digest (inline summary + attached PDF), riding on the verified research pipeline with flow-powered gathering. |
+| Planned | **Semantic flow proposal** | Floor-gated similarity check that PROPOSES a matching gathering flow for a research topic (asks, never silently selects) — the rung above strict naming, earned with evidence. |
 | Planned | **qwen3-coder-next:80b** | Test larger coding model against the current Pi build model. Better quality, slower throughput. |
 | Planned | **nemotron3:33b video pipeline** | Multimodal video/meeting summarization. New pipeline for watch → transcribe → summarize → extract actions. |
-| Backlog | **MCP client support** | Consume external MCP servers as tools (Jira, Notion, GitHub, etc.) without building custom tool factories. |
 
 ## License
 
