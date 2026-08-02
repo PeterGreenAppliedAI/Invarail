@@ -389,12 +389,20 @@ export const McpServerConfigSchema = z.object({
   toolDescriptions: z.record(z.string(), z.string()).default({}),
   /** Per-server tool result cap (chars) — Blender scene dumps outgrow the 2000 default */
   maxResultChars: z.number().optional(),
+  /** Path to the server's registry-log.jsonl (FlowMCP v0.6 open contract).
+   *  When set, consumer-side staleness signals (research gap-check lenses on
+   *  flow-gathered runs) are appended as {kind:'signal'} records. */
+  registryLog: z.string().optional(),
 }).refine(s => (s.transport === 'stdio' ? !!s.command : !!s.url), {
   message: 'stdio servers need "command"; http servers need "url"',
 });
 
 export const McpConfigSchema = z.object({
   servers: z.array(McpServerConfigSchema).default([]),
+  /** When set, one JSONL line per completed tool-using dispatch is appended in
+   *  FlowMCP's detection contract ({id,task,agent,ts,success,tokens,calls[]}) —
+   *  feed for detect.ts flow nomination. */
+  executionsLog: z.string().optional(),
 });
 
 export const ToolsConfigSchema = z.object({

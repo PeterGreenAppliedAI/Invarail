@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { mapQueriesToLenses, appendGatherSignal } from '../../mcp/registry-feed.js';
 import type { PipelineDefinition, PipelineContext } from '../types.js';
 import { markdownToHtml } from '../../utils/markdown-to-html.js';
 import type { VerificationConfig } from '../../config/types.js';
@@ -81,6 +82,7 @@ function wantsFreshness(text: string): boolean {
 interface AngleResult { angle: string; findings: string; sources: string[]; }
 
 export interface FlowFacet { angle: string; urls: string[]; }
+interface FlowMention { tool: string; flow: string; registryLog?: string; }
 
 /** Parse a gathering flow's markdown into facets: "## <section>" headers become
  *  facet names, URLs in the lines beneath become that facet's source pool.
@@ -233,26 +235,27 @@ export const researchPipeline: PipelineDefinition = {
       name: 'flow_gather',
       progressLabel: '› Running the gathering flow…',
       type: 'code',
-      when: (ctx) => ((ctx.params._explicitFlowMentions as string[] | undefined) ?? []).length > 0,
+      when: (ctx) => ((ctx.params._explicitFlowMentions as FlowMention[] | undefined) ?? []).length > 0,
       execute: async (ctx) => {
-        const flowTool = (ctx.params._explicitFlowMentions as string[])[0];
+        const mention = (ctx.params._explicitFlowMentions as FlowMention[])[0];
         try {
-          const md = await ctx.executor(flowTool, {}, ctx.toolContext);
+          const md = await ctx.executor(mention.tool, {}, ctx.toolContext);
           if (typeof md !== 'string' || md.startsWith('Error')) {
-            console.warn(`[Research] Flow gather "${flowTool}" failed (${String(md).slice(0, 100)}) — falling back to search`);
+            console.warn(`[Research] Flow gather "${mention.tool}" failed (${String(md).slice(0, 100)}) — falling back to search`);
             return;
           }
           const facets = parseFlowGather(md);
           if (facets.length === 0) {
-            console.warn(`[Research] Flow gather "${flowTool}" returned no parseable facets — falling back to search`);
+            console.warn(`[Research] Flow gather "${mention.tool}" returned no parseable facets — falling back to search`);
             return;
           }
           ctx.params._flowFacets = facets;
+          ctx.params._flowGatherInfo = mention;
           ctx.params._angles = facets.map(f => f.angle);
           const urlCount = facets.reduce((n, f) => n + f.urls.length, 0);
-          console.log(`[Research] Flow gather via ${flowTool}: ${facets.length} facets, ${urlCount} urls`);
+          console.log(`[Research] Flow gather via ${mention.tool}: ${facets.length} facets, ${urlCount} urls`);
         } catch (err) {
-          console.warn(`[Research] Flow gather "${flowTool}" errored — falling back to search:`, err instanceof Error ? err.message : err);
+          console.warn(`[Research] Flow gather "${mention.tool}" errored — falling back to search:`, err instanceof Error ? err.message : err);
         }
       },
     },
@@ -347,6 +350,18 @@ export const researchPipeline: PipelineDefinition = {
         } catch { /* none */ }
         if (queries.length === 0) { console.log('[Research] No gaps flagged'); return; }
         console.log(`[Research] Supplementary: ${queries.join(' | ')}`);
+
+        // Flow-gathered run needing gap patches = a consumer-side staleness
+        // observation. Emit it to the flow's registry log (FlowMCP v0.6 open
+        // contract) with STABLE lens names (facet names come from the flow's
+        // fixed sections) — persistent same-lens signals across runs are the
+        // upstream recompile-nomination trigger.
+        const gatherInfo = ctx.params._flowGatherInfo as FlowMention | undefined;
+        const flowFacets = ctx.params._flowFacets as FlowFacet[] | undefined;
+        if (gatherInfo?.registryLog && flowFacets) {
+          const lenses = mapQueriesToLenses(queries, flowFacets.map(f => f.angle));
+          appendGatherSignal(gatherInfo.registryLog, gatherInfo.flow, lenses);
+        }
         const extra = await Promise.all(queries.map(q => researchAngle(ctx, q)));
         const merged = [...(ctx.params._angleResults as AngleResult[]), ...extra.filter(r => r.findings.trim())];
         ctx.params._angleResults = merged;
