@@ -439,7 +439,12 @@ export function locateClaimSentence(md: string, claim: string): { start: number;
   // "According to" / missing-space / broken-bold artifacts, all one wound).
   // Mask URLs with same-LENGTH filler so segmentation ignores their dots
   // while every offset still maps 1:1 onto the real markdown.
-  const masked = md.replace(/https?:\/\/\S+/g, u => 'u'.repeat(u.length));
+  // Decimal points are the same wound: "Gemini 3.5" split at "3." and the
+  // Aug 1 report got "Gemini 3.According to anthropic.com, 5 Flash Lite"
+  // spliced mid-version-number. Mask digit.digit the same way (1 char → 1 char).
+  const masked = md
+    .replace(/https?:\/\/\S+/g, u => 'u'.repeat(u.length))
+    .replace(/(\d)\.(\d)/g, '$1x$2');
 
   let best: { start: number; end: number; sentence: string; score: number } | null = null;
   // Candidate sentences: runs ending in ./!/? or at end-of-line

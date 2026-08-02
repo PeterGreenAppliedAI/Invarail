@@ -255,6 +255,29 @@ describe('locateClaimSentence', () => {
     expect(locateClaimSentence(report, 'Apple released a quantum laptop in Antarctica')).toBeNull();
   });
 
+  // Regression fixtures from the Aug 1 report: decimal points in version
+  // numbers ("Gemini 3.5") were treated as sentence boundaries, splicing
+  // corrections MID-NAME ("Gemini 3.According to anthropic.com, 5 Flash Lite")
+  // and duplicating tails ("93.5% LiveCodeBench score.5% LiveCodeBench score").
+  it('does not split sentences at decimal points in version numbers', () => {
+    const md = 'Google shipped Gemini 3.6 Flash and Gemini 3.5 Flash Lite on July 21 [12]. Anthropic released Claude Opus 4.8 on July 24 [13].';
+    const loc = locateClaimSentence(md, 'Google shipped Gemini 3.5 Flash Lite on July 21');
+    expect(loc).not.toBeNull();
+    expect(loc!.sentence).toContain('Gemini 3.6 Flash and Gemini 3.5 Flash Lite');
+    expect(loc!.sentence).not.toContain('Claude Opus');
+  });
+
+  it('does not split sentences at decimal points in percentages', () => {
+    const md = 'DeepSeek V4 Pro leads the composite with a score of 87 and a 93.5% LiveCodeBench score [1][2]. Qwen3.6 27B claims 84% MMLU [1].';
+    const loc = locateClaimSentence(md, 'DeepSeek V4 Pro leads the composite with a 93.5% LiveCodeBench score');
+    expect(loc).not.toBeNull();
+    expect(loc!.sentence).toContain('93.5% LiveCodeBench score [1][2]');
+    expect(loc!.sentence).not.toContain('MMLU');
+    // Splice must not duplicate a decimal tail
+    const patched = md.slice(0, loc!.start) + 'REWRITTEN.' + md.slice(loc!.end);
+    expect(patched).not.toContain('.5% LiveCodeBench score.5%');
+  });
+
   it('splicing a rewritten sentence preserves the rest of the report', () => {
     const loc = locateClaimSentence(report, 'NVIDIA acquired Groq for $20 billion in March 2025')!;
     const rewritten = 'According to secondary reporting, NVIDIA licensed Groq IP in a deal announced in March 2025 [3].';

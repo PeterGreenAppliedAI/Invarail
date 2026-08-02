@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { PipelineDefinition, PipelineContext } from '../types.js';
 import { markdownToHtml } from '../../utils/markdown-to-html.js';
 import type { VerificationConfig } from '../../config/types.js';
@@ -661,10 +661,13 @@ export const researchPipeline: PipelineDefinition = {
         // Strip any tracked-changes strikethrough the corrector left in (else the PDF shows
         // lines through the old wrong text alongside the replacement).
         let md = stripStrikethrough(ctx.params._reportMarkdown as string);
-        // Swap chart placeholders for <img> (filesystem path for LibreOffice) only if the file exists
+        // Swap chart placeholders for <img> only if the file exists. Paths must
+        // be ABSOLUTE: LibreOffice resolves relative src against the temp HTML's
+        // directory (data/media/documents/), so relative paths rendered blank —
+        // the Aug 1 report's charts existed on disk but never reached the PDF.
         md = md.replace(/\{\{chart:([a-z0-9_\-]+)\}\}/gi, (_m, name) => {
           return validCharts.has(name)
-            ? `\n\n![${name}](data/workspaces/main/research/${slug}/${name}.png)\n\n`
+            ? `\n\n![${name}](${resolve(`data/workspaces/main/research/${slug}/${name}.png`)})\n\n`
             : '';
         });
         let body = markdownToHtml(md);
