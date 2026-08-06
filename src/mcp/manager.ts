@@ -165,7 +165,8 @@ export class McpManager {
 
   private translateTool(state: ServerState, def: McpToolDefinition, prefix: string, taken: Set<string>): LocalClawTool {
     const { config } = state;
-    const readOnly = def.annotations?.readOnlyHint === true;
+    const readOnly = def.annotations?.readOnlyHint === true
+      || config.readOnlyTools.includes(def.name);
     const description = config.toolDescriptions[def.name]
       ?? capDescription(def.description ?? `MCP tool "${def.name}" from server "${config.name}".`);
     const parameters = translateInputSchema(def.inputSchema);
