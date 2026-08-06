@@ -613,6 +613,17 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   } else if (specialistConfig.tools.length === 0) {
     // No tools — skip ReAct loop, just chat directly
     result = await runAsBareChat(client, config, effectiveMessage, classification, history, specialistConfig, params.onStream, agentId, params.sourceContext, !!params.modelOverride, statePreamble, userPriming);
+  } else if (
+    !params.skipPipeline
+    && specialistConfig.pipeline === 'exec'
+    && params.registry.findExplicitToolMentions(effectiveMessage, params.registry.expandToolNames(specialistConfig.tools))
+      .some(n => params.registry.get(n)?.category.startsWith('mcp:'))
+  ) {
+    // Explicit MCP-tool mention: the shell-command pipeline is provably the
+    // wrong destination — the named tool only exists in the ReAct loop.
+    // (weekly_gather Aug 1 and blender Aug 6 both fell into this trap.)
+    console.log('[Dispatch] Explicit MCP tool mention — exec pipeline bypassed for ReAct');
+    result = await runSpecialist(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming, browserControlMode);
   } else if (!params.skipPipeline && specialistConfig.pipeline && params.pipelineRegistry?.has(specialistConfig.pipeline)) {
     // Deterministic pipeline — LLM fills params, code decides workflow
     result = await runPipelineDispatch(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming);
