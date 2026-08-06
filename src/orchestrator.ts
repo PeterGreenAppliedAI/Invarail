@@ -1160,6 +1160,62 @@ export class Orchestrator {
       return;
     }
 
+    // Explicit surface selection — router bypassed entirely. Born Aug 6: the
+    // router sent blender traffic to exec (shell), memory, and image in one
+    // evening; a dedicated surface deserves deterministic entry.
+    if (trimmed.startsWith('!blender')) {
+      const request = msg.content.trim().slice('!blender'.length).trim();
+      if (!request) {
+        await this.channelRegistry.send(
+          { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+          { text: 'Usage: `!blender <request>`\n\nExamples:\n`!blender what is in my scene?`\n`!blender add a 20mm cube named base_plate`\nReads run instantly; scene changes ask for confirmation.' },
+        ).catch(() => {});
+        return;
+      }
+
+      const route = resolveRoute(
+        { channel: msg.channel, senderId: msg.senderId, guildId: msg.guildId, channelId: msg.channelId },
+        this.config,
+      );
+      try {
+        const result = await dispatchMessage({
+          client: this.client,
+          registry: this.toolRegistry,
+          config: this.config,
+          message: request,
+          agentId: route.agentId,
+          // Dedicated persistent session: every !blender turn shares one
+          // transcript ("add a cube" ... "now make it taller" remembers),
+          // isolated from the main chat session. Confirm continuations
+          // return here too — the ledger records the sessionKey.
+          sessionKey: `${route.sessionKey}:blender`,
+          sessionStore: this.sessionStore,
+          overrideCategory: 'blender',
+          pipelineRegistry: this.pipelineRegistry,
+          executionMetrics: this.executionMetrics,
+          sourceContext: {
+            channel: msg.channel,
+            channelId: msg.channelId ?? '',
+            guildId: msg.guildId,
+            senderId: msg.senderId,
+          },
+          factStore: this.factStore,
+        });
+        await this.channelRegistry.send(
+          { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+          { text: stripThinkingTags(result.answer), actions: this.confirmActionsFor(result) },
+        );
+      } catch (err) {
+        const wrapped = err instanceof LocalClawError ? err : new LocalClawError('TOOL_EXECUTION_ERROR', 'Blender dispatch failed', err);
+        console.error(`[Orchestrator] Blender command failed: ${wrapped.code}: ${wrapped.message}`);
+        await this.channelRegistry.send(
+          { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+          { text: `Blender request failed: ${wrapped.message}` },
+        ).catch(() => {});
+      }
+      return;
+    }
+
     if (trimmed.startsWith('!research')) {
       const topic = msg.content.trim().slice('!research'.length).trim();
 
