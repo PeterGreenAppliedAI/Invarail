@@ -192,3 +192,19 @@ describe('filterToSchema', () => {
     expect(filterToSchema({ anything: 1 }, undefined as never)).toEqual({ anything: 1 });
   });
 });
+
+describe('readOnlyTools attestation', () => {
+  it('waives the confirm default for operator-attested reads', async () => {
+    const manager = new McpManager([{
+      name: 'fake', transport: 'stdio' as const, command: 'x', args: [], env: {},
+      enabled: true, trust: 'confirm' as const, toolDescriptions: {},
+      readOnlyTools: ['get_scene_info'],
+    } as never]);
+    const tools = (manager as never as { translateTool: (s: unknown, d: unknown, p: string, t: Set<string>) => { name: string; requiresConfirm?: boolean } });
+    const state = { config: { name: 'fake', toolDescriptions: {}, readOnlyTools: ['get_scene_info'], trust: 'confirm' } };
+    const read = tools.translateTool(state, { name: 'get_scene_info', inputSchema: { type: 'object' } }, 'fake_', new Set());
+    const write = tools.translateTool(state, { name: 'execute_code', inputSchema: { type: 'object' } }, 'fake_', new Set());
+    expect(read.requiresConfirm).toBe(false);
+    expect(write.requiresConfirm).toBe(true);
+  });
+});

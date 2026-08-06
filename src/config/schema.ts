@@ -384,6 +384,11 @@ export const McpServerConfigSchema = z.object({
   timeoutMs: z.number().default(60000),
   /** When set, only these tool names register — first lever against 40-tool servers drowning a small model */
   toolAllowlist: z.array(z.string()).optional(),
+  /** Operator attestation that these tools (original names) are pure reads —
+   *  waives the no-readOnlyHint confirm default per tool. For servers that
+   *  don't annotate (blender-mcp gates even get_scene_info without this).
+   *  Owner-authored config = code gate; writes stay confirm-gated. */
+  readOnlyTools: z.array(z.string()).default([]),
   toolPrefix: z.string().optional(),                  // defaults to "<name>_"
   /** Hand-curated description rewrites for tools whose upstream prose confuses small models */
   toolDescriptions: z.record(z.string(), z.string()).default({}),
