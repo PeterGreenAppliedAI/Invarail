@@ -129,7 +129,10 @@ export class DiscordAdapter implements ChannelAdapter {
         console.warn('[Discord] Button ack failed:', err instanceof Error ? err.message : err);
       });
       const inbound: InboundMessage = {
-        id: interaction.id,
+        // The MESSAGE id (the preview the button sits on), NOT the interaction
+        // id — downstream replies use this as a Discord message reference, and
+        // an interaction id there makes every reply send fail ("Unknown message")
+        id: interaction.message?.id ?? interaction.id,
         channel: 'discord',
         content: command,
         senderId: interaction.user.id,
