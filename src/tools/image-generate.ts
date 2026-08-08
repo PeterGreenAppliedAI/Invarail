@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import type { LocalClawTool, ToolContext } from './types.js';
 import type { z } from 'zod';
 import type { ImageGenConfigSchema } from '../config/schema.js';
+import { applyScaffold, type ImageMode } from './image-prompt-scaffold.js';
 
 type ImageGenConfig = z.infer<typeof ImageGenConfigSchema>;
 
@@ -13,11 +14,12 @@ export function createImageGenerateTool(config: ImageGenConfig): LocalClawTool {
 WHEN TO USE: User asks you to create, generate, draw, or make an image/picture/illustration.
 DO NOT use for editing existing images unless a reference image is provided.
 Returns a [FILE:path] token for the generated image.`,
-    parameterDescription: 'prompt (required): Text description of the image to generate. filename (optional): Output filename without extension (default: generated timestamp). reference_image_path (optional): Path to a reference image for img2img style transfer.',
+    parameterDescription: 'prompt (required): Text description of the image to generate. mode (optional): "artistic" (default) or "model3d" — model3d wraps the SUBJECT in a fixed reconstruction grammar (centered, neutral background, flat lighting) for image→3D lifting; pass just the subject. filename (optional): Output filename without extension. reference_image_path (optional): Path to a reference image for img2img style transfer.',
     parameters: {
       type: 'object',
       properties: {
-        prompt: { type: 'string', description: 'Text description of the image to generate' },
+        prompt: { type: 'string', description: 'Detailed image description (artistic mode) or just the subject (model3d mode)' },
+        mode: { type: 'string', description: 'artistic (default) or model3d (reconstruction grammar for 3D lifting)', enum: ['artistic', 'model3d'] },
         filename: { type: 'string', description: 'Output filename without extension' },
         outputDir: { type: 'string', description: 'Subdirectory within workspace for output (default: images)' },
         reference_image_path: { type: 'string', description: 'Path to reference image for img2img (optional)' },
@@ -25,10 +27,16 @@ Returns a [FILE:path] token for the generated image.`,
       required: ['prompt'],
     },
     category: 'media',
+    // The confirm preview shows the FULL expanded prompt — the user signs off
+    // on exactly what will be sent before any GPU spins (elicit → confirm →
+    // generate; channels can promote via autoApproveTools once trusted)
+    requiresConfirm: true,
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
-      const prompt = params.prompt as string;
-      if (!prompt?.trim()) return 'Error: prompt is required';
+      const rawPrompt = params.prompt as string;
+      if (!rawPrompt?.trim()) return 'Error: prompt is required';
+      const mode = (params.mode as ImageMode) === 'model3d' ? 'model3d' : 'artistic';
+      const prompt = applyScaffold(mode, rawPrompt);
 
       const filename = (params.filename as string) || `image_${Date.now()}`;
       const refPath = params.reference_image_path as string | undefined;
