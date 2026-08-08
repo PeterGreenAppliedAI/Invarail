@@ -1431,9 +1431,16 @@ export class Orchestrator {
         sessionStore: this.sessionStore,
       });
       if (confirmOutcome.handled) {
+        // Confirmed tools can produce media (image_generate, document) — run
+        // the same [FILE:] extraction as the normal reply path, else the token
+        // prints as literal text and the attachment never reaches the channel
+        const confirmMedia = extractMediaAttachments(confirmOutcome.reply!);
         await this.channelRegistry.send(
           { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
-          { text: confirmOutcome.reply! },
+          {
+            text: confirmMedia.cleanText || confirmOutcome.reply!,
+            attachments: confirmMedia.attachments.length > 0 ? confirmMedia.attachments : undefined,
+          },
         );
         // Continuation: feed the confirmed tool result back into the
         // originating session for ONE follow-up turn (with the original
