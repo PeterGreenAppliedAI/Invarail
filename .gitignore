@@ -21,3 +21,4 @@ nohup.out
 *.pyc
 vault/
 invarail.config.json5
+.learnings/
