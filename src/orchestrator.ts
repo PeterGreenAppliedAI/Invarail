@@ -1359,13 +1359,12 @@ export class Orchestrator {
             suffixes.push(`[Attached file: ${saved.localPath}] (${saved.filename}, ${saved.mimeType})`);
           }
         } else if (DATA_EXTENSIONS.has(ext)) {
-          // Data files → analytics pipeline
-          console.log(`[Orchestrator] Data file detected: ${saved.filename} → analytics`);
-          fileOverrideCategory = 'analytics';
-          prefixes.push(`[The user uploaded a data file for analysis: ${saved.localPath}] (${saved.filename})`);
-          // Store file path for the analytics pipeline to pick up
+          // Data files → exec (the analytics pipeline was retired 2026-08-10;
+          // exec's code_session covers pandas/matplotlib work on request)
+          console.log(`[Orchestrator] Data file detected: ${saved.filename} → exec`);
+          fileOverrideCategory = 'exec';
+          prefixes.push(`[The user uploaded a data file: ${saved.localPath}] (${saved.filename}) — analyze it with code_session (pandas) if asked for stats or charts.`);
           msg.content = msg.content || `Analyze this ${ext.toUpperCase()} file`;
-          msg.content += `\n[DATA_FILE:${saved.localPath}]`;
         } else if (TEXT_EXTENSIONS.has(ext) || ext === 'docx') {
           // Text-based files → ask user what to do
           console.log(`[Orchestrator] Text file detected: ${saved.filename} — asking user`);

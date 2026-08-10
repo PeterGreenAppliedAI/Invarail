@@ -63,6 +63,8 @@ function convertFile(inputPath: string, format: string, outDir: string): string 
 export function createDocumentTool(): InvarailTool {
   return {
     name: 'document',
+    // EXECUTION PRIMITIVE: the document CATEGORY was retired 2026-08-10 — this
+    // tool is reached via exec/research/plans, never via routing.
     description: `Create and convert documents using LibreOffice. Supports PDF, DOCX, XLSX, PPTX, HTML, CSV, and more.
 
 Actions:

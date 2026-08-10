@@ -4,7 +4,7 @@ import type { ChannelRegistry } from '../channels/registry.js';
 export function createSendMessageTool(channelRegistry: ChannelRegistry): InvarailTool {
   return {
     name: 'send_message',
-    description: 'Send a message to a channel or user',
+    description: 'Send a message to a channel or user. EXECUTION PRIMITIVE: reachable from governed plans and confirm-gated flows — not a router destination (the message category was retired 2026-08-10).',
     parameterDescription: 'channel (required): Channel adapter ID (e.g., "discord", "telegram"). channelId (required): Target channel/chat ID. text (required): Message text.',
     example: 'send_message[{"channel": "discord", "channelId": "1234567890", "text": "Deployment complete!"}]',
     parameters: {
