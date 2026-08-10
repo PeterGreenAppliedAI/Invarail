@@ -1090,8 +1090,8 @@ export class Orchestrator {
       return;
     }
 
-    if (trimmed.startsWith('!experiences')) {
-      const args = trimmed.slice('!experiences'.length).trim();
+    if (/^!experiences?\b/.test(trimmed)) {
+      const args = trimmed.replace(/^!experiences?\s*/, '').trim();
       const { sharedExperienceStore } = await import('./memory/experience-store.js');
       const store = sharedExperienceStore(this.client);
       let replyText: string;
@@ -1319,6 +1319,17 @@ export class Orchestrator {
           { text: `Research failed: ${wrapped.message}` },
         ).catch((err) => { console.warn('[Orchestrator] Send failed:', err instanceof Error ? err.message : err); });
       }
+      return;
+    }
+
+    // Unknown-command catchall: a "!" prefix is command INTENT — it must never
+    // fall through to the router and get a model-improvised answer ("!experience"
+    // got a hallucinated capability tour, Aug 10). Deterministic help instead.
+    if (trimmed.startsWith('!') && !/^![12]\b/.test(trimmed)) {
+      await this.channelRegistry.send(
+        { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+        { text: `Unknown command \`${trimmed.split(/\s/)[0]}\`. Available:\n\`!reset\` \`!save\` \`!discard\` \`!forget <term>\` \`!heartbeat\` \`!autonomy\` \`!grants\` \`!lessons\` \`!experiences\` \`!blender <request>\` \`!research <topic>\`` },
+      ).catch(() => {});
       return;
     }
 
