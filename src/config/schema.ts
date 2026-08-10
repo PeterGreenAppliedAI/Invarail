@@ -147,6 +147,12 @@ export const MemoryConfigSchema = z.object({
   lessons: z.object({
     enabled: z.boolean().default(true),
   }).default({}),
+  /** Graph experience memory: what approaches worked/failed per task shape,
+   *  judged by REAL user signals (reactions, denials, corrections). Advisory
+   *  injection only — the authority boundary (see DECISIONS 2026-08-10). */
+  experiences: z.object({
+    enabled: z.boolean().default(true),
+  }).default({}),
   /** Minimum hours between heartbeat memory-review prompts ("still accurate? !heartbeat yes/no").
    *  The heartbeat runs every ~2h, but nagging the user that often is review fatigue — gate the
    *  prompt to at most once per this interval. Default once a day. */

@@ -1090,6 +1090,37 @@ export class Orchestrator {
       return;
     }
 
+    if (trimmed.startsWith('!experiences')) {
+      const args = trimmed.slice('!experiences'.length).trim();
+      const { sharedExperienceStore } = await import('./memory/experience-store.js');
+      const store = sharedExperienceStore(this.client);
+      let replyText: string;
+      const dropMatch = args.match(/^drop\s+(\S+)$/i);
+      if (dropMatch) {
+        const id = dropMatch[1];
+        replyText = (await store.archive(id))
+          ? `🗑️ Archived experience \`${id}\` — it will no longer be injected.`
+          : `No experience with id \`${id}\`.`;
+        if (replyText.startsWith('🗑️')) {
+          logAutonomousAction({ action: 'experience_dropped', tier: 'propose_confirm', source: 'user_command', reversible: false, outcome: 'confirmed', detail: id });
+        }
+      } else {
+        const experiences = await store.list();
+        replyText = experiences.length > 0
+          ? `🧭 **Experiences** (advisory only — inject at evidence ≥ 2):\n${experiences.slice(0, 20).map(x =>
+              `- \`${x.id}\` (${x.evidenceCount}x${x.evidenceCount >= 2 ? ', LIVE' : ''}, ${x.satisfaction > 0 ? '👍' : x.satisfaction < 0 ? '👎' : '·'}, ${x.model}) — ${x.text.slice(0, 100)}`,
+            ).join('\n')}\n\nDrop one with \`!experiences drop <id>\`.`
+          : 'No experiences recorded yet — the heartbeat writes them when user signals (reactions, denials, corrections) pair with completed work.';
+      }
+      await this.channelRegistry.send(
+        { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+        { text: replyText },
+      ).catch((err) => {
+        console.warn('[Orchestrator] Failed to send experiences reply:', err instanceof Error ? err.message : err);
+      });
+      return;
+    }
+
     if (trimmed.startsWith('!lessons')) {
       const args = trimmed.slice('!lessons'.length).trim();
       const route = resolveRoute(

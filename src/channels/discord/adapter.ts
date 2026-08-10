@@ -42,8 +42,10 @@ export class DiscordAdapter implements ChannelAdapter {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.DirectMessageReactions,
       ],
-      partials: [Partials.Channel],
+      partials: [Partials.Channel, Partials.Message, Partials.Reaction],
     });
 
     this.client.on('messageCreate', async (msg: Message) => {
@@ -146,6 +148,34 @@ export class DiscordAdapter implements ChannelAdapter {
         await this.handler(inbound);
       } catch (err) {
         console.warn('[Discord] Button handler failed:', err instanceof Error ? err.message : err);
+      }
+    });
+
+    // Reactions on the BOT'S OWN replies are explicit satisfaction signals for
+    // the experience layer — the strongest ground truth it gets (code-detected,
+    // zero inference). Logged as metrics events; the harvest step correlates
+    // them to the preceding dispatch. Advisory data only — never a control path.
+    const POSITIVE = new Set(['👍', '❤️', '🔥', '💯', '✅']);
+    const NEGATIVE = new Set(['👎', '❌', '💩']);
+    this.client.on('messageReactionAdd', async (reaction, user) => {
+      try {
+        if (user.bot) return;
+        const full = reaction.partial ? await reaction.fetch() : reaction;
+        if (!full.message.author?.bot) return;   // only reactions on our replies
+        const emoji = full.emoji.name ?? '';
+        const valence = POSITIVE.has(emoji) ? 1 : NEGATIVE.has(emoji) ? -1 : 0;
+        if (valence === 0) return;
+        const { logReaction } = await import('../../metrics.js');
+        logReaction({
+          valence,
+          emoji,
+          channel: 'discord',
+          channelId: full.message.channelId,
+          senderId: user.id,
+        });
+        console.log(`[Discord] Reaction signal: ${emoji} (${valence > 0 ? '+' : ''}${valence}) from ${user.id}`);
+      } catch (err) {
+        console.warn('[Discord] Reaction handler failed:', err instanceof Error ? err.message : err);
       }
     });
 
