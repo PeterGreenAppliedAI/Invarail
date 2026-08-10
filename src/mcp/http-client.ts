@@ -37,7 +37,7 @@ export class McpHttpClient {
     const result = await this.request('initialize', {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'localclaw', version: '1.0' },
+      clientInfo: { name: 'invarail', version: '1.0' },
     });
     void result;
     await this.notify('notifications/initialized');

@@ -4,7 +4,7 @@
  */
 
 import type { OllamaClient } from '../ollama/client.js';
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 import type { SessionStore } from '../sessions/store.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { PipelineRegistry } from '../pipeline/registry.js';
@@ -13,7 +13,7 @@ import { bold, cyan, dim, green, yellow, red, divider, formatSuccess } from './f
 
 export interface CommandContext {
   client: OllamaClient;
-  config: LocalClawConfig;
+  config: InvarailConfig;
   sessionStore: SessionStore;
   registry: ToolRegistry;
   pipelineRegistry: PipelineRegistry;
@@ -40,7 +40,7 @@ const commands: Record<string, { handler: CommandHandler; description: string }>
     handler: async () => ({
       ephemeral: true,
       output: [
-        bold('LocalClaw CLI Commands'),
+        bold('Invarail CLI Commands'),
         '',
         `  ${cyan('/reset')}          Clear session and start fresh`,
         `  ${cyan('/status')}         Show system status (models, tools, channels)`,

@@ -1,13 +1,13 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import type { z } from 'zod';
 import type { ImageGenConfigSchema } from '../config/schema.js';
 import { applyScaffold, type ImageMode } from './image-prompt-scaffold.js';
 
 type ImageGenConfig = z.infer<typeof ImageGenConfigSchema>;
 
-export function createImageGenerateTool(config: ImageGenConfig): LocalClawTool {
+export function createImageGenerateTool(config: ImageGenConfig): InvarailTool {
   return {
     name: 'image_generate',
     description: `Generate an image from a text prompt using a local Flux model.

@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import type { DockerConfig } from '../config/types.js';
 
-const CONTAINER_NAME = 'localclaw-sandbox';
+const CONTAINER_NAME = 'invarail-sandbox';
 
 export class DockerBackend {
   private config: Required<DockerConfig>;
@@ -9,7 +9,7 @@ export class DockerBackend {
 
   constructor(config?: Partial<DockerConfig>) {
     this.config = {
-      image: config?.image ?? 'localclaw-sandbox:latest',
+      image: config?.image ?? 'invarail-sandbox:latest',
       mountMode: config?.mountMode ?? 'ro',
       memoryLimit: config?.memoryLimit ?? '512m',
       cpuLimit: config?.cpuLimit ?? '1.0',

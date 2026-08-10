@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { GraphMemoryStore } from '../memory/graph-store.js';
 import type { FactCategory } from '../config/types.js';
@@ -9,7 +9,7 @@ export function createMemorySaveTool(
   workspacePath: string,
   factStore?: FactStore,
   graphMemory?: GraphMemoryStore,
-): LocalClawTool {
+): InvarailTool {
 
   return {
     name: 'memory_save',

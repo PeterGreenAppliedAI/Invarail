@@ -101,50 +101,6 @@ export const ChannelConfigSchema = z.object({
   security: ChannelSecuritySchema.optional(),
 }).passthrough();
 
-// --- iMessage-specific config (BlueBubbles bridge) ---
-
-export const IMessageContactOverrideSchema = z.object({
-  mode: z.enum(['auto', 'prefix', 'silent']).optional(),
-  prefix: z.string().optional(),
-  cooldownMs: z.number().optional(),
-});
-
-export const IMessageConfigSchema = ChannelConfigSchema.extend({
-  url: z.string(),
-  password: z.string(),
-
-  // Core gating mode — 'silent' = read-only monitor (safe default)
-  mode: z.enum(['silent', 'allowlist', 'denylist', 'prefix', 'auto']).default('silent'),
-
-  // Trigger prefix for 'prefix' mode
-  prefix: z.string().default('!claw'),
-
-  // Group chat handling
-  groups: z.object({
-    enabled: z.boolean().default(false),
-    requirePrefix: z.boolean().default(true),
-  }).default({}),
-
-  // Contact lists
-  contacts: z.object({
-    allow: z.array(z.string()).default([]),
-    deny: z.array(z.string()).default([]),
-    overrides: z.record(z.string(), IMessageContactOverrideSchema).default({}),
-  }).default({}),
-
-  // Rate limiting
-  cooldown: z.object({
-    perContactMs: z.number().default(30_000),
-    globalMs: z.number().default(5_000),
-    maxPerContactPerHour: z.number().default(20),
-  }).default({}),
-
-  // Monitoring
-  monitor: z.object({
-    logMessages: z.boolean().default(true),
-  }).default({}),
-});
-
 export const AgentBindingMatchSchema = z.object({
   channel: z.string().optional(),
   guildId: z.string().optional(),
@@ -201,7 +157,7 @@ export const MemoryConfigSchema = z.object({
   falkordb: z.object({
     host: z.string().default('localhost'),
     port: z.number().default(6379),
-    graphName: z.string().default('localclaw_memory'),
+    graphName: z.string().default('invarail_memory'),
   }).default({}),
 });
 
@@ -269,7 +225,7 @@ export const SessionExecConfigSchema = z.object({
 });
 
 export const DockerConfigSchema = z.object({
-  image: z.string().default('localclaw-sandbox:latest'),
+  image: z.string().default('invarail-sandbox:latest'),
   mountMode: z.enum(['ro', 'rw']).default('ro'),
   memoryLimit: z.string().default('512m'),
   cpuLimit: z.string().default('1.0'),
@@ -349,14 +305,6 @@ export const VisionConfigSchema = z.object({
   maxTokens: z.number().default(512),
 });
 
-export const ReasoningConfigSchema = z.object({
-  // No default model — the `reason` tool is only registered when a model is explicitly set,
-  // so an empty `reasoning: {}` can never point at a stale/dead model.
-  model: z.string().optional(),
-  maxTokens: z.number().default(8192),
-  temperature: z.number().default(0.6),
-});
-
 export const KnowledgeConfigSchema = z.object({
   maxChunkSize: z.number().default(800),
   overlapSize: z.number().default(100),
@@ -370,7 +318,7 @@ export const McpServerConfigSchema = z.object({
   args: z.array(z.string()).default([]),              // stdio: e.g. ["blender-mcp"]
   /** stdio: working directory for the spawned server. Servers that resolve
    *  their own relative paths (config files, child processes) need to run
-   *  from their repo root, not LocalClaw's. */
+   *  from their repo root, not Invarail's. */
   cwd: z.string().optional(),
   url: z.string().optional(),                         // http: e.g. "https://mcp.linear.app/mcp"
   /** http: authorize via local OAuth 2.1 + PKCE + DCR (tokens in the secret
@@ -480,7 +428,7 @@ export const FactInputSchema = z.object({
   importance: z.number().min(1).max(5).default(2),
 });
 
-export const LocalClawConfigSchema = z.object({
+export const InvarailConfigSchema = z.object({
   /** Owner user ID — the single person who can access owner-only tools (gmail, calendar, etc.). Checked in code, not by the model. */
   ownerId: z.string().optional(),
   /** Principals: person → channel sender aliases. See PrincipalSchema. */
@@ -504,7 +452,6 @@ export const LocalClawConfigSchema = z.object({
   cron: CronConfigSchema.default({}),
   session: SessionConfigSchema.default({}),
   tools: ToolsConfigSchema.optional(),
-  reasoning: ReasoningConfigSchema.optional(),
   browser: BrowserConfigSchema.default({}),
   tts: TTSConfigSchema.default({}),
   stt: STTConfigSchema.default({}),

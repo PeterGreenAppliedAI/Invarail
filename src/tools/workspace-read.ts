@@ -1,10 +1,10 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 
 const READABLE_FILES = ['TOOLS.md', 'USER.md', 'MEMORY.md', 'HEARTBEAT.md', 'SOUL.md', 'IDENTITY.md', 'AGENTS.md'] as const;
 
-export function createWorkspaceReadTool(): LocalClawTool {
+export function createWorkspaceReadTool(): InvarailTool {
   return {
     name: 'workspace_read',
     description: `Read a workspace file. Available files: ${READABLE_FILES.join(', ')}.`,

@@ -1,6 +1,6 @@
-# Contributing to LocalClaw
+# Contributing to Invarail
 
-Thanks for your interest in contributing! LocalClaw is a local-model-first AI agent framework, and contributions of all kinds are welcome — bug fixes, new tools, new channel adapters, documentation, and tests.
+Thanks for your interest in contributing! Invarail is a local-model-first AI agent framework, and contributions of all kinds are welcome — bug fixes, new tools, new channel adapters, documentation, and tests.
 
 ## Getting Started
 
@@ -18,8 +18,8 @@ Thanks for your interest in contributing! LocalClaw is a local-model-first AI ag
 ### Setup
 
 ```bash
-git clone https://github.com/PeterGreenAppliedAI/LocalClaw.git
-cd LocalClaw
+git clone https://github.com/PeterGreenAppliedAI/Invarail.git
+cd Invarail
 npm install
 cp .env.example .env
 # Edit .env with your Ollama URL and any API keys
@@ -85,27 +85,27 @@ The `main` branch is **protected** — all changes must go through pull requests
 
 This is the most common contribution. Each tool is a self-contained module.
 
-1. Create `src/tools/my-tool.ts` implementing the `LocalClawTool` interface
+1. Create `src/tools/my-tool.ts` implementing the `InvarailTool` interface
 2. Register it in `src/tools/register-all.ts`
-3. Add the tool name to a specialist's `tools` array in `localclaw.config.json5`
+3. Add the tool name to a specialist's `tools` array in `invarail.config.json5`
 4. Add tests in `test/tools/my-tool.test.ts`
 
 ### 2. Add a New Channel Adapter
 
 1. Create `src/channels/myplatform/adapter.ts` implementing the `ChannelAdapter` interface (5 methods: `connect`, `disconnect`, `onMessage`, `send`, `status`)
 2. Add the dynamic import in `src/index.ts`
-3. Add config section in `localclaw.config.json5`
+3. Add config section in `invarail.config.json5`
 4. Zero core code changes required
 
 ### 3. Add a New Specialist Category
 
-1. Add the category to `router.categories` in `localclaw.config.json5`
+1. Add the category to `router.categories` in `invarail.config.json5`
 2. Add specialist config to `specialists` in the same file
 3. *(Optional)* Add keyword patterns in `src/router/classifier.ts`
 
 ### 4. Bug Fixes and Improvements
 
-- Check the [issues](https://github.com/PeterGreenAppliedAI/LocalClaw/issues) for open bugs or feature requests
+- Check the [issues](https://github.com/PeterGreenAppliedAI/Invarail/issues) for open bugs or feature requests
 - If you find a bug, open an issue first so we can discuss the approach
 
 ## Code Style
@@ -166,7 +166,7 @@ npm run test:watch
 
 ## Configuration
 
-LocalClaw uses `localclaw.config.json5` for all configuration. When adding features:
+Invarail uses `invarail.config.json5` for all configuration. When adding features:
 
 - Add Zod schemas in `src/config/schema.ts` for validation
 - Add corresponding types in `src/config/types.ts`
@@ -175,7 +175,7 @@ LocalClaw uses `localclaw.config.json5` for all configuration. When adding featu
 
 ## Safety
 
-LocalClaw takes security seriously. When contributing, keep in mind:
+Invarail takes security seriously. When contributing, keep in mind:
 
 - **Exec allowlist** — shell commands must be explicitly approved
 - **SSRF protection** — validate URLs with scheme whitelist and DNS pre-flight

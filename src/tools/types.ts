@@ -21,7 +21,7 @@ export interface ToolParameterSchema {
   required?: string[];
 }
 
-export interface LocalClawTool {
+export interface InvarailTool {
   name: string;
   description: string;
   parameterDescription: string;

@@ -8,7 +8,7 @@ import { synthesizeLessons } from '../../src/learnings/lesson-synthesis.js';
 import { relevantLessonLines, upsertLessonEmbedding, findLessonBySimilarity } from '../../src/learnings/lesson-semantic.js';
 import { ErrorLearningStore } from '../../src/learnings/error-store.js';
 import { EmbeddingStore } from '../../src/memory/embeddings.js';
-import { setEmbeddingStoreForTests } from '../../src/skills/semantic.js';
+import { setEmbeddingStoreForTests } from '../../src/memory/semantic-helpers.js';
 import type { OllamaClient } from '../../src/ollama/client.js';
 
 let dir: string;

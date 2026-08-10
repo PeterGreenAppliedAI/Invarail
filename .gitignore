@@ -20,3 +20,4 @@ localclaw-backup.tar.gz
 nohup.out
 *.pyc
 vault/
+invarail.config.json5

@@ -1,4 +1,4 @@
-# How LocalClaw Routes Messages: A Deep Dive
+# How Invarail Routes Messages: A Deep Dive
 
 *How a local AI agent classifies user intent and dispatches to the right specialist — without cloud APIs, with 15 categories, and a multi-layer fallback system that handles everything from "hi" to "research AAPL stock and make me a deck."*
 
@@ -426,4 +426,4 @@ Browser control failed as a deterministic pipeline but works as guided ReAct. If
 
 ---
 
-*LocalClaw is an open-source local-model-first AI agent framework. The routing system described here handles 39 tools across 15 categories with 12 deterministic pipelines — all running on personal hardware via Ollama.*
+*Invarail is an open-source local-model-first AI agent framework. The routing system described here handles 39 tools across 15 categories with 12 deterministic pipelines — all running on personal hardware via Ollama.*

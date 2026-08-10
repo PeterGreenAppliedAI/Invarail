@@ -1,6 +1,6 @@
-# Installing LocalClaw
+# Installing Invarail
 
-LocalClaw is built as a ladder: start with almost nothing, add capabilities one
+Invarail is built as a ladder: start with almost nothing, add capabilities one
 config block at a time. **Every tier degrades gracefully to the one below** —
 remove a piece and the feature disappears; nothing breaks.
 
@@ -17,14 +17,14 @@ remove a piece and the feature disappears; nothing breaks.
 # 1. A local model (any capable 7-14B instruct model works)
 ollama pull qwen3:8b
 
-# 2. LocalClaw
-git clone <this repo> && cd LocalClaw && npm install
+# 2. Invarail
+git clone <this repo> && cd Invarail && npm install
 
 # 3. Either run the wizard…
 npm run setup        # choose "Starter" at the first question
 
 # …or copy the preset by hand:
-cp localclaw.config.starter.json5 localclaw.config.json5
+cp invarail.config.starter.json5 invarail.config.json5
 
 # 4. Start, then open http://localhost:3100
 npm start
@@ -41,7 +41,7 @@ docker compose up -d      # FalkorDB (graph memory) + SearXNG (web search)
 ```
 
 Then in your config:
-- Graph memory needs **no config** — LocalClaw finds FalkorDB on localhost:6379
+- Graph memory needs **no config** — Invarail finds FalkorDB on localhost:6379
   and upgrades memory in place (flat files remain the automatic fallback).
 - Web search: add `tools.web.search` pointing at SearXNG
   (`http://localhost:8080`) and a `web_search` router category + specialist.

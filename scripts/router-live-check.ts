@@ -36,7 +36,7 @@ const CASES: Case[] = [
 ];
 
 async function main(): Promise<void> {
-  const config = loadConfig(process.argv[2] ?? 'localclaw.config.json5');
+  const config = loadConfig(process.argv[2] ?? 'invarail.config.json5');
   const client = new OllamaClient(config.ollama.url);
 
   let pass = 0;

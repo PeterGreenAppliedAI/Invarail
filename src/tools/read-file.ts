@@ -1,8 +1,8 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 
-export function createReadFileTool(): LocalClawTool {
+export function createReadFileTool(): InvarailTool {
   return {
     name: 'read_file',
     description: 'Read the contents of a file within the workspace. WHEN TO USE: Need to read a file from a prior step, check artifact contents, or load data for processing. Use this instead of exec[cat]. DO NOT use exec to read files — always use read_file.',

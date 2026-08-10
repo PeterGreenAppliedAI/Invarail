@@ -1,14 +1,14 @@
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import type { WebFetchConfig } from '../config/types.js';
 import { assertPublicUrl, assertPublicRedirect } from './ssrf.js';
-import { LocalClawError } from '../errors.js';
+import { InvarailError } from '../errors.js';
 import { extractReadableContent, htmlToMarkdown, truncateText } from './web-fetch-utils.js';
 import { readCache, writeCache, normalizeUrlKey, type CacheEntry } from './web-shared.js';
 
 const fetchCache = new Map<string, CacheEntry<string>>();
 const FETCH_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-export function createWebFetchTool(config?: WebFetchConfig): LocalClawTool {
+export function createWebFetchTool(config?: WebFetchConfig): InvarailTool {
   const maxChars = config?.maxChars ?? 30000;
 
   return {
@@ -36,7 +36,7 @@ export function createWebFetchTool(config?: WebFetchConfig): LocalClawTool {
       try {
         await assertPublicUrl(url);
       } catch (err) {
-        if (err instanceof LocalClawError && err.code === 'SSRF_BLOCKED') return `Error: ${err.message}`;
+        if (err instanceof InvarailError && err.code === 'SSRF_BLOCKED') return `Error: ${err.message}`;
         throw err;
       }
 
@@ -56,7 +56,7 @@ export function createWebFetchTool(config?: WebFetchConfig): LocalClawTool {
         // Manual redirect handling — re-check SSRF on each hop
         const fetchOptions: RequestInit = {
           headers: {
-            'User-Agent': 'LocalClaw/1.0 (Web Fetcher)',
+            'User-Agent': 'Invarail/1.0 (Web Fetcher)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           },
           signal: AbortSignal.timeout(30_000),
@@ -113,7 +113,7 @@ export function createWebFetchTool(config?: WebFetchConfig): LocalClawTool {
         return result;
       } catch (err) {
         // Never bypass SSRF blocks via fallback
-        if (err instanceof LocalClawError && err.code === 'SSRF_BLOCKED') {
+        if (err instanceof InvarailError && err.code === 'SSRF_BLOCKED') {
           return `Error: ${err.message}`;
         }
         // Firecrawl fallback for non-security errors

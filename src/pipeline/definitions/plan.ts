@@ -1,9 +1,6 @@
 import { writeFileSync, mkdirSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PipelineDefinition, PipelineContext } from '../types.js';
-import { SkillStore } from '../../skills/store.js';
-import { findMatchingSkillHybrid } from '../../skills/matcher.js';
-import { upsertSkillEmbedding } from '../../skills/semantic.js';
 import { chatMaybeStructured } from '../extractor.js';
 import { logAutonomousAction } from '../../metrics.js';
 
@@ -287,79 +284,19 @@ function parseReplanResponse(raw: string): { step?: PlanStep; done?: boolean; su
 export const planPipeline: PipelineDefinition = {
   name: 'plan',
   stages: [
-    // Stage 0: Check for matching skill before generating a new plan
-    {
-      name: 'skill_check',
-      type: 'code',
-      execute: async (ctx) => {
-        const workspacePath = ctx.toolContext.workspacePath;
-        if (!workspacePath) return;
 
-        // Structural guard: system dispatches (heartbeat/cron) must never
-        // match user skills — the old string-match on the message text let
-        // heartbeat runs both match AND save skills for months
-        if (ctx.cronMode) return;
-
-        try {
-          const store = new SkillStore(workspacePath);
-          const match = await findMatchingSkillHybrid(store, ctx.client, ctx.userMessage);
-          if (match) {
-            const skill = store.get(match.slug);
-            // Explicit tool naming outranks learned habit: a skill whose steps
-            // never mention the named tool would route around the user's
-            // stated intent (three hijacked runs on Aug 1 before this gate)
-            const mentions = (ctx.params._explicitToolMentions as string[] | undefined) ?? [];
-            if (skill && mentions.length > 0) {
-              const stepsText = skill.steps.map(s => `${s.tool} ${JSON.stringify(s.params)} ${s.purpose}`).join(' ').toLowerCase();
-              const covered = mentions.some(m => stepsText.includes(m.toLowerCase())
-                || stepsText.includes(m.replace(/^[a-z0-9-]+_/i, '').toLowerCase()));
-              if (!covered) {
-                console.log(`[Plan] Explicit tool mention (${mentions.join(', ')}) — skill "${match.slug}" ignored`);
-                return;
-              }
-            }
-            if (skill && skill.steps.length > 0) {
-              ctx.params._skillMatch = match;
-              ctx.params._skillSteps = skill.steps;
-              ctx.params._skillNotes = skill.notes;
-              ctx.params._skillSlug = match.slug;
-              console.log(`[Plan] Skill match: "${skill.name}" (${skill.successCount} successes, via ${match.method}) — using saved plan`);
-              logAutonomousAction({ action: 'skill_matched', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: `${match.slug} (${match.method})` });
-
-              // Track skill reuse in metrics
-              if (ctx.metricsCollector) {
-                ctx.metricsCollector.planSource = 'saved_skill';
-                ctx.metricsCollector.skillSlug = match.slug;
-                ctx.metricsCollector.skillMatchScore = match.score;
-              }
-            }
-          }
-        } catch {
-          // No skills directory or read error — continue with LLM planning
-        }
-      },
-    },
-
-    // Stage 1: Generate the plan (uses skill template if matched)
+    // Stage 1: Generate the plan (always fresh — the skills system was retired
+    // 2026-08-10; its successor is graph experience memory, see DECISIONS)
     {
       name: 'generate_plan',
       progressLabel: '› Breaking this into steps…',
       type: 'llm',
       temperature: 0.3,
       maxTokens: 2048,
-      buildPrompt: (ctx) => {
-        // If a skill matched, provide its specialist sequence as a template
-        // but let the LLM generate fresh messages for the current request
-        const skillSteps = ctx.params._skillSteps as PlanStep[] | undefined;
-        const skillHint = skillSteps && skillSteps.length > 0
-          ? `\n\nA similar task has succeeded before using this specialist sequence: ${skillSteps.map(s => s.specialist).join(' → ')}. You can follow this pattern but write messages specific to the current goal.`
-          : '';
-
-        return {
-          system: PLAN_PROMPT,
-          user: `Today's date: ${new Date().toISOString().split('T')[0]}\n\nGoal: ${ctx.userMessage}${skillHint}`,
-        };
-      },
+      buildPrompt: (ctx) => ({
+        system: PLAN_PROMPT,
+        user: `Today's date: ${new Date().toISOString().split('T')[0]}\n\nGoal: ${ctx.userMessage}`,
+      }),
     },
 
     // Stage 2: Parse the plan into steps
@@ -376,11 +313,6 @@ export const planPipeline: PipelineDefinition = {
           // document tool) instead of aborting with "be more specific".
           console.log('[Plan] No steps parsed — falling back to a single direct exec step');
           steps = [{ specialist: 'exec', message: ctx.userMessage, purpose: 'Carry out the request directly with the available tools' }];
-          // A matched skill whose plan produced nothing parseable must NOT be
-          // credited: fallback runs recorded success + appended the request as
-          // a trigger, so a wrong match got stronger every time it derailed
-          // (0.847 → 0.930 across two hijacked runs, Aug 1)
-          ctx.params._planFellBack = true;
         }
         ctx.params._plan = steps;
         ctx.params._stepIndex = 0;
@@ -681,193 +613,5 @@ RULES:
       },
     },
 
-    // Stage 6: Save as skill if successful
-    {
-      name: 'skill_save',
-      type: 'code',
-      execute: async (ctx: PipelineContext) => {
-        const workspacePath = ctx.toolContext.workspacePath;
-        if (!workspacePath) return;
-
-        // Structural guard: system dispatches must never become saved skills
-        if (ctx.cronMode) return;
-
-        const plan = ctx.params._plan as PlanStep[] | undefined;
-        const results = ctx.params._results as string[] | undefined;
-        if (!plan || !results || plan.length < 2) return;
-
-        // Check if we already used a saved skill — if so, record success + trigger.
-        // Skip entirely when the skill's plan failed to parse: the run succeeded
-        // DESPITE the skill, not because of it
-        const skillSlug = ctx.params._skillSlug as string | undefined;
-        if (skillSlug && ctx.params._planFellBack) {
-          console.log(`[Plan] Skill "${skillSlug}" matched but its plan fell back — no success recorded`);
-          return;
-        }
-        if (skillSlug) {
-          try {
-            const store = new SkillStore(workspacePath);
-            store.recordSuccess(skillSlug);
-            store.addTrigger(skillSlug, ctx.userMessage);
-            const refreshed = store.get(skillSlug);
-            if (refreshed) await upsertSkillEmbedding(ctx.client, refreshed);
-            console.log(`[Plan] Recorded skill success: ${skillSlug}`);
-          } catch { /* ignore */ }
-          return;
-        }
-
-        // Count failures — only save if mostly successful
-        const failCount = results.filter(r => r.includes('Error:')).length;
-        const successRate = 1 - (failCount / results.length);
-        if (successRate < 0.6) {
-          console.log(`[Plan] Skipping skill save — success rate too low (${Math.round(successRate * 100)}%)`);
-          return;
-        }
-
-        // Extract learned notes from execution
-        const notes: string[] = [];
-        for (const r of results) {
-          if (r.includes('Escalating to visual mode')) notes.push('Some elements need visual mode fallback');
-          if (r.includes('text_content')) notes.push('Use text_content for reading SPA content');
-          if (r.includes('Smart selection')) notes.push('Smart selection needed for picking relevant results');
-        }
-
-        try {
-          const store = new SkillStore(workspacePath);
-
-          // Use LLM to generalize the skill into a reusable pattern
-          // instead of saving the raw user message as the description
-          const toolSequence = plan.map(s => s.specialist).join(' → ');
-          const generalizeResponse = await ctx.client.chat({
-            model: ctx.routerModel ?? ctx.model,
-            messages: [
-              {
-                role: 'system',
-                content: `You are naming a reusable workflow pattern. Given the user's specific request and the tools used, create a GENERAL pattern name and description that would match similar future requests — not just this specific one.
-
-Examples:
-- "Go to eventbrite and find tech events" → name: "browse-site-and-add-to-tasks", description: "Navigate to a website, search or browse for content, pick the most relevant item, and add it to the task list"
-- "Search LinkedIn for AI jobs and save top 3" → name: "search-site-and-collect-results", description: "Search a website for items matching a query, evaluate results, and save the best matches"
-- "Go to meetup.com and sign me up" → name: "browse-and-fill-form", description: "Navigate to a website, find a form or signup page, and fill in user details"
-
-Return ONLY a JSON object: {"name": "pattern-name-slug", "description": "General description of the workflow pattern"}`,
-              },
-              {
-                role: 'user',
-                content: `Request: "${ctx.userMessage}"\nSpecialists used: ${toolSequence}`,
-              },
-            ],
-            options: { temperature: 0.2, num_predict: 200 },
-          });
-
-          let skillName = 'unnamed-skill';
-          let skillDescription = ctx.userMessage.slice(0, 200);
-
-          const genRaw = generalizeResponse.message?.content ?? '';
-          const genMatch = genRaw.match(/\{[\s\S]*\}/);
-          if (genMatch) {
-            try {
-              const gen = JSON.parse(genMatch[0]);
-              if (gen.name) skillName = gen.name;
-              if (gen.description) skillDescription = gen.description;
-            } catch { /* use defaults */ }
-          }
-
-          const slug = skillName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '')
-            .slice(0, 50);
-
-          // Convert specialist-based steps to skill format
-          const skillSteps = plan.map(s => ({
-            tool: s.specialist,
-            params: { message: s.message },
-            purpose: s.purpose,
-          }));
-
-          // Dedup ladder (the July skill audit found the same pattern saved 3×
-          // under different generalized names — save-time dedup did not exist):
-          // 1. exact slug hit  2. hybrid match on the original request
-          // 3. grammar-constrained judge against the catalog  4. genuinely new
-          const updateExisting = async (existingSlug: string, why: string) => {
-            store.recordSuccess(existingSlug);
-            store.addTrigger(existingSlug, ctx.userMessage);
-            const existing = store.get(existingSlug);
-            if (existing) {
-              const existingSeq = existing.steps.map(s => s.tool).join(' → ');
-              if (existingSeq !== toolSequence) {
-                store.addNote(existingSlug, `Variant sequence also works: ${toolSequence}`);
-              }
-              await upsertSkillEmbedding(ctx.client, existing);
-            }
-            console.log(`[Plan] Skill dedup (${why}): updated "${existingSlug}" instead of saving a duplicate`);
-            logAutonomousAction({ action: 'skill_updated', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: `${existingSlug} (${why})` });
-          };
-
-          if (store.get(slug)) {
-            await updateExisting(slug, 'same slug');
-            return;
-          }
-
-          const similar = await findMatchingSkillHybrid(store, ctx.client, ctx.userMessage);
-          if (similar) {
-            await updateExisting(similar.slug, similar.method);
-            return;
-          }
-
-          const catalog = store.list();
-          if (catalog.length > 0) {
-            const catalogLines = catalog.map(s => `- ${s.slug}: ${s.description.slice(0, 120)}`).join('\n');
-            const judgeRaw = await chatMaybeStructured(ctx.client, ctx.routerModel ?? ctx.model, [
-              {
-                role: 'system',
-                content: `You maintain a catalog of reusable workflow skills. Decide whether the candidate is the SAME workflow pattern as an existing skill (same kind of steps toward the same kind of outcome — surface details like topic or site may differ), a NEW pattern, or too trivial to keep.\n\nExisting skills:\n${catalogLines}\n\nReturn ONLY JSON: {"decision": "new"|"update"|"skip", "slug": "<existing slug when decision is update, else empty>"}`,
-              },
-              {
-                role: 'user',
-                content: `Candidate skill: "${skillName}" — ${skillDescription}\nSteps: ${toolSequence}\nOriginal request: "${ctx.userMessage.slice(0, 200)}"`,
-              },
-            ], {
-              type: 'object',
-              properties: {
-                decision: { type: 'string', enum: ['new', 'update', 'skip'] },
-                slug: { type: 'string' },
-              },
-              required: ['decision'],
-            });
-            try {
-              const judged = JSON.parse(judgeRaw.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { decision?: string; slug?: string };
-              if (judged.decision === 'update' && judged.slug && store.get(judged.slug)) {
-                await updateExisting(judged.slug, 'judge');
-                return;
-              }
-              if (judged.decision === 'skip') {
-                console.log('[Plan] Skill save skipped by dedup judge');
-                logAutonomousAction({ action: 'skill_save_skipped', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: skillName });
-                return;
-              }
-            } catch { /* unparseable judge → treat as new */ }
-          }
-
-          const newSkill = {
-            name: skillName,
-            slug,
-            description: skillDescription,
-            created: new Date().toISOString().split('T')[0],
-            lastUsed: new Date().toISOString().split('T')[0],
-            successCount: 1,
-            steps: skillSteps,
-            notes: [...new Set(notes)],
-            triggers: [ctx.userMessage.slice(0, 200)],
-          };
-          store.save(newSkill);
-          await upsertSkillEmbedding(ctx.client, newSkill);
-          logAutonomousAction({ action: 'skill_saved', tier: 'silent', source: 'plan', reversible: true, outcome: 'success', detail: slug });
-        } catch (err) {
-          console.warn(`[Plan] Failed to save skill: ${err instanceof Error ? err.message : err}`);
-        }
-      },
-    },
   ],
 };

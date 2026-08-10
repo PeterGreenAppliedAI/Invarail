@@ -1,14 +1,12 @@
 import type { z } from 'zod';
 import type {
-  LocalClawConfigSchema,
+  InvarailConfigSchema,
   OllamaConfigSchema,
   RouterConfigSchema,
   RouterCategorySchema,
   SpecialistConfigSchema,
   ChannelConfigSchema,
   ChannelSecuritySchema,
-  IMessageConfigSchema,
-  IMessageContactOverrideSchema,
   AgentsConfigSchema,
   AgentSchema,
   AgentBindingSchema,
@@ -27,7 +25,6 @@ import type {
   KnowledgeConfigSchema,
   McpConfigSchema,
   McpServerConfigSchema,
-  ReasoningConfigSchema,
   BrowserConfigSchema,
   TTSConfigSchema,
   STTConfigSchema,
@@ -39,7 +36,7 @@ import type {
   FactInputSchema,
 } from './schema.js';
 
-export type LocalClawConfig = z.infer<typeof LocalClawConfigSchema>;
+export type InvarailConfig = z.infer<typeof InvarailConfigSchema>;
 export type VerificationConfig = z.infer<typeof VerificationConfigSchema>;
 export type OllamaConfig = z.infer<typeof OllamaConfigSchema>;
 export type RouterConfig = z.infer<typeof RouterConfigSchema>;
@@ -47,8 +44,6 @@ export type RouterCategory = z.infer<typeof RouterCategorySchema>;
 export type SpecialistConfig = z.infer<typeof SpecialistConfigSchema>;
 export type ChannelConfig = z.infer<typeof ChannelConfigSchema>;
 export type ChannelSecurity = z.infer<typeof ChannelSecuritySchema>;
-export type IMessageConfig = z.infer<typeof IMessageConfigSchema>;
-export type IMessageContactOverride = z.infer<typeof IMessageContactOverrideSchema>;
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentSchema>;
 export type AgentBinding = z.infer<typeof AgentBindingSchema>;
@@ -66,7 +61,6 @@ export type McpConfig = z.infer<typeof McpConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 export type WebsiteConfig = z.infer<typeof WebsiteConfigSchema>;
 export type KnowledgeConfig = z.infer<typeof KnowledgeConfigSchema>;
-export type ReasoningConfig = z.infer<typeof ReasoningConfigSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type TTSConfig = z.infer<typeof TTSConfigSchema>;
 export type STTConfig = z.infer<typeof STTConfigSchema>;

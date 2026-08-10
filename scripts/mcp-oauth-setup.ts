@@ -3,7 +3,7 @@
  * that may open a browser. Run from a real terminal:
  *   npx tsx scripts/mcp-oauth-setup.ts <server-name>
  * The server must be configured in tools.mcp.servers[] with transport "http"
- * and oauth: true. Tokens land in the secret store; LocalClaw then refreshes
+ * and oauth: true. Tokens land in the secret store; Invarail then refreshes
  * silently forever.
  */
 
@@ -16,7 +16,7 @@ async function main(): Promise<void> {
     console.error('Usage: npx tsx scripts/mcp-oauth-setup.ts <server-name>');
     process.exit(1);
   }
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const server = config.tools?.mcp?.servers.find(s => s.name === name);
   if (!server) {
     console.error(`No MCP server named "${name}" in tools.mcp.servers`);

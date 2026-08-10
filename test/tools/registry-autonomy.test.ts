@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistry } from '../../src/tools/registry.js';
-import type { LocalClawTool } from '../../src/tools/types.js';
+import type { InvarailTool } from '../../src/tools/types.js';
 
-function makeTool(name: string, requiresConfirm?: boolean): LocalClawTool {
+function makeTool(name: string, requiresConfirm?: boolean): InvarailTool {
   return {
     name,
     description: 'test',

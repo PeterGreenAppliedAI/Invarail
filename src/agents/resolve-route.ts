@@ -1,4 +1,4 @@
-import type { LocalClawConfig, AgentBinding } from '../config/types.js';
+import type { InvarailConfig, AgentBinding } from '../config/types.js';
 
 export interface RouteInput {
   channel: string;
@@ -17,7 +17,7 @@ export interface ResolvedRoute {
  * Resolve which agent should handle a message based on binding rules.
  * Precedence: peer → guild → channel → default
  */
-export function resolveRoute(input: RouteInput, config: LocalClawConfig): ResolvedRoute {
+export function resolveRoute(input: RouteInput, config: InvarailConfig): ResolvedRoute {
   const bindings = config.agents.bindings;
   const defaultAgentId = config.agents.default;
 

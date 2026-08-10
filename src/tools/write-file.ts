@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, resolve, relative, isAbsolute } from 'node:path';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 
 /**
  * Protected workspace files that the bot must never overwrite.
@@ -16,7 +16,7 @@ const PROTECTED_FILES = new Set([
   'TASKS.md',
 ]);
 
-export function createWriteFileTool(): LocalClawTool {
+export function createWriteFileTool(): InvarailTool {
   return {
     name: 'write_file',
     description: 'Write or create a file (workspace-only for safety). Cannot overwrite protected files (SOUL.md, TOOLS.md, IDENTITY.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md, TASKS.md).',

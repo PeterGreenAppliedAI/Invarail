@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionExecConfig } from '../config/types.js';
 
-const SENTINEL = '__LOCALCLAW_DONE__';
+const SENTINEL = '__INVARAIL_DONE__';
 const DEFAULT_COMMAND_TIMEOUT = 30_000;
 
 export type SessionRuntime = 'python' | 'node' | 'bash';

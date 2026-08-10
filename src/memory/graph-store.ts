@@ -28,7 +28,7 @@ export interface GraphSearchResult {
 const DEFAULT_CONFIG: GraphMemoryConfig = {
   host: 'localhost',
   port: 6379,
-  graphName: 'localclaw_memory',
+  graphName: 'invarail_memory',
   embeddingModel: 'qwen3-embedding:8b',
   embeddingDims: 4096,
   nerModel: 'phi4-mini:latest',
