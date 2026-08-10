@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
 import { execSync } from 'node:child_process';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import { renderTemplate, AVAILABLE_TEMPLATES, type DocumentContent } from './document-templates.js';
 import { markdownToHtml } from '../utils/markdown-to-html.js';
 
@@ -60,7 +60,7 @@ function convertFile(inputPath: string, format: string, outDir: string): string 
   return outputPath;
 }
 
-export function createDocumentTool(): LocalClawTool {
+export function createDocumentTool(): InvarailTool {
   return {
     name: 'document',
     description: `Create and convert documents using LibreOffice. Supports PDF, DOCX, XLSX, PPTX, HTML, CSV, and more.

@@ -2,11 +2,11 @@ import { execFile } from 'node:child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import type { ExecConfig } from '../config/types.js';
 import type { DockerBackend } from '../exec/docker-backend.js';
 
-export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBackend): LocalClawTool {
+export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBackend): InvarailTool {
   const allowlist = new Set(config?.allowlist ?? ['ls', 'cat', 'python3', 'node', 'git']);
   const timeout = config?.timeout ?? 30_000;
   const useDocker = !!dockerBackend;

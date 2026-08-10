@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { TaskStore } from '../tasks/store.js';
 
-export function createTaskRemoveTool(taskStore: TaskStore): LocalClawTool {
+export function createTaskRemoveTool(taskStore: TaskStore): InvarailTool {
   return {
     name: 'task_remove',
     description: 'Permanently delete a task from the task board.',

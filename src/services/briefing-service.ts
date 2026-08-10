@@ -2,7 +2,7 @@
  * Briefing service — proactive check-ins with calendar, tasks, and memory context.
  * Extracted from orchestrator.ts for single-responsibility and testability.
  */
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import { buildPrepSection } from './prep-proposals.js';
@@ -17,7 +17,7 @@ import { enrichTasks, filterForModel, formatTaskBoard, enrichCalendarOutput, fin
 import type { SessionStore } from '../sessions/store.js';
 
 export interface BriefingDeps {
-  config: LocalClawConfig;
+  config: InvarailConfig;
   client: OllamaClient;
   toolRegistry: ToolRegistry;
   channelRegistry: ChannelRegistry;

@@ -27,7 +27,7 @@ import { resolveWorkspacePath } from '../src/agents/scope.js';
 import type { ChannelRegistry } from '../src/channels/registry.js';
 
 async function main(): Promise<void> {
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
   const workspacePath = resolveWorkspacePath(config.agents.default, config);
 

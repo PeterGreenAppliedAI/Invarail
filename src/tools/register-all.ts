@@ -1,5 +1,5 @@
 import type { ToolRegistry } from './registry.js';
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 import type { CronService } from '../cron/service.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { OllamaClient } from '../ollama/client.js';
@@ -69,7 +69,7 @@ export interface RegisterToolsResult {
  */
 export async function registerAllTools(
   registry: ToolRegistry,
-  config: LocalClawConfig,
+  config: InvarailConfig,
   options?: RegisterToolsOptions,
 ): Promise<RegisterToolsResult> {
   // Web tools
@@ -202,7 +202,7 @@ export async function registerAllTools(
     registry.register(createSkillFindTool(options.ollamaClient));
   }
 
-  // Load plugins from plugins/ and ~/.localclaw/plugins/
+  // Load plugins from plugins/ and ~/.invarail/plugins/
   try {
     const { loadPlugins } = await import('../plugins/loader.js');
     const pluginCount = await loadPlugins(registry);

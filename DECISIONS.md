@@ -4,6 +4,18 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## LocalClaw Explored the Design Space — Invarail Is What Survived (August 10 2026)
+
+### The rename
+LocalClaw → **Invarail** (invariant + rail: authority that cannot move, structure that exists so things move fast). Chosen after the week's synthesis (usage data: 28,345 metric events; three-plane architecture: authority plane immutable, experience plane adaptive, execution via FlowMCP; invariant of invariants: **experience may inform execution, never expand authority**). Name coined by Peter; verified unclaimed (npm, GitHub, web). All history in this file keeps "LocalClaw" as written — records don't get renamed.
+
+### Migration shims are TEMPORARY DEBT — removal condition set NOW
+Three compatibility shims exist so Peter's live deployment survives the rename. **All three are deleted at v0.2.0 or 60 days from this entry (2026-10-09), whichever comes first, once Peter's local migration is confirmed.** Compatibility shims otherwise have a habit of becoming permanent architecture — this entry is the tripwire.
+1. **Config discovery** (`src/config/loader.ts`): tries `invarail.config.json5`, falls back to the legacy filename **ONLY on absence (ENOENT semantics)** — a malformed new config FAILS loudly rather than silently loading the old one.
+2. **Env var**: `INVARAIL_UNSAFE_TLS` primary; the legacy name is honored with a deprecation warning (`src/index.ts`).
+3. **Plugin path**: `~/.invarail/plugins` primary; the legacy dir still scanned with a warning, and a **precedence rule**: a plugin name present in both dirs loads ONCE from the Invarail dir — the legacy copy is skipped, never double-registered.
+All three shim literals are written as split strings ('local'+'claw') so mechanical rename sweeps can't rewrite them; their behavior pins live in `test/config/rename-shims.test.ts`, which deletes with the shims.
+
 ## Five Live Runs, Five Layers: Wiring a Compiled Flow Into Production (August 1 2026)
 
 ### The integration was sound at every layer we'd tested — and broken at every layer we hadn't

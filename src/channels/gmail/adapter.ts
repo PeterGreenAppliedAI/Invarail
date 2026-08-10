@@ -77,7 +77,7 @@ export class GmailAdapter implements ChannelAdapter {
 
     try {
       const to = target.channelId; // channelId holds the recipient email
-      const subject = target.threadId ?? 'Re: LocalClaw';
+      const subject = target.threadId ?? 'Re: Invarail';
       const raw = buildRawEmail(to, subject, content.text, content.attachments);
 
       await this.gmail.users.messages.send({

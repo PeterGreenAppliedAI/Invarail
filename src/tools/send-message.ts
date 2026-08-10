@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 
-export function createSendMessageTool(channelRegistry: ChannelRegistry): LocalClawTool {
+export function createSendMessageTool(channelRegistry: ChannelRegistry): InvarailTool {
   return {
     name: 'send_message',
     description: 'Send a message to a channel or user',

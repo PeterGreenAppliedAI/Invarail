@@ -30,7 +30,7 @@ const SKIP_PATTERNS = [/expecting their third child/i, /meeting on July 14th wit
 interface RemovedEntry { text: string; reason: string; removedAt: string; expiresAt?: string }
 
 async function main(): Promise<void> {
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
 
   const allLines = readFileSync(REMOVED_PATH, 'utf-8').trim().split('\n');

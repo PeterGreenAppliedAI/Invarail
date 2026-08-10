@@ -1,5 +1,5 @@
 {
-  "name": "localclaw",
+  "name": "invarail",
   "version": "0.2.0",
   "description": "Local-model-first agent framework with Router + Specialist architecture",
   "type": "module",

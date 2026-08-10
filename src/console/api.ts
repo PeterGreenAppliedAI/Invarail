@@ -292,10 +292,10 @@ export async function handleConsoleRequest(
         const qs = new URL(url, 'http://localhost').searchParams;
         const lines = parseInt(qs.get('lines') ?? '100', 10);
 
-        // Try live log, fall back to localclaw.log
+        // Try live log, fall back to invarail.log
         const logPaths = [
-          join(process.cwd(), 'data', 'localclaw-live.log'),
-          join(process.cwd(), 'localclaw.log'),
+          join(process.cwd(), 'data', 'invarail-live.log'),
+          join(process.cwd(), 'invarail.log'),
         ];
         let content = '';
         for (const p of logPaths) {

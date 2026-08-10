@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistry } from '../../src/tools/registry.js';
-import type { LocalClawTool } from '../../src/tools/types.js';
+import type { InvarailTool } from '../../src/tools/types.js';
 
-function fakeTool(name: string, category: string): LocalClawTool {
+function fakeTool(name: string, category: string): InvarailTool {
   return { name, description: 'x', parameterDescription: 'x', category, execute: async () => 'ok' };
 }
 

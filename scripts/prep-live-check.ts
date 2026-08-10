@@ -30,7 +30,7 @@ function fakeCalendar(now: Date): string {
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
   const store = new PendingActionStore(join(mkdtempSync(join(tmpdir(), 'prep-live-')), 'pending.json'));
   const now = new Date();

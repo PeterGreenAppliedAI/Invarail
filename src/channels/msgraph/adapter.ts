@@ -83,7 +83,7 @@ export class MsGraphAdapter implements ChannelAdapter {
 
     try {
       const message: Record<string, unknown> = {
-        subject: target.threadId ?? 'LocalClaw',
+        subject: target.threadId ?? 'Invarail',
         body: {
           contentType: 'Text',
           content: content.text,

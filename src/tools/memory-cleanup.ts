@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { OllamaClient } from '../ollama/client.js';
 import { consolidateFactsWithLLM } from '../memory/consolidation.js';
@@ -7,7 +7,7 @@ export function createMemoryCleanupTool(
   factStore?: FactStore,
   ollamaClient?: OllamaClient,
   consolidationModel?: string,
-): LocalClawTool {
+): InvarailTool {
   return {
     name: 'memory_cleanup',
     description: 'Consolidate stored memories by removing duplicate and overlapping facts. Run this periodically to keep memory clean.',

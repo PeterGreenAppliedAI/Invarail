@@ -1,7 +1,7 @@
-// LocalClaw starter preset — Tier 0 (see INSTALL.md).
+// Invarail starter preset — Tier 0 (see INSTALL.md).
 // One local model does everything; web console only; nothing else to install.
 // Every capability above this is one config block — the upgrade path is
-// commented inline. Copy to localclaw.config.json5 (or let the setup wizard
+// commented inline. Copy to invarail.config.json5 (or let the setup wizard
 // do it) and replace the model with one you have pulled in Ollama.
 {
   timezone: "America/New_York",
@@ -12,7 +12,7 @@
 
   router: {
     // One category = every message routes to chat. Add categories as you add
-    // capabilities (see localclaw.config.example.json5 for the full set).
+    // capabilities (see invarail.config.example.json5 for the full set).
     model: "qwen3:8b",
     timeout: 4000,
     defaultCategory: "chat",

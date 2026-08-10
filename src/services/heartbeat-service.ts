@@ -4,7 +4,7 @@
  */
 import { writeFileSync, readFileSync, existsSync, readdirSync, statSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import type { LocalClawConfig, FactInput, FactEntry } from '../config/types.js';
+import type { InvarailConfig, FactInput, FactEntry } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ChannelRegistry } from '../channels/registry.js';
@@ -16,12 +16,12 @@ import type { EmbeddingStore } from '../memory/embeddings.js';
 import type { CronService } from '../cron/service.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { enrichTasks, getAutoActions, filterForModel, formatTaskBoard } from '../temporal/urgency.js';
-import { LocalClawError } from '../errors.js';
+import { InvarailError } from '../errors.js';
 import { logAutonomousAction } from '../metrics.js';
 import { resolvePrincipal } from '../identity/principal.js';
 
 export interface HeartbeatDeps {
-  config: LocalClawConfig;
+  config: InvarailConfig;
   client: OllamaClient;
   toolRegistry: ToolRegistry;
   channelRegistry: ChannelRegistry;
@@ -634,7 +634,7 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
       }
     }
   } catch (err) {
-    const wrapped = err instanceof LocalClawError ? err : new LocalClawError('TOOL_EXECUTION_ERROR', 'Heartbeat failed', err);
+    const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Heartbeat failed', err);
     console.error(`[Heartbeat] ${wrapped.code}: ${wrapped.message}`);
   }
 }

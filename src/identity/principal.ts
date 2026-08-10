@@ -1,4 +1,4 @@
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 
 /**
  * Principal resolution — the identity pillar of the session control plane.
@@ -14,7 +14,7 @@ import type { LocalClawConfig } from '../config/types.js';
 
 const mapCache = new WeakMap<object, Map<string, string>>();
 
-function aliasMap(config: LocalClawConfig): Map<string, string> {
+function aliasMap(config: InvarailConfig): Map<string, string> {
   let map = mapCache.get(config);
   if (!map) {
     map = new Map();
@@ -35,15 +35,15 @@ function aliasMap(config: LocalClawConfig): Map<string, string> {
 }
 
 /** Resolve a channel sender id to its principal. Unmapped ids pass through. */
-export function resolvePrincipal(senderId: string, config: LocalClawConfig): string;
-export function resolvePrincipal(senderId: string | undefined, config: LocalClawConfig): string | undefined;
-export function resolvePrincipal(senderId: string | undefined, config: LocalClawConfig): string | undefined {
+export function resolvePrincipal(senderId: string, config: InvarailConfig): string;
+export function resolvePrincipal(senderId: string | undefined, config: InvarailConfig): string | undefined;
+export function resolvePrincipal(senderId: string | undefined, config: InvarailConfig): string | undefined {
   if (!senderId) return senderId;
   return aliasMap(config).get(senderId) ?? senderId;
 }
 
 /** Is this sender the owner? Matches ownerId directly OR via shared principal. */
-export function isOwner(senderId: string | undefined, config: LocalClawConfig): boolean {
+export function isOwner(senderId: string | undefined, config: InvarailConfig): boolean {
   if (!senderId || !config.ownerId) return false;
   if (senderId === config.ownerId) return true;
   return resolvePrincipal(senderId, config) === resolvePrincipal(config.ownerId, config);
@@ -56,7 +56,7 @@ export function isOwner(senderId: string | undefined, config: LocalClawConfig): 
  * party ("What is the context for the meeting regarding <the user himself>?").
  * Returns null when the principal has no identity metadata configured.
  */
-export function selfIdentityLine(senderId: string | undefined, config: LocalClawConfig): string | null {
+export function selfIdentityLine(senderId: string | undefined, config: InvarailConfig): string | null {
   const principal = resolvePrincipal(senderId, config);
   if (!principal) return null;
   const def = config.principals?.[principal];

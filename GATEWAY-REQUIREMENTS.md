@@ -1,14 +1,14 @@
-# Gateway Requirements — what LocalClaw needs from the inference gateway
+# Gateway Requirements — what Invarail needs from the inference gateway
 
 Audience: the gateway service at `http://10.0.0.20:8001` (custom FastAPI proxy
-fronting Ollama on the DGX Spark). LocalClaw treats this endpoint as a stock
+fronting Ollama on the DGX Spark). Invarail treats this endpoint as a stock
 Ollama API. Everything below is either a gap observed in live testing on
-2026-07-06 or a contract LocalClaw actively depends on.
+2026-07-06 or a contract Invarail actively depends on.
 
-## P0 — blocking LocalClaw features today
+## P0 — blocking Invarail features today
 
 ### 1. `format` passthrough (structured outputs) — currently broken two ways
-LocalClaw sends `format` on `/api/chat` and `/api/generate` as EITHER:
+Invarail sends `format` on `/api/chat` and `/api/generate` as EITHER:
 - the string `"json"` (JSON mode), or
 - a JSON-schema object (grammar-constrained decoding), e.g.
   `{"type":"string","enum":["chat","web_search"]}` or
@@ -29,7 +29,7 @@ malformed-JSON failure class for every small model behind the gateway
 ### 2. Fail fast when upstream is down — currently hangs, then flaps
 **Observed:** with Ollama down on the Spark, a request hung ~4 minutes holding
 the connection open (no honor of client disconnect). Later, the gateway dropped
-connections mid-test-run. LocalClaw's client retries 4× on connection failure,
+connections mid-test-run. Invarail's client retries 4× on connection failure,
 so a hanging/flapping gateway turns a 2-second router budget into 12+ seconds
 per message.
 
@@ -41,7 +41,7 @@ per message.
 - Optional but ideal: `Retry-After` header on 503.
 
 ### 3. Native tool-calling round-trip
-LocalClaw now defaults to native tool calling (`tools` field, no text fallback
+Invarail now defaults to native tool calling (`tools` field, no text fallback
 in the prompt). The gateway must:
 - forward the `tools` array on `/api/chat` verbatim,
 - return `message.tool_calls` untouched (objects with
@@ -58,13 +58,13 @@ loses all tools with no error).
 
 ### 4. Streaming passthrough (`stream: true` on /api/chat)
 NDJSON chunks, unbuffered (flush per chunk), with the final chunk carrying
-`eval_count` / `prompt_eval_count`. LocalClaw streams final answers to the Web
+`eval_count` / `prompt_eval_count`. Invarail streams final answers to the Web
 console and Chrome extension through this. Also: `tool_calls` arriving in a
 streamed response must survive.
 
 ### 5. `options` passthrough
 Forward all of: `temperature`, `num_predict`, `num_ctx`, `stop`, `top_k`,
-`top_p`, `repeat_penalty`. **`num_ctx` matters most** — LocalClaw sets it from
+`top_p`, `repeat_penalty`. **`num_ctx` matters most** — Invarail sets it from
 `session.contextSize` (131072); if the gateway drops it, models run at
 Ollama's small default and silently truncate the prompt head (the system
 prompt is what falls off first).
@@ -72,28 +72,28 @@ prompt is what falls off first).
 ### 6. Token counts
 `prompt_eval_count` and `eval_count` on every non-streamed response and on the
 final streamed chunk. (Currently present — keep it that way. `*_duration`
-fields are null; LocalClaw doesn't need them.)
+fields are null; Invarail doesn't need them.)
 
 ### 7. Embeddings
 `/api/embed` with `{model, input: string | string[]}` → `{embeddings: [[...]]}`.
-LocalClaw falls back to legacy `/api/embeddings` `{model, prompt}` →
+Invarail falls back to legacy `/api/embeddings` `{model, prompt}` →
 `{embedding: [...]}` if `/api/embed` 404s. One of the two must work —
 qwen3-embedding:8b powers the entire graph-memory system (4096-dim).
 
 ### 8. Error shape + rate limiting
 - Upstream errors: non-2xx with a JSON body. Ollama-shape `{"error": "..."}`
-  preferred over FastAPI `{"detail": [...]}` (LocalClaw surfaces the raw text
+  preferred over FastAPI `{"detail": [...]}` (Invarail surfaces the raw text
   either way, but consistent shape helps debugging).
-- If the gateway rate-limits, use **429** — LocalClaw backs off exponentially
+- If the gateway rate-limits, use **429** — Invarail backs off exponentially
   on 429 specifically (600/1200/2400ms) instead of failing the call.
 
 ### 9. Misc passthrough
-- `keep_alive` (LocalClaw sends `"30m"`) — forward so models stay warm.
+- `keep_alive` (Invarail sends `"30m"`) — forward so models stay warm.
 - `messages[].images` (base64 array) — vision path for qwen3-vl.
 - Response `message.content` verbatim — do NOT strip `<think>` blocks or
-  reformat content; LocalClaw manages thinking-tag handling itself.
+  reformat content; Invarail manages thinking-tag handling itself.
 - Tolerate requests without a `Content-Type` header (stock Ollama does;
-  currently the gateway 422s — low priority since LocalClaw always sends it).
+  currently the gateway 422s — low priority since Invarail always sends it).
 
 ## P2 — nice to have
 
@@ -141,9 +141,9 @@ curl -s -H 'Content-Type: application/json' "$GW/api/chat" -d '{
 
 ## Context: why this matters now
 
-LocalClaw's 2026-07-05/06 session moved to (a) native-only tool calling and
+Invarail's 2026-07-05/06 session moved to (a) native-only tool calling and
 (b) grammar-constrained JSON for all structured tasks, both aimed at making
 7-35B models reliable. Both features degrade gracefully when the gateway
 doesn't support them — but degraded means "back to prompt-and-pray parsing."
-The gateway is the one component between LocalClaw and those wins. Items 1-3
+The gateway is the one component between Invarail and those wins. Items 1-3
 above are the difference.

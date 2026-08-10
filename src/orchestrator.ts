@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, existsSync, statSync } from 'node:fs';
 import { Cron } from 'croner';
-import type { LocalClawConfig } from './config/types.js';
+import type { InvarailConfig } from './config/types.js';
 import type { ChannelAdapterConfig, InboundMessage } from './channels/types.js';
 import { OllamaClient } from './ollama/client.js';
 import { createInferenceClient } from './ollama/multi-backend.js';
@@ -31,7 +31,7 @@ import { TTSService } from './services/tts.js';
 import { STTService } from './services/stt.js';
 import { VisionService } from './services/vision.js';
 import { saveAttachment } from './services/attachments.js';
-import { ollamaUnreachable, toolExecutionError, LocalClawError } from './errors.js';
+import { ollamaUnreachable, toolExecutionError, InvarailError } from './errors.js';
 import { PipelineRegistry } from './pipeline/registry.js';
 import { registerAllPipelines } from './pipeline/definitions/index.js';
 import { ExecutionMetricsStore } from './metrics/execution-store.js';
@@ -65,7 +65,7 @@ export class Orchestrator {
   private ttsService: TTSService;
   private sttService: STTService;
   private visionService: VisionService;
-  private config: LocalClawConfig;
+  private config: InvarailConfig;
   private rateLimiter = new RateLimiter();
   private mediaDebouncer = new MediaDebouncer();
   private messageDebouncer = new MessageDebouncer();
@@ -81,7 +81,7 @@ export class Orchestrator {
   private pipelineRegistry: PipelineRegistry;
   executionMetrics: ExecutionMetricsStore;
 
-  constructor(config: LocalClawConfig) {
+  constructor(config: InvarailConfig) {
     this.config = config;
     this.client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
     this.toolRegistry = new ToolRegistry();
@@ -1206,7 +1206,7 @@ export class Orchestrator {
           { text: stripThinkingTags(result.answer), actions: this.confirmActionsFor(result) },
         );
       } catch (err) {
-        const wrapped = err instanceof LocalClawError ? err : new LocalClawError('TOOL_EXECUTION_ERROR', 'Blender dispatch failed', err);
+        const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Blender dispatch failed', err);
         console.error(`[Orchestrator] Blender command failed: ${wrapped.code}: ${wrapped.message}`);
         await this.channelRegistry.send(
           { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
@@ -1281,7 +1281,7 @@ export class Orchestrator {
           { text: response },
         );
       } catch (err) {
-        const wrapped = err instanceof LocalClawError ? err : new LocalClawError('TOOL_EXECUTION_ERROR', 'Research pipeline failed', err);
+        const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Research pipeline failed', err);
         console.error(`[Orchestrator] Research failed: ${wrapped.code}: ${wrapped.message}`);
         await this.channelRegistry.send(
           { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId },
@@ -1354,7 +1354,7 @@ export class Orchestrator {
               suffixes.push(`[Attached PDF: ${saved.filename} but no text could be extracted (scanned/image PDF).]`);
             }
           } catch (err) {
-            const wrapped = err instanceof LocalClawError ? err : toolExecutionError('pdf-parse', err);
+            const wrapped = err instanceof InvarailError ? err : toolExecutionError('pdf-parse', err);
             console.warn(`[Orchestrator] PDF extraction failed for ${saved.filename}: ${wrapped.message}`);
             suffixes.push(`[Attached file: ${saved.localPath}] (${saved.filename}, ${saved.mimeType})`);
           }
@@ -1716,7 +1716,7 @@ export class Orchestrator {
         }
       }
     } catch (err) {
-      const wrapped = err instanceof LocalClawError ? err : new LocalClawError('TOOL_EXECUTION_ERROR', 'Message handling failed', err);
+      const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Message handling failed', err);
       console.error(`[Orchestrator] ${wrapped.code}: ${wrapped.message}`);
       try {
         await this.channelRegistry.send(

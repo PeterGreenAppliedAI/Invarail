@@ -108,7 +108,7 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     if (ok) {
       printSuccess('TTS server is reachable');
     } else {
-      printWarning('TTS server not reachable — make sure it is running before starting LocalClaw');
+      printWarning('TTS server not reachable — make sure it is running before starting Invarail');
     }
   }
 
@@ -121,7 +121,7 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     if (ok) {
       printSuccess('STT server is reachable');
     } else {
-      printWarning('STT server not reachable — make sure it is running before starting LocalClaw');
+      printWarning('STT server not reachable — make sure it is running before starting Invarail');
     }
   }
 

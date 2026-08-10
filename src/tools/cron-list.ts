@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 
-export function createCronListTool(cronService: CronService): LocalClawTool {
+export function createCronListTool(cronService: CronService): InvarailTool {
   return {
     name: 'cron_list',
     description: 'List all scheduled jobs',

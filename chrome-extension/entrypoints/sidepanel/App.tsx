@@ -38,8 +38,8 @@ export default function App() {
     return () => { disconnectBrowser(settings); };
   }, [settings]);
 
-  // Poll for browser actions from LocalClaw and execute via content script
-  // Also re-registers as browser backend on every cycle (survives LocalClaw restarts)
+  // Poll for browser actions from Invarail and execute via content script
+  // Also re-registers as browser backend on every cycle (survives Invarail restarts)
   useEffect(() => {
     if (!connected || !settings.host) return;
 
@@ -191,7 +191,7 @@ export default function App() {
         background: 'var(--bg-surface)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16, fontWeight: 600 }}>LocalClaw</span>
+          <span style={{ fontSize: 16, fontWeight: 600 }}>Invarail</span>
           <span style={{
             width: 8, height: 8, borderRadius: '50%',
             background: connected === true ? 'var(--success)' : connected === false ? 'var(--error)' : 'var(--text-dim)',

@@ -64,7 +64,7 @@ export function Chat({ messages, onSend, streaming, connected, settings }: ChatP
             color: 'var(--text-dim)', textAlign: 'center', padding: 24,
           }}>
             <div>
-              <div style={{ fontSize: 24, marginBottom: 8 }}>LocalClaw</div>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>Invarail</div>
               <div style={{ fontSize: 12 }}>
                 {connected
                   ? 'Ask me anything. I can see your current page.'
@@ -105,7 +105,7 @@ export function Chat({ messages, onSend, streaming, connected, settings }: ChatP
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={connected ? 'Message LocalClaw...' : 'Not connected'}
+            placeholder={connected ? 'Message Invarail...' : 'Not connected'}
             disabled={!connected || streaming}
             rows={1}
             style={{

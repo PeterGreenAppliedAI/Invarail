@@ -17,13 +17,13 @@ export const BOOTSTRAP_FILES = {
 /**
  * Bootstrap a workspace directory with default files.
  * Idempotent — only creates files that don't already exist.
- * Mirrors OpenClaw's 8-file workspace but with LocalClaw-appropriate defaults.
+ * Mirrors OpenClaw's 8-file workspace but with Invarail-appropriate defaults.
  */
 export function bootstrapWorkspace(workspacePath: string, agentName?: string): void {
   mkdirSync(workspacePath, { recursive: true });
   mkdirSync(join(workspacePath, 'memory'), { recursive: true });
 
-  const name = agentName ?? 'LocalClaw Assistant';
+  const name = agentName ?? 'Invarail Assistant';
   const isNew = !existsSync(join(workspacePath, BOOTSTRAP_FILES.SOUL));
 
   writeIfMissing(join(workspacePath, BOOTSTRAP_FILES.SOUL), `# SOUL.md — Who You Are
@@ -87,7 +87,7 @@ Ask their name during your first conversation.
 - **Creature:** AI assistant
 - **Vibe:** Direct, warm, competent
 - **Emoji:** (pick one you like)
-- **Engine:** LocalClaw (Router + Specialist architecture)
+- **Engine:** Invarail (Router + Specialist architecture)
 `);
 
   writeIfMissing(join(workspacePath, BOOTSTRAP_FILES.TOOLS), `# TOOLS.md — Local Environment Notes

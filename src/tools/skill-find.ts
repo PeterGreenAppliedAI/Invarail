@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import { SkillStore } from '../skills/store.js';
 import { findMatchingSkillHybrid } from '../skills/matcher.js';
@@ -9,7 +9,7 @@ import { findMatchingSkillHybrid } from '../skills/matcher.js';
  * familiar. (Skills were previously reachable ONLY from the plan pipeline,
  * which most traffic no longer routes to — the system sat dead for months.)
  */
-export function createSkillFindTool(client: OllamaClient): LocalClawTool {
+export function createSkillFindTool(client: OllamaClient): InvarailTool {
   return {
     name: 'skill_find',
     description: `Look up a saved workflow skill matching a task. Returns proven step sequences from past successful runs. WHEN TO USE: Before planning a multi-step task (reports, scheduling flows, site workflows) — a saved skill shows the exact steps that worked before. DO NOT invent skills; if nothing matches, plan normally.`,

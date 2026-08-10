@@ -1,18 +1,18 @@
 import { toolNotFound } from '../errors.js';
-import type { LocalClawTool, ToolDefinition, ToolExecutor, ToolContext } from './types.js';
+import type { InvarailTool, ToolDefinition, ToolExecutor, ToolContext } from './types.js';
 
 export class ToolRegistry {
-  private tools = new Map<string, LocalClawTool>();
+  private tools = new Map<string, InvarailTool>();
 
-  register(tool: LocalClawTool): void {
+  register(tool: InvarailTool): void {
     this.tools.set(tool.name, tool);
   }
 
-  get(name: string): LocalClawTool | undefined {
+  get(name: string): InvarailTool | undefined {
     return this.tools.get(name);
   }
 
-  getByCategory(category: string): LocalClawTool[] {
+  getByCategory(category: string): InvarailTool[] {
     return [...this.tools.values()].filter(t => t.category === category);
   }
 
@@ -32,7 +32,7 @@ export class ToolRegistry {
   getDefinitions(names: string[]): ToolDefinition[] {
     return names
       .map(n => this.tools.get(n))
-      .filter((t): t is LocalClawTool => t !== undefined)
+      .filter((t): t is InvarailTool => t !== undefined)
       .map(({ name, description, parameterDescription, parameters, example, resultLimit }) => ({
         name,
         description,

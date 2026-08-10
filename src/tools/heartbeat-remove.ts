@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 
-export function createHeartbeatRemoveTool(cronService: CronService): LocalClawTool {
+export function createHeartbeatRemoveTool(cronService: CronService): InvarailTool {
   return {
     name: 'heartbeat_remove',
     description: 'Remove a heartbeat task by ID.',

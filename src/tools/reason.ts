@@ -1,8 +1,8 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ReasoningConfig } from '../config/types.js';
 
-export function createReasonTool(client: OllamaClient, config: ReasoningConfig): LocalClawTool {
+export function createReasonTool(client: OllamaClient, config: ReasoningConfig): InvarailTool {
   return {
     name: 'reason',
     description: 'Send a problem to the reasoning model for deep analysis, planning, or content formatting. The reasoning model thinks carefully but cannot call tools — use this after gathering information. Good for: writing articles, analyzing data, planning approaches, formatting reports.',

@@ -1,4 +1,4 @@
-/** The tools slice of the MCP protocol — the only part LocalClaw speaks. */
+/** The tools slice of the MCP protocol — the only part Invarail speaks. */
 
 export interface McpToolAnnotations {
   title?: string;

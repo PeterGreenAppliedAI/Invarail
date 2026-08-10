@@ -21,7 +21,7 @@ async function main() {
 
   const client = new OllamaClient('http://10.0.0.20:8001', '30m');
   const factStore = new FactStore(workspacePath);
-  const graphStore = new GraphMemoryStore(client, { graphName: 'localclaw_memory' });
+  const graphStore = new GraphMemoryStore(client, { graphName: 'invarail_memory' });
   await graphStore.connect();
 
   // Find all sender directories

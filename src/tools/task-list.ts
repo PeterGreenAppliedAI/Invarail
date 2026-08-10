@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { TaskStore } from '../tasks/store.js';
 
-export function createTaskListTool(taskStore: TaskStore): LocalClawTool {
+export function createTaskListTool(taskStore: TaskStore): InvarailTool {
   return {
     name: 'task_list',
     description: 'List tasks from the task board. By default shows todo and in-progress tasks.',

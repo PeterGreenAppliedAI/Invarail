@@ -1,9 +1,9 @@
 import { Cron } from 'croner';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 import { CRON_JOB_CATEGORIES as VALID_CATEGORIES } from '../cron/types.js';
 
-export function createCronAddTool(cronService: CronService): LocalClawTool {
+export function createCronAddTool(cronService: CronService): InvarailTool {
   return {
     name: 'cron_add',
     description: `Schedule a recurring task. The category must be one of: ${VALID_CATEGORIES.join(', ')}. Use "web_search" for any internet/news lookups, "exec" for commands, "memory" for saving/retrieving info.`,

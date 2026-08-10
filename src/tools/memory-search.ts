@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import { searchMarkdownFiles } from '../memory/search.js';
 import type { EmbeddingStore } from '../memory/embeddings.js';
@@ -19,7 +19,7 @@ export function createMemorySearchTool(
   embeddingStore?: EmbeddingStore,
   factStore?: FactStore,
   graphMemory?: GraphMemoryStore,
-): LocalClawTool {
+): InvarailTool {
 
   return {
     name: 'memory_search',

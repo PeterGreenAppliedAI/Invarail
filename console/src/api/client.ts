@@ -1,15 +1,15 @@
 const BASE_URL = '/console/api';
 
 export function getToken(): string | null {
-  return localStorage.getItem('localclaw_token');
+  return localStorage.getItem('invarail_token');
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem('localclaw_token', token);
+  localStorage.setItem('invarail_token', token);
 }
 
 export function clearToken(): void {
-  localStorage.removeItem('localclaw_token');
+  localStorage.removeItem('invarail_token');
 }
 
 export class ApiError extends Error {

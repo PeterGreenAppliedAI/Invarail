@@ -1,8 +1,8 @@
-# LocalClaw Architecture
+# Invarail Architecture
 
 ## Overview
 
-LocalClaw is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on a large model (currently DeepSeek-V4-Flash) served by **vLLM**; small utility/modality models run behind an **Ollama-compatible gateway**. It uses a **Router + Specialist** architecture with **deterministic pipelines** — code controls the workflow, models only extract parameters and synthesize text.
+Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on a large model (currently DeepSeek-V4-Flash) served by **vLLM**; small utility/modality models run behind an **Ollama-compatible gateway**. It uses a **Router + Specialist** architecture with **deterministic pipelines** — code controls the workflow, models only extract parameters and synthesize text.
 
 9+ models across two inference backends (vLLM + Ollama gateway), 39 tools, 12 pipelines, 15 categories, 8 channel adapters (including Chrome extension with browser control), FalkorDB graph memory with 1,000+ nodes, 451 tests across 33 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
 
@@ -74,7 +74,7 @@ in the schema lets small-context models stay low. DeepSeek-V4-Flash ignores `num
 protocol) fronts EVERYTHING: Ollama-served models and vLLM/DeepSeek behind it.
 The gateway does the cross-protocol translation itself (verified: reasoning
 headroom, Ollama-shaped tool_calls with object arguments). `inference.backends`
-is empty; LocalClaw talks to one endpoint and doesn't know what serves each model.
+is empty; Invarail talks to one endpoint and doesn't know what serves each model.
 
 ```
 client.chat({ model })
@@ -146,7 +146,7 @@ Config-gated via the `verification` block (`enabled`, `crossCheck` — both defa
 
 ```
 FalkorDB (Docker, localhost:6379)
-  Graph: localclaw_memory
+  Graph: invarail_memory
 
   (:Fact {text, importance, embedding, category, confidence})
     -[:ABOUT]->      (:Entity {name, canonical, type})
@@ -212,13 +212,13 @@ Successful plan-pipeline runs are distilled into markdown skills (generalized de
 
 ## MCP Bridge (`src/mcp/`)
 
-External MCP servers become first-class LocalClaw tools:
+External MCP servers become first-class Invarail tools:
 
 ```
 tools.mcp.servers[] → McpManager
   ├── transport: stdio  → McpStdioClient (zero-dep JSON-RPC 2.0, spawned child)
   ├── transport: http   → McpHttpClient  (streamable HTTP: JSON + SSE, Mcp-Session-Id)
-  └── translation layer → LocalClawTool per server tool
+  └── translation layer → InvarailTool per server tool
         names <server>_<tool>, sanitized to [A-Za-z0-9_-]{1,64} (OpenAI-path charset)
         descriptions capped 500 chars on sentence boundary (small-model budget)
         readOnlyHint → silent · everything else requiresConfirm (trust:'auto' waives)
@@ -229,7 +229,7 @@ tools.mcp.servers[] → McpManager
         image content → [FILE:] tokens on the existing media pipeline
 ```
 
-Stdio servers accept a `cwd` (servers that resolve their own relative paths — config files, downstream child processes — need their repo root, not LocalClaw's). Reference downstream: [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) — a workflow-first MCP server whose compiled flows power the research pipeline's `flow_gather` stage (see README "Add an MCP server" for setup).
+Stdio servers accept a `cwd` (servers that resolve their own relative paths — config files, downstream child processes — need their repo root, not Invarail's). Reference downstream: [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) — a workflow-first MCP server whose compiled flows power the research pipeline's `flow_gather` stage (see README "Add an MCP server" for setup).
 
 **Explicit tool mentions (code gate):** at pipeline dispatch, `findExplicitToolMentions` scans the message against the allowed tool names (word-boundary, case-insensitive; MCP-prefixed tools also match their bare downstream name — "weekly_gather" finds `flows_weekly_gather`). Hits are injected as `_explicitToolMentions`/`_explicitFlowMentions`. Two consumers: the research `flow_gather` gate, and the plan pipeline's skill guard — a matched skill whose steps never mention an explicitly named tool is ignored (explicit instruction outranks learned habit). Deliberately strict: no semantic flow-matching — "close enough" selection is the skill-hijack bug class, one layer up.
 
@@ -238,14 +238,14 @@ Deliberately NOT the official SDK — ~10% of the protocol (initialize/tools-lis
 ## Chrome Extension (Browser Companion)
 
 ```
-Chrome Side Panel (React) → HTTP fetch (SSE streaming) → LocalClaw Web API (localhost:3100)
+Chrome Side Panel (React) → HTTP fetch (SSE streaming) → Invarail Web API (localhost:3100)
   ├── Content script extracts: URL, title, selected text, page content (~10K chars)
   ├── [PAGE:] token injected → console/api/chat detects → overrideCategory: chat
-  ├── Context menus: "Ask LocalClaw about '%s'" (selection), "Summarize this page" (page)
+  ├── Context menus: "Ask Invarail about '%s'" (selection), "Summarize this page" (page)
   └── No fetching needed — model reads injected page content directly
 ```
 
-Built with WXT (Manifest V3), React, TypeScript. Connects to existing Web channel API — no new backend. Works cross-network (extension on Windows, LocalClaw on Mac Mini).
+Built with WXT (Manifest V3), React, TypeScript. Connects to existing Web channel API — no new backend. Works cross-network (extension on Windows, Invarail on Mac Mini).
 
 ## File Type Routing (Orchestrator)
 

@@ -196,11 +196,11 @@ export async function runPreflightStep(state: WizardState): Promise<void> {
   console.log(`\n  Summary: ${passes} passed, ${warns} warnings, ${fails} failed`);
 
   if (fails === 0 && warns === 0) {
-    printInfo('\nAll checks passed! Run `npm run dev` to start LocalClaw.');
+    printInfo('\nAll checks passed! Run `npm run dev` to start Invarail.');
   } else if (fails === 0) {
-    printInfo('\nNo critical failures. Run `npm run dev` to start LocalClaw.');
+    printInfo('\nNo critical failures. Run `npm run dev` to start Invarail.');
     printInfo('Address warnings above for full functionality.');
   } else {
-    printInfo('\nSome checks failed. Fix the issues above before running LocalClaw.');
+    printInfo('\nSome checks failed. Fix the issues above before running Invarail.');
   }
 }

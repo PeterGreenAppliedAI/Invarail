@@ -6,7 +6,7 @@ import { enrichCalendarOutput } from '../src/temporal/urgency.js';
 import { parseCalendarEvents } from '../src/services/prep-proposals.js';
 import { resolveWorkspacePath } from '../src/agents/scope.js';
 
-const config = loadConfig('localclaw.config.json5');
+const config = loadConfig('invarail.config.json5');
 const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
 const registry = new ToolRegistry();
 await registerAllTools(registry, config, { ollamaClient: client });

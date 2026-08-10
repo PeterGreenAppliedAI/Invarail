@@ -10,8 +10,8 @@ import { runPreflightStep } from './steps/preflight.js';
 import { runTierStep, runStarterGenerate } from './steps/tier.js';
 
 async function main(): Promise<void> {
-  printHeader('LocalClaw Setup Wizard');
-  printInfo('This wizard will help you configure LocalClaw.');
+  printHeader('Invarail Setup Wizard');
+  printInfo('This wizard will help you configure Invarail.');
   printInfo('Press Enter to accept defaults shown in [brackets].\n');
 
   try {

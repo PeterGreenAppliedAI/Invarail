@@ -1,8 +1,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 
-export function createMemoryGetTool(workspacePath: string): LocalClawTool {
+export function createMemoryGetTool(workspacePath: string): InvarailTool {
   return {
     name: 'memory_get',
     description: 'Read the contents of a memory file',

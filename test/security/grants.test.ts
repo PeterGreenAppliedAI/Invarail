@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GrantStore, grantTargetFor, resolveGrantApproval } from '../../src/security/grants.js';
-import type { LocalClawTool } from '../../src/tools/types.js';
+import type { InvarailTool } from '../../src/tools/types.js';
 
-function tool(overrides: Partial<LocalClawTool> = {}): LocalClawTool {
+function tool(overrides: Partial<InvarailTool> = {}): InvarailTool {
   return {
     name: 'send_message',
     description: '',

@@ -23,7 +23,7 @@ export default function Sidebar() {
   return (
     <aside className="w-56 bg-zinc-900 border-r border-zinc-800 flex flex-col">
       <div className="p-4 border-b border-zinc-800">
-        <h1 className="text-lg font-bold text-white">LocalClaw</h1>
+        <h1 className="text-lg font-bold text-white">Invarail</h1>
         <p className="text-xs text-zinc-500">Management Console</p>
       </div>
       <nav className="flex-1 p-2 space-y-0.5">
