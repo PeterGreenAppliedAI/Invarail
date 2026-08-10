@@ -42,17 +42,23 @@ export async function synthesizeExperiences(opts: {
   recentTurns?: TurnLike[];
   metricsPath?: string;
   executionsPath?: string;
+  markerPath?: string;
 }): Promise<{ created: string[]; reinforced: number; superseded: number; skipped: number }> {
   const result = { created: [] as string[], reinforced: 0, superseded: 0, skipped: 0 };
   const { candidates, latestTs } = harvestExperienceCandidates({
     metricsPath: opts.metricsPath,
     executionsPath: opts.executionsPath,
     recentTurns: opts.recentTurns,
+    markerPath: opts.markerPath,
   });
+  console.log(`[Experience] Harvested ${candidates.length} candidate(s)`);
   if (candidates.length === 0) return result;
 
+  // NEWEST first: under the per-cycle cap, recent signals must never lose to
+  // historic backlog (a fresh 👎 fell off the end of an oldest-first slice)
+  const ordered = [...candidates].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
   const synthesized: Array<{ candidate: ExperienceCandidate; parsed: { taskShape?: string; approach?: string; outcome?: string; worth_keeping?: boolean } }> = [];
-  for (const candidate of candidates.slice(0, 12)) {
+  for (const candidate of ordered.slice(0, 12)) {
     try {
       const raw = await chatMaybeStructured(opts.client, opts.model, [
         {
@@ -61,7 +67,7 @@ export async function synthesizeExperiences(opts: {
             'You summarize an agent\'s work experiences — what approach was used for what task shape, and whether it worked, judged by REAL user signals (reactions, corrections, denials).',
             'Generalize the task to its SHAPE ("weekly news digest request", "image generation ask") — surface details like topic vary, the shape recurs.',
             'The approach is WHAT WAS DONE (tools/sequence/style), not a judgment.',
-            'worth_keeping=false for: one-off infrastructure failures, ambiguous signals, anything with no reusable pattern.',
+            'worth_keeping=false ONLY for: one-off infrastructure failures or signals with no reusable pattern. An explicit user reaction (thumbs up/down) or denial is NEVER ambiguous — it is the user\'s direct judgment.',
             'Return ONLY JSON: {"taskShape": "...", "approach": "...", "outcome": "worked"|"failed", "worth_keeping": true|false}',
           ].join('\n'),
         },
@@ -74,11 +80,16 @@ export async function synthesizeExperiences(opts: {
     }
   }
 
-  const keepers = synthesized.filter(s => s.parsed.worth_keeping === true && s.parsed.taskShape && s.parsed.approach);
+  // Explicit signals (reaction/deny, strength 2) BYPASS the model's veto —
+  // the user's direct judgment IS the keep-decision; the model only fills in
+  // shape/approach. worth_keeping filters inferred noise only.
+  const keepers = synthesized.filter(s =>
+    s.parsed.taskShape && s.parsed.approach
+    && (s.candidate.evidenceStrength === 2 || s.parsed.worth_keeping === true));
   if (synthesized.length >= 5 && keepers.length === synthesized.length) {
     console.warn(`[Experience] Batch distrusted — model kept all ${synthesized.length}`);
     logAutonomousAction({ action: 'experience_batch_distrusted', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'failure', detail: `${synthesized.length} candidates` });
-    if (latestTs) advanceMarker(latestTs);
+    if (latestTs) advanceMarker(latestTs, opts.markerPath);
     return result;
   }
   result.skipped = synthesized.length - keepers.length;
@@ -108,6 +119,14 @@ export async function synthesizeExperiences(opts: {
     }
   }
 
-  if (latestTs) advanceMarker(latestTs);
+  // Total synthesis failure (every call errored) = infrastructure problem —
+  // do NOT consume the evidence; re-harvest next cycle
+  if (synthesized.length === 0 && candidates.length > 0) {
+    console.warn('[Experience] All synthesis calls failed — marker NOT advanced, evidence preserved');
+    return result;
+  }
+  if (latestTs) advanceMarker(latestTs, opts.markerPath);
+  // Silence is a bug: always report the disposition, even when nothing kept
+  console.log(`[Experience] Disposition: ${result.created.length} created, ${result.reinforced} reinforced, ${result.superseded} superseded, ${result.skipped} skipped of ${synthesized.length} synthesized`);
   return result;
 }

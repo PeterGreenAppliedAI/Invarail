@@ -26,7 +26,7 @@ describe('experience harvester', () => {
     const execPath = join(execDir, 'executions.jsonl');
     writeFileSync(execPath, JSON.stringify({ id: 'x1', task: 'make me an anime image', ts: T0, success: true, calls: [{ name: 'image_generate' }] }) + '\n');
 
-    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execPath });
+    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execPath, markerPath: join(mkdtempSync(join(tmpdir(), "mk-")), "m.json") });
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({
       taskPreview: 'make me an anime image',
@@ -46,7 +46,7 @@ describe('experience harvester', () => {
     const execPath = join(execDir, 'executions.jsonl');
     writeFileSync(execPath, JSON.stringify({ id: 'x1', task: 'old task', ts: T0, success: true, calls: [] }) + '\n');
 
-    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execPath });
+    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execPath, markerPath: join(mkdtempSync(join(tmpdir(), "mk-")), "m.json") });
     expect(candidates[0].taskPreview).toBe('');   // unpaired — no stale attribution
   });
 
@@ -56,7 +56,7 @@ describe('experience harvester', () => {
       { timestamp: T1, type: 'steering', category: 'exec', messagePreview: 'no stop doing that' },
       { timestamp: T1, type: 'review_note', category: 'web_search', note: 'response ignored a tool error' },
     ]);
-    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: '/nonexistent' });
+    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: "/nonexistent", markerPath: join(mkdtempSync(join(tmpdir(), "mk-")), "m.json") });
     const byKind = Object.fromEntries(candidates.map(c => [c.signalKind, c]));
     expect(byKind.deny.evidenceStrength).toBe(2);
     expect(byKind.steering.evidenceStrength).toBe(1);
@@ -69,6 +69,7 @@ describe('experience harvester', () => {
     const { candidates } = harvestExperienceCandidates({
       metricsPath: metrics,
       executionsPath: '/nonexistent',
+      markerPath: join(mkdtempSync(join(tmpdir(), 'mk-')), 'm.json'),
       recentTurns: [
         { text: "no that's not what I wanted", role: 'user', createdAt: T1, sessionKey: 's1' },
         { text: 'thanks, perfect', role: 'user', createdAt: T1, sessionKey: 's2' },
@@ -127,8 +128,23 @@ describe('pairing ignores continuation records', () => {
       JSON.stringify({ id: 'a', task: 'make me an image of a fox', ts: '2026-08-10T16:56:00Z', success: true, calls: [{ name: 'image_generate' }] }),
       JSON.stringify({ id: 'b', task: '[SYSTEM] The user approved and image_generate has now run', ts: '2026-08-10T16:58:00Z', success: true, calls: [{ name: 'read_file' }] }),
     ].join('\n') + '\n');
-    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execs });
+    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execs, markerPath: join(mkdtempSync(join(tmpdir(), 'mk-')), 'm.json') });
     expect(candidates[0].taskPreview).toBe('make me an image of a fox');
     expect(candidates[0].calls).toEqual(['image_generate']);
+  });
+});
+
+describe('explicit signals bypass the model veto', () => {
+  // The model summarizes; it may not overrule the principal's direct judgment.
+  // Pinned at the filter level: a strength-2 candidate with worth_keeping=false
+  // from the model must still be kept (the filter logic, extracted inline here,
+  // mirrors experience-synthesis.ts).
+  it('strength-2 keeps despite worth_keeping=false; strength-1 respects the veto', () => {
+    const filter = (s: { candidate: { evidenceStrength: 1 | 2 }; parsed: { taskShape?: string; approach?: string; worth_keeping?: boolean } }) =>
+      Boolean(s.parsed.taskShape && s.parsed.approach
+        && (s.candidate.evidenceStrength === 2 || s.parsed.worth_keeping === true));
+    expect(filter({ candidate: { evidenceStrength: 2 }, parsed: { taskShape: 'x', approach: 'y', worth_keeping: false } })).toBe(true);
+    expect(filter({ candidate: { evidenceStrength: 1 }, parsed: { taskShape: 'x', approach: 'y', worth_keeping: false } })).toBe(false);
+    expect(filter({ candidate: { evidenceStrength: 1 }, parsed: { taskShape: 'x', approach: 'y', worth_keeping: true } })).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 /**
  * Code-driven candidate detection for the experience layer. CODE DETECTS,
@@ -23,7 +24,7 @@ export interface ExperienceCandidate {
   sessionKey?: string;
 }
 
-const MARKER_PATH = '.learnings/last-experience-harvest.json';
+const DEFAULT_MARKER_PATH = '.learnings/last-experience-harvest.json';
 const WINDOW_MS = 15 * 60 * 1000;
 
 const NEGATION_RE = /^(no\b|not\b|stop\b|wrong\b|that'?s not|nope\b|ugh\b|bad\b|terrible\b|don'?t\b)/i;
@@ -43,12 +44,17 @@ function readJsonl<T>(path: string): T[] {
   return out;
 }
 
-function loadMarker(): number {
-  try { return Date.parse(JSON.parse(readFileSync(MARKER_PATH, 'utf-8')).lastTimestamp) || 0; } catch { return 0; }
+function loadMarker(markerPath: string): number {
+  try { return Date.parse(JSON.parse(readFileSync(markerPath, 'utf-8')).lastTimestamp) || 0; } catch { return 0; }
 }
 
-export function advanceMarker(toIso: string): void {
-  try { writeFileSync(MARKER_PATH, JSON.stringify({ lastTimestamp: toIso })); } catch { /* non-fatal */ }
+export function advanceMarker(toIso: string, markerPath: string = DEFAULT_MARKER_PATH): void {
+  try {
+    mkdirSync(dirname(markerPath), { recursive: true });
+    writeFileSync(markerPath, JSON.stringify({ lastTimestamp: toIso }));
+  } catch (err) {
+    console.warn('[Experience] Marker write failed (will re-harvest):', err instanceof Error ? err.message : err);
+  }
 }
 
 /** Nearest preceding execution within the window — the task the signal judges. */
@@ -66,9 +72,10 @@ export function harvestExperienceCandidates(opts: {
   metricsPath?: string;
   executionsPath?: string;
   recentTurns?: TurnLike[];        // optional transcript window for re-ask/praise heuristics
+  markerPath?: string;
   now?: number;
 }): { candidates: ExperienceCandidate[]; latestTs: string | null } {
-  const since = loadMarker();
+  const since = loadMarker(opts.markerPath ?? DEFAULT_MARKER_PATH);
   const metrics = readJsonl<MetricEvent>(opts.metricsPath ?? 'data/metrics.jsonl')
     .filter(e => Date.parse(e.timestamp) > since);
   const executions = readJsonl<ExecutionRecord>(opts.executionsPath ?? 'data/executions.jsonl');
