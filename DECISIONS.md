@@ -4,6 +4,18 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Graph Experience Memory — Approaches Judged by the User's Actual Reactions (August 10 2026)
+
+### The build
+First build of the Invarail era, replacing what skills tried to be. `:Experience` nodes in FalkorDB (same graph as facts): task shape → approach → outcome → **user satisfaction**, silently injected like facts ("## Approach notes from similar past work — advisory"). Peter's requirement verbatim: "it should also remember if the user was happy with it or not, so it knows not to do it again and try something else."
+- **Signals are code-detected** (doctrine: code detects, model explains — model self-assessment never creates an experience): Discord 👍/👎 reactions (new listener — explicit ground truth), confirm denials, mid-turn steering (now persisted — interrupting a run is never praise), post-task review notes (now persisted), re-ask/praise patterns in transcripts. Explicit signals are born at evidence 2 (inject immediately); inferred ones at 1 (must recur).
+- **Contradiction is pure code** — an improvement on the fact system's LLM judge: structured outcome/satisfaction fields flipped within the KNN similarity band → SUPERSEDES. No model in the loop.
+- Synthesis at heartbeat with the lesson guards verbatim (max 3/cycle, batch-distrust); `!experiences` lists/drops; `memory.experiences.enabled` gates everything; injection floor 0.60 PROVISIONAL (measure at ~10 real experiences, like the lesson/memory floors).
+
+### The authority boundary is now a TESTED invariant
+"Experience informs execution; experience never expands authority" is pinned structurally in `test/learnings/experience-system.test.ts`: experience modules import nothing from `security/`; the store may be consumed ONLY by the four advisory surfaces (dispatch priming, heartbeat synthesis, the synthesis writer, the !experiences command); no security module references the experience layer. Rebuilding skills under another name remains the named failure mode — if a future change wants experience to touch permissions, routing, confirmation, or tool exposure, this entry is the tripwire: the answer is no.
+- Lessons COEXIST for now (Peter's ruling) — merge when experiences ≥ 20 and lessons stop gaining evidence.
+
 ## LocalClaw Explored the Design Space — Invarail Is What Survived (August 10 2026)
 
 ### The rename
