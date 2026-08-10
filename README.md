@@ -1,8 +1,16 @@
 # Invarail
 
-**A local-model-first AI agent framework that actually works with Ollama.**
+**The authority plane for local AI agents — adaptive intelligence inside immutable governance.**
 
-Invarail runs entirely on your own hardware. No cloud APIs, no per-token costs, no data leaving your machine. It connects to Discord, Telegram, WhatsApp, Chrome (browser extension), and more via pluggable adapters — and handles complex multi-tool tasks using local models through a **Router + Specialist** architecture.
+*(Formerly LocalClaw. The name is invariant + rail: authority that cannot move, structure that exists so things move fast.)*
+
+Invarail runs entirely on your own hardware: no cloud APIs, no per-token costs, no data leaving your machine. It is three things, deliberately separated:
+
+- **An authority plane** — permissions, target-bound grants, confirmation ledgers, audit trails, and tool exposure that the agent *cannot modify from inside*. Learning may inform execution; it may never expand authority.
+- **A daily driver** — chat with graph memory, verified research reports, image generation, briefings and reminders, on Discord/Telegram/web/Chrome through pluggable adapters.
+- **A governed host for compiled workflows** — repeatable procedures live in [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flows served through the MCP bridge; the model picks a flow and fills 2-3 params instead of improvising orchestration.
+
+Under it all, a **Router + Specialist** architecture built for small models (7-30B) — where every failure is legible the same evening, which is exactly how this architecture was learned.
 
 ## The Problem
 

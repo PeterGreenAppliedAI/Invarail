@@ -18,10 +18,9 @@ Channel (Discord/Telegram/Slack/Web/Gmail/WhatsApp/MS Graph/iMessage/Chrome Exte
 **Key components:**
 - **Router** — phi4:14b, single-word classification into categories: `chat`, `web_search`, `memory`, `exec`, `cron`, `message`, `website`, `multi`, `config`, `task`, `research`, `personal`. Pre-model overrides for high-confidence patterns (PDF reports, calendar queries; bare URLs → website — a URL inside a larger request does NOT hijack routing). Model output is enum-grammar-constrained via `format` when the backend supports it. `config.router.timeout` is ENFORCED (Promise race → keyword fallback; the client's connection-retry loop no longer stalls messages past the budget). Fallback to `defaultCategory` on timeout/parse failure. Implemented in `src/router/classifier.ts`.
 - **Pipeline engine** — `src/pipeline/executor.ts`. Deterministic stage-based workflows: extract, tool, parallel_tool, llm, code, branch, llm_branch, loop. Most categories use pipelines instead of letting the model decide the workflow. Extraction (`src/pipeline/extractor.ts`) uses grammar-constrained decoding (`format` JSON schema, auto-fallback if the backend rejects it), JSON5-tolerant parsing, post-parse required/enum/coercion validation feeding the repair prompt, and best-effort params over aborting; `ExtractStage.fallback(ctx)` provides deterministic degrade-not-abort per stage. `llm_branch` output is enum-constrained.
-- **Plan pipeline** — `src/pipeline/definitions/plan.ts`. LLM decomposes goals into specialist sub-tasks, self-reflects, executes via foreman handoffs with write-through artifacts. Used by `multi` category. **Skill guards:** a matched skill whose steps never mention an explicitly named tool is ignored (`_explicitToolMentions` — explicit instruction outranks learned habit); a skill whose saved plan produced zero parseable steps (fallback) earns NO success credit and NO trigger append — fallback-credited successes made a wrong match stronger every run it derailed.
+- **Plan pipeline** — `src/pipeline/definitions/plan.ts`. LLM decomposes goals into specialist sub-tasks, self-reflects, executes via foreman handoffs with write-through artifacts. Used by `multi` category. The skills system was retired 2026-08-10 (successor: graph experience memory — experience informs execution, never expands authority; see DECISIONS).
 - **Research pipeline** — `src/pipeline/definitions/research.ts`. [flow_gather] → decompose → per-facet parallel search + fetch + synthesis → analytical markdown report → **evidence verification** → deterministic markdown→HTML→PDF render with charts (absolute img paths — LibreOffice resolves relative src against the temp HTML's dir). **Flow-first gathering:** when the request EXPLICITLY names an available flow tool, `flow_gather` calls it once; `parseFlowGather` turns its `##` sections into facets and links into per-facet source pools; decompose/parse_angles skip (`when` gates); `researchAngle(ctx, angle, presetUrls)` fetches/synthesizes identically so verification works unchanged. Flow failure degrades to normal search. Strict naming only — NO semantic flow-matching (that's the skill-hijack bug class one layer up).
 - **Evidence verification** — `src/pipeline/verification.ts` + stages in research.ts. After the draft, extract atomic claims (fast model, grammar-constrained via `CLAIMS_JSON_SCHEMA`), check each against the **cached pages that actually mention it** (`pickRelevantSources` ranks all cached sources by token overlap — no independent search), and **attribute/qualify (never remove)** overstated or single-sourced claims. Corrections are **code-driven sentence splices**: `locateClaimSentence` fuzzy-locates the claim's sentence by token overlap (URLs AND decimal numbers are masked with same-length filler before segmentation — any non-terminator dot splices corrections mid-URL/mid-version-number; skips Sources/headings/charts; skips rather than splicing a wrong match), the model rewrites ONE sentence, code splices it back with sanity bounds — the report body is never handed to a model for wholesale rewriting. A **Tier-1 cross-check** then escalates a bounded set of high-impact, falsifiable claims (corporate events / financials / market-share, capped at `maxCrossChecks`) to ONE independent search each — CONTRADICTED → `correct` the wrong detail (this is what catches the Groq-date class of error); CONFIRMED → un-hedge; SILENT → leave. Publishes with a `## Verification` appendix + auditable `verification.json`. Config-gated via `verification` block (`enabled`, `crossCheck`, both default on).
-- **Analytics pipeline** — `src/pipeline/definitions/analytics.ts`. File upload → pandas report (code) → matplotlib charts (code) → LLM executive interpretation. Code computes all numbers; model only interprets. Auto-routed when data files (.csv, .xlsx, .json) are uploaded.
 - **Tool-loop engine** — `runToolLoop()` in `src/tool-loop/engine.ts`. ReAct-style loop with native Ollama tool calls + regex fallback parser. Includes hallucination detection, drift detection, error learning hints.
 - **Dispatch pipeline** — `src/dispatch.ts` routes classified messages to specialists/pipelines. Handles 6-layer security enforcement, tool stripping, context isolation.
 - **Briefing system** — `src/orchestrator.ts`. Separate from heartbeat. Runs at 8am/1:15pm/5pm. Gathers calendar + tasks + memory, runs CoT reasoning via qwen3.6:35b, delivers contextual insights.
@@ -198,7 +197,7 @@ Additional security:
 ### Dependencies
 
 - No new dependencies without justification. Node 22+ built-ins preferred.
-- Current stack: zod, discord.js, better-sqlite3, croner, json5, playwright-core, googleapis, @slack/bolt, @whiskeysockets/baileys, @azure/identity.
+- Current stack: zod, discord.js, better-sqlite3, croner, json5, playwright-core, googleapis, sharp.
 
 ---
 
@@ -226,9 +225,8 @@ src/
     definitions/            #   Pipeline definitions per category
       plan.ts               #     Plan pipeline (foreman handoffs, skill check, reflection)
       research.ts           #     Research pipeline (decompose → per-facet research → verify → PDF)
-      analytics.ts          #     Analytics pipeline (file upload → pandas → charts → LLM interpretation)
       heartbeat.ts          #     Deterministic heartbeat (task board + memory, no LLM date reasoning)
-      cron.ts, task.ts, memory.ts, web-search.ts, exec.ts, message.ts, website.ts
+      cron.ts, task.ts, memory.ts, web-search.ts, exec.ts, message.ts, website.ts, code-gen.ts
 
   tool-loop/                # ReAct execution engine
     engine.ts               #   runToolLoop() — core loop + drift detection + error learning
@@ -261,12 +259,8 @@ src/
     registry.ts             #   ChannelRegistry class
     discord/                #   Discord adapter (discord.js)
     telegram/               #   Telegram adapter (grammy)
-    slack/                  #   Slack adapter (@slack/bolt)
     web/                    #   Web API adapter + voice UI
     gmail/                  #   Gmail adapter (googleapis)
-    msgraph/                #   MS Graph adapter (@azure/identity)
-    whatsapp/               #   WhatsApp adapter (@whiskeysockets/baileys)
-    imessage/               #   iMessage adapter (BlueBubbles REST API)
 
   router/                   # Message classification
     classifier.ts           #   classifyMessage() — pre-model overrides → model → keyword fallback
@@ -277,11 +271,6 @@ src/
     openai-client.ts        #   OpenAICompatClient — vLLM /v1/chat/completions, Ollama<->OpenAI translation
     multi-backend.ts        #   MultiBackendClient (extends OllamaClient) — routes by model id; createInferenceClient()
     types.ts                #   OllamaMessage, OllamaTool, OllamaToolCall
-
-  skills/                   # Self-improving procedural memory
-    store.ts                #   SkillStore — save/load/update/archive/merge; triggers frontmatter (concrete past requests)
-    matcher.ts              #   findMatchingSkillHybrid() — dense similarity first, keyword scoring fallback
-    semantic.ts             #   Skill embeddings in EmbeddingStore (source='skill'); floor via scripts/skill-match-check.ts
 
   plugins/                  # Plugin system — dynamic tool discovery
     loader.ts               #   Scan plugins/ and ~/.invarail/plugins/, dynamic import, auto-register
@@ -419,7 +408,7 @@ Document/media tools return `[FILE:path]` tokens. These are:
 4. **Extracted** by `extractMediaAttachments()` in orchestrator.ts for channel delivery
 
 ### [PAGE:] token pattern (Chrome Extension)
-Chrome extension injects `[PAGE: url | title]`, `[SELECTED: text]`, and `[PAGE_CONTENT]...[/PAGE_CONTENT]` tokens into messages. Detection in `src/console/handlers/chat.ts` forces `overrideCategory: 'chat'` — the model reads injected content, never fetches. The `[DATA_FILE:]` pattern in the orchestrator follows the same approach but routes to `analytics`.
+Chrome extension injects `[PAGE: url | title]`, `[SELECTED: text]`, and `[PAGE_CONTENT]...[/PAGE_CONTENT]` tokens into messages. Detection in `src/console/handlers/chat.ts` forces `overrideCategory: 'chat'` — the model reads injected content, never fetches. Data-file uploads route to `exec` (the analytics pipeline was retired 2026-08-10; code_session covers pandas work on request).
 
 **Important:** The console API (`/console/api/chat`) dispatches directly — NOT through the orchestrator's `handleMessage()`. Routing overrides for Web/Extension must go in `chat.ts`, not `orchestrator.ts`.
 
