@@ -1079,7 +1079,10 @@ RULES:
   // (open contract — detect.ts nominates recurring procedures for compilation)
   const executionsLog = config.tools?.mcp?.executionsLog;
   const toolCalls = result.steps.filter(s => s.action);
-  if (executionsLog && toolCalls.length > 0) {
+  // [SYSTEM] dispatches (post-confirm continuations) are not user tasks —
+  // recording them pollutes FlowMCP detection AND breaks the experience
+  // harvester's signal→task pairing (a 👎 landed on a continuation record)
+  if (executionsLog && toolCalls.length > 0 && !message.startsWith('[SYSTEM]')) {
     appendExecutionRecord(executionsLog, {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       task: message.slice(0, 100),

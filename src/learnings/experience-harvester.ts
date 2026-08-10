@@ -55,6 +55,7 @@ export function advanceMarker(toIso: string): void {
 function pairTask(signalTs: number, executions: ExecutionRecord[]): ExecutionRecord | undefined {
   let best: ExecutionRecord | undefined;
   for (const e of executions) {
+    if (e.task.startsWith('[SYSTEM]')) continue;   // continuations are not user tasks
     const t = Date.parse(e.ts);
     if (t <= signalTs && signalTs - t <= WINDOW_MS && (!best || t > Date.parse(best.ts))) best = e;
   }

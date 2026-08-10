@@ -116,3 +116,19 @@ describe('authority boundary (experience informs, never expands authority)', () 
     expect(hits).toBe('');
   });
 });
+
+describe('pairing ignores continuation records', () => {
+  it('a signal pairs with the real user task, not a nearer [SYSTEM] continuation', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'exp-'));
+    const metrics = join(dir, 'metrics.jsonl');
+    const execs = join(dir, 'executions.jsonl');
+    writeFileSync(metrics, JSON.stringify({ timestamp: '2026-08-10T16:59:00Z', type: 'reaction', valence: -1, emoji: '👎', channel: 'discord', channelId: 'c', senderId: 'u' }) + '\n');
+    writeFileSync(execs, [
+      JSON.stringify({ id: 'a', task: 'make me an image of a fox', ts: '2026-08-10T16:56:00Z', success: true, calls: [{ name: 'image_generate' }] }),
+      JSON.stringify({ id: 'b', task: '[SYSTEM] The user approved and image_generate has now run', ts: '2026-08-10T16:58:00Z', success: true, calls: [{ name: 'read_file' }] }),
+    ].join('\n') + '\n');
+    const { candidates } = harvestExperienceCandidates({ metricsPath: metrics, executionsPath: execs });
+    expect(candidates[0].taskPreview).toBe('make me an image of a fox');
+    expect(candidates[0].calls).toEqual(['image_generate']);
+  });
+});
