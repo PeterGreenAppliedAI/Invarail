@@ -12,12 +12,12 @@ import { GraphMemoryStore } from '../src/memory/graph-store.js';
 
 const QUERIES = [
   { label: 'irrelevant (expect 0 past floor)', q: 'how do I fold an origami paper crane' },
-  { label: 'relevant (expect hits)', q: 'what hardware does LocalClaw run on' },
+  { label: 'relevant (expect hits)', q: 'what hardware does Invarail run on' },
   { label: 'mid (personal-adjacent)', q: 'what projects am I working on right now' },
 ];
 
 async function main(): Promise<void> {
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
   const store = new GraphMemoryStore(client);
   // Facts are stored under the USER's sender id (config.ownerId), not the

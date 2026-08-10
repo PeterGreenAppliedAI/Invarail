@@ -4,7 +4,7 @@ import { getAccessToken } from './oauth.js';
 import { saveAttachment } from '../services/attachments.js';
 import type { McpServerConfig } from '../config/types.js';
 import type { McpToolDefinition, McpCallResult } from './types.js';
-import type { LocalClawTool, ToolParameterSchema } from '../tools/types.js';
+import type { InvarailTool, ToolParameterSchema } from '../tools/types.js';
 
 const MAX_DESCRIPTION_CHARS = 500;
 const MAX_RESPAWN_ATTEMPTS = 3;
@@ -25,7 +25,7 @@ interface ServerState {
 
 /**
  * Owns the lifecycle of configured MCP servers and translates their tools
- * into LocalClawTool objects. A failing server never blocks boot (same
+ * into InvarailTool objects. A failing server never blocks boot (same
  * degrade-not-abort as the plugin loader); a crashed server is lazily
  * respawned on the next call (same pattern as the FalkorDB reconnect).
  */
@@ -105,7 +105,7 @@ export class McpManager {
     }
   }
 
-  /** Map MCP content parts to the string world of LocalClaw tool results. */
+  /** Map MCP content parts to the string world of Invarail tool results. */
   private renderResult(serverName: string, toolName: string, result: McpCallResult): string {
     const parts: string[] = [];
     const fileTokens: string[] = [];
@@ -144,9 +144,9 @@ export class McpManager {
     }
   }
 
-  /** Translate every connected server's MCP tools into LocalClawTool objects. */
-  buildTools(): LocalClawTool[] {
-    const tools: LocalClawTool[] = [];
+  /** Translate every connected server's MCP tools into InvarailTool objects. */
+  buildTools(): InvarailTool[] {
+    const tools: InvarailTool[] = [];
     const taken = new Set<string>();
     for (const state of this.servers.values()) {
       const { config } = state;
@@ -163,7 +163,7 @@ export class McpManager {
     return tools;
   }
 
-  private translateTool(state: ServerState, def: McpToolDefinition, prefix: string, taken: Set<string>): LocalClawTool {
+  private translateTool(state: ServerState, def: McpToolDefinition, prefix: string, taken: Set<string>): InvarailTool {
     const { config } = state;
     const readOnly = def.annotations?.readOnlyHint === true
       || config.readOnlyTools.includes(def.name);

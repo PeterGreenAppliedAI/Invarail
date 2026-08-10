@@ -1,6 +1,6 @@
-# LocalClaw Roadmap
+# Invarail Roadmap
 
-LocalClaw is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, WhatsApp, and Web with a Router + Specialist architecture. Foreground reasoning runs on DeepSeek-V4-Flash via **vLLM** (a swappable foreground slot — was MiniMax-M2.7 before); small/modality models run on an Ollama-compatible gateway, routed by a `MultiBackendClient`. 39 tools, 12 pipelines, FalkorDB graph memory, autonomous heartbeats and briefings. 451 tests.
+Invarail is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, WhatsApp, and Web with a Router + Specialist architecture. Foreground reasoning runs on DeepSeek-V4-Flash via **vLLM** (a swappable foreground slot — was MiniMax-M2.7 before); small/modality models run on an Ollama-compatible gateway, routed by a `MultiBackendClient`. 39 tools, 12 pipelines, FalkorDB graph memory, autonomous heartbeats and briefings. 451 tests.
 
 ---
 
@@ -16,7 +16,7 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 - **Observation Summarization** — LLM-based summarization for old tool observations instead of hard truncation
 - **Non-streaming Message Splitting** — Long responses split correctly on all code paths
 - **Conversational Guard** — Lightweight length-based guard for short ambiguous messages. Replaced keyword-based task intent matching (too fragile). Speculative language ("I wonder", "what if") routed to chat via pre-model override
-- **Chrome Extension** — Browser companion side panel (WXT + React + Manifest V3). Content script extracts page context, streams to LocalClaw via existing Web API. Right-click context menus. Works cross-network (extension on Windows, LocalClaw on Mac Mini)
+- **Chrome Extension** — Browser companion side panel (WXT + React + Manifest V3). Content script extracts page context, streams to Invarail via existing Web API. Right-click context menus. Works cross-network (extension on Windows, Invarail on Mac Mini)
 - **Browser Control** — Remote browser bridge: model calls browser tool → extension executes DOM actions on user's real Chrome tab. Screenshot + vision for JS-heavy sites. Guided ReAct with action dedup (deterministic pipeline attempted and reverted — documented in DECISIONS.md)
 - **Memory Decay + Contradiction Eviction** — Automatic confidence decay by importance tier. Contradiction detection on addFact() via phi4-mini. Human-in-the-loop fact review via heartbeat
 - **Token Economics Monitoring** — Capture eval_count/prompt_eval_count from Ollama responses, log per dispatch
@@ -49,7 +49,7 @@ LocalClaw is a local-model-first AI agent framework running on personal infrastr
 | Planned | **Self-wake** | `sleep_until`/`wake_on` tools with quotas (max pending, min interval, cronMode-filtered resume) — continuation machinery landed July 25 |
 | Blocked | **Gateway passthrough** | Constrained decoding + keep_alive + full num_ctx blocked on the gateway's normalization-layer refactor (GATEWAY-REQUIREMENTS.md has the contract + acceptance tests) |
 | Planned | **Cross-channel sessions** | Map user IDs across Discord/Telegram/WhatsApp to shared sessions (Slice 3 — principal layer landed; dragons documented in CONTINUATION.md) |
-| Planned | **Rebrand** | Rename from LocalClaw to new identity (plan exists, 357 references mapped across 80 files) |
+| Planned | **Rebrand** | Rename from Invarail to new identity (plan exists, 357 references mapped across 80 files) |
 
 ---
 

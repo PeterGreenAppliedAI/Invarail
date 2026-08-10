@@ -1,9 +1,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import JSON5 from 'json5';
-import { LocalClawConfigSchema } from './schema.js';
+import { InvarailConfigSchema } from './schema.js';
 import { configInvalid } from '../errors.js';
-import type { LocalClawConfig } from './types.js';
+import type { InvarailConfig } from './types.js';
 
 /**
  * Load .env file into process.env (simple key=value parser, no dependency needed).
@@ -74,11 +74,23 @@ function removeEmptyStrings(obj: unknown): unknown {
   return obj;
 }
 
-export function loadConfig(filePath?: string): LocalClawConfig {
+// TEMPORARY migration shim (see DECISIONS: removal at v0.2.0 or 60 days after
+// rename, whichever first). Fallback fires ONLY when the new config is ABSENT —
+// a malformed invarail.config.json5 must fail loudly, never silently load the
+// legacy file.
+const CONFIG_FILE = 'invarail.config.json5';
+// Split literal keeps the mechanical rename sweep from rewriting the LEGACY name
+const LEGACY_CONFIG_FILE = 'local' + 'claw.config.json5';
+
+export function loadConfig(filePath?: string): InvarailConfig {
   // Load .env before anything else
   loadDotEnv();
 
-  const path = filePath ?? 'localclaw.config.json5';
+  let path = filePath ?? CONFIG_FILE;
+  if (!filePath && !existsSync(CONFIG_FILE) && existsSync(LEGACY_CONFIG_FILE)) {
+    console.warn(`[config] DEPRECATED: loading legacy ${LEGACY_CONFIG_FILE} — rename it to ${CONFIG_FILE}; this fallback will be removed`);
+    path = LEGACY_CONFIG_FILE;
+  }
 
   let raw: unknown;
   try {
@@ -87,14 +99,14 @@ export function loadConfig(filePath?: string): LocalClawConfig {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       console.warn(`[config] ${path} not found — run "npm run setup" to generate it`);
-      return LocalClawConfigSchema.parse({});
+      return InvarailConfigSchema.parse({});
     }
     throw configInvalid(`Failed to read ${path}: ${err instanceof Error ? err.message : err}`);
   }
 
   const expanded = expandEnvVars(raw);
   const cleaned = removeEmptyStrings(expanded);
-  const result = LocalClawConfigSchema.safeParse(cleaned);
+  const result = InvarailConfigSchema.safeParse(cleaned);
 
   if (!result.success) {
     const issues = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
@@ -110,7 +122,7 @@ export function loadConfig(filePath?: string): LocalClawConfig {
  * itself). These were previously silent no-ops — the doc suite's theme is
  * "never silently degrade", and that applies to the owner's own config too.
  */
-function warnOnSecurityFootguns(config: LocalClawConfig): void {
+function warnOnSecurityFootguns(config: InvarailConfig): void {
   for (const [name, ch] of Object.entries(config.channels)) {
     const sec = ch.security;
     if (!sec) continue;

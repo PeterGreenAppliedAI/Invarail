@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { resolve, extname, basename } from 'node:path';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { KnowledgeConfig } from '../config/types.js';
 import type { EmbeddingStore } from '../memory/embeddings.js';
@@ -14,7 +14,7 @@ export function createKnowledgeImportTool(
   ollamaClient: OllamaClient,
   embeddingStore: EmbeddingStore,
   config?: KnowledgeConfig,
-): LocalClawTool {
+): InvarailTool {
   const allowedExtensions = new Set(config?.allowedExtensions ?? DEFAULT_ALLOWED_EXTENSIONS);
   const maxChunkSize = config?.maxChunkSize ?? 800;
   const overlapSize = config?.overlapSize ?? 100;

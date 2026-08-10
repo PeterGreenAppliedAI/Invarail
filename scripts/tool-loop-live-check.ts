@@ -17,7 +17,7 @@ const MODEL = process.argv[2] ?? 'qwen3.6:35b';
 const TASK = 'What are the top 2 AI news stories today? Search the web, then answer in two short bullets.';
 
 async function runOnce(style: 'native' | 'text'): Promise<void> {
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
   const webSearch = createWebSearchTool(config.tools?.web?.search);
 

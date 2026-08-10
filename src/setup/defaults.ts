@@ -22,7 +22,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 8,
-    tools: ['web_search', 'web_fetch', 'browser', 'reason'],
+    tools: ['web_search', 'web_fetch', 'browser'],
     pipeline: 'web_search',
   },
   memory: {
@@ -38,7 +38,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 8,
-    tools: ['exec', 'read_file', 'write_file', 'code_session', 'reason'],
+    tools: ['exec', 'read_file', 'write_file', 'code_session'],
     pipeline: 'exec',
   },
   cron: {
@@ -69,15 +69,8 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 15,
-    tools: ['web_search', 'web_fetch', 'browser', 'memory_search', 'exec', 'read_file', 'write_file', 'send_message', 'task_add', 'task_list', 'task_done', 'reason'],
+    tools: ['web_search', 'web_fetch', 'browser', 'memory_search', 'exec', 'read_file', 'write_file', 'send_message', 'task_add', 'task_list', 'task_done'],
     pipeline: 'plan',
-  },
-  config: {
-    systemPrompt: 'You are a configuration specialist. You can edit cron jobs (cron_edit), read workspace files (workspace_read), write workspace files (workspace_write), and manage scheduled tasks. Always confirm changes after making them.',
-    maxTokens: 4096,
-    temperature: 0.3,
-    maxIterations: 5,
-    tools: ['cron_edit', 'cron_add', 'cron_list', 'cron_remove', 'workspace_read', 'workspace_write'],
   },
   task: {
     systemPrompt: 'You are a task management specialist. Use task_add to create tasks, task_list to show them, task_update to modify, task_done to complete, task_remove to delete. Default to showing todo + in_progress. Always confirm changes.',
@@ -92,15 +85,8 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 20,
-    tools: ['web_search', 'web_fetch', 'code_session', 'reason'],
+    tools: ['web_search', 'web_fetch', 'code_session'],
     pipeline: 'research',
-  },
-  personal: {
-    systemPrompt: 'You are a personal assistant specialist with access to email and calendar. Use gmail_search/gmail_read to find emails. Use calendar_list/calendar_search to check schedule. Always search before answering.',
-    maxTokens: 2048,
-    temperature: 0.3,
-    maxIterations: 5,
-    tools: ['gmail_search', 'gmail_read', 'calendar_list', 'calendar_search', 'reason'],
   },
   image: {
     systemPrompt: 'You are an image generation specialist. Use image_generate for photos/art and diagram_generate for technical diagrams and architecture visuals. Use read_file to check generated files.',
@@ -117,14 +103,6 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     tools: ['pi_build'],
     pipeline: 'code_gen',
   },
-  analytics: {
-    systemPrompt: 'You are a data analytics specialist. Analyze uploaded data files (CSV, Excel, JSON) using pandas, generate visualizations with matplotlib/seaborn, and summarize findings.',
-    maxTokens: 4096,
-    temperature: 0.3,
-    maxIterations: 8,
-    tools: ['code_session', 'read_file', 'reason'],
-    pipeline: 'analytics',
-  },
 };
 
 export const ROUTER_CATEGORIES: Record<string, { description: string }> = {
@@ -137,12 +115,9 @@ export const ROUTER_CATEGORIES: Record<string, { description: string }> = {
   website: { description: 'Fetch and summarize a URL or web page' },
   task: { description: 'Create, list, update, or complete tasks and to-dos' },
   multi: { description: 'Complex requests needing multiple different tools or multi-step planning' },
-  config: { description: 'Edit settings, cron jobs, workspace files, agent configuration' },
   research: { description: 'Deep research, reports, analysis — produces decks or PDF reports' },
-  personal: { description: 'Email, calendar, and personal schedule queries (owner only)' },
   image: { description: 'Generate images, diagrams, or architecture visuals' },
   code_gen: { description: 'Generate code, build projects, scaffold applications' },
-  analytics: { description: 'Analyze uploaded data files (CSV, Excel, JSON) — charts, statistics, insights' },
 };
 
 /**

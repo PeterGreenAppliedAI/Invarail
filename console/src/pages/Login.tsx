@@ -15,7 +15,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="flex items-center justify-center h-screen bg-zinc-950">
       <form onSubmit={handleSubmit} className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 w-96">
-        <h1 className="text-xl font-bold text-white mb-1">LocalClaw Console</h1>
+        <h1 className="text-xl font-bold text-white mb-1">Invarail Console</h1>
         <p className="text-sm text-zinc-400 mb-6">Enter your API key to continue</p>
         <input
           type="password"

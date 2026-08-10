@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { FactStore } from '../../src/memory/fact-store.js';
 import type { FactInput, FactEntry } from '../../src/config/types.js';
 
-const testDir = '/tmp/localclaw-test-factstore-' + Date.now();
+const testDir = '/tmp/invarail-test-factstore-' + Date.now();
 const workspacePath = testDir;
 
 beforeEach(() => {

@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { TaskStore } from '../tasks/store.js';
 
-export function createTaskUpdateTool(taskStore: TaskStore): LocalClawTool {
+export function createTaskUpdateTool(taskStore: TaskStore): InvarailTool {
   return {
     name: 'task_update',
     description: 'Update an existing task. Change its title, details, status, priority, assignee, due date, or tags.',

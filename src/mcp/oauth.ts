@@ -68,7 +68,7 @@ export async function interactiveAuthorize(server: string, serverUrl: string, st
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_name: 'LocalClaw',
+        client_name: 'Invarail',
         redirect_uris: [redirectUri],
         token_endpoint_auth_method: 'none',
         grant_types: ['authorization_code', 'refresh_token'],
@@ -164,7 +164,7 @@ function waitForCallback(port: number, expectedState: string, authorizeUrl: stri
         res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Invalid callback.');
         return;
       }
-      res.writeHead(200, { 'Content-Type': 'text/html' }).end('<h3>LocalClaw authorized — you can close this tab.</h3>');
+      res.writeHead(200, { 'Content-Type': 'text/html' }).end('<h3>Invarail authorized — you can close this tab.</h3>');
       clearTimeout(timer);
       server.close();
       resolve(code);

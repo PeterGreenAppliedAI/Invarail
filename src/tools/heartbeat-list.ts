@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 
-export function createHeartbeatListTool(cronService: CronService): LocalClawTool {
+export function createHeartbeatListTool(cronService: CronService): InvarailTool {
   return {
     name: 'heartbeat_list',
     description: 'List all heartbeat tasks. These run autonomously on the shared heartbeat schedule.',

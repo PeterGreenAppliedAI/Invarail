@@ -207,7 +207,7 @@ describe('trimToolLoopMessages', () => {
 // ---- History compaction ----
 
 describe('buildCompactedHistory', () => {
-  const testDir = '/tmp/localclaw-test-compactor-' + Date.now();
+  const testDir = '/tmp/invarail-test-compactor-' + Date.now();
   const workspacePath = join(testDir, 'workspace');
 
   beforeEach(() => {

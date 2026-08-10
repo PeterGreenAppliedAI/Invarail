@@ -102,7 +102,7 @@ export async function disconnectBrowser(settings: Settings): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-/** Poll for pending browser action from LocalClaw */
+/** Poll for pending browser action from Invarail */
 export async function pollBrowserAction(settings: Settings): Promise<any | null> {
   try {
     const res = await fetch(`${settings.host}/console/api/browser/action`, {
@@ -117,7 +117,7 @@ export async function pollBrowserAction(settings: Settings): Promise<any | null>
   }
 }
 
-/** Post browser action result back to LocalClaw */
+/** Post browser action result back to Invarail */
 export async function postBrowserResult(
   settings: Settings,
   result: { id: string; success: boolean; result: string },

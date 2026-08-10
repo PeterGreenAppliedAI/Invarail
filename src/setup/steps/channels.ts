@@ -4,7 +4,6 @@ import { testDiscordToken, testTelegramToken } from '../connectivity.js';
 export interface ChannelResult {
   enabled: boolean;
   token?: string;
-  appToken?: string; // Slack only
   port?: number;     // Web only
   username?: string;  // Bot username from validation
 }
@@ -12,8 +11,6 @@ export interface ChannelResult {
 export interface ChannelsStepResult {
   discord: ChannelResult;
   telegram: ChannelResult;
-  slack: ChannelResult;
-  whatsapp: ChannelResult;
   web: ChannelResult;
   ownerId?: string;
   trustedUsers: Record<string, string[]>;
@@ -25,8 +22,6 @@ export async function runChannelsStep(): Promise<ChannelsStepResult> {
   const result: ChannelsStepResult = {
     discord: { enabled: false },
     telegram: { enabled: false },
-    slack: { enabled: false },
-    whatsapp: { enabled: false },
     web: { enabled: false },
     trustedUsers: {},
   };
@@ -63,20 +58,6 @@ export async function runChannelsStep(): Promise<ChannelsStepResult> {
         printError('Telegram token validation failed — check the token');
       }
     }
-  }
-
-  // Slack
-  if (await askYesNo('Enable Slack?', false)) {
-    result.slack.enabled = true;
-    result.slack.token = await askText('Slack bot token (xoxb-...)');
-    result.slack.appToken = await askText('Slack app token (xapp-...)');
-    printInfo('Slack tokens will be validated in the preflight check.');
-  }
-
-  // WhatsApp
-  if (await askYesNo('Enable WhatsApp?', false)) {
-    result.whatsapp.enabled = true;
-    printInfo('No token needed — QR code pairing happens on first run.');
   }
 
   // Web

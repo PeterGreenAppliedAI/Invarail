@@ -8,8 +8,6 @@ import { buildRouterPrompt } from './prompt.js';
  * Order matters — more specific patterns (exec, cron) come before broader ones (web_search).
  */
 const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
-  // Document format requests → document pipeline (code-driven: model writes markdown, code renders + invokes the tool)
-  { pattern: /\b(pdf|docx|xlsx|pptx|word doc|spreadsheet|slide deck|presentation)\b/i, category: 'document' },
   // Multi first (longest match / compound intent)
   { pattern: /\b(save|write file|read file).*(search|send|remind)/i, category: 'multi' },
   { pattern: /\b(search|find).*(save|send|remind|sign.*(up|me)|register|subscribe)/i, category: 'multi' },
@@ -22,9 +20,10 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
   // Specific action categories before broad ones
   // NOTE: bare "workspace" removed — it captured exec requests like "run ls in the workspace"
   // "settings?(?! up)" — plain "setting up a business" is everyday English, not a
-  // config request (it broke sticky and misrouted a reminder paste, July 20)
-  { pattern: /\b(config|configure|settings?(?! up)|preference|edit.*cron|modify.*cron|update.*cron|change.*cron|enable|disable|tools\.md)\b/i, category: 'config' },
-  { pattern: /\b(add.*heartbeat|remove.*heartbeat|list.*heartbeat|periodic check|periodic task|autonomous check)\b/i, category: 'cron' },
+  { pattern: /\b((add|remove|list|configure|update|change).*heartbeat|periodic check|periodic task|autonomous check)\b/i, category: 'cron' },
+  // Document-format requests → exec (the document TOOL lives there; the
+  // document CATEGORY was retired 2026-08-10 — see DECISIONS)
+  { pattern: /\b(pdf|docx|xlsx|pptx|word doc|spreadsheet|slide deck)\b/i, category: 'exec' },
   { pattern: /\b(execute|compile|deploy|install|sudo|npm|pip|git|mkdir|rm|ls|pwd|chmod)\b/i, category: 'exec' },
   { pattern: /\b(run|build)\b.*\b(command|script|code|program|server|docker|container)\b/i, category: 'exec' },
   { pattern: /\b(list|show|ls)\b.*\b(files|directory|folder|dir)\b/i, category: 'exec' },
@@ -45,7 +44,7 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
 ];
 
 const VALID_CATEGORIES = new Set([
-  'chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'config', 'task', 'research', 'personal', 'image', 'code_gen', 'analytics', 'document',
+  'chat', 'web_search', 'memory', 'exec', 'cron', 'message', 'website', 'multi', 'task', 'research', 'image', 'code_gen',
 ]);
 
 export interface ClassifyResult {

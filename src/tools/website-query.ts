@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { WebsiteConfig } from '../config/types.js';
 
-export function createWebsiteQueryTool(config?: WebsiteConfig): LocalClawTool {
+export function createWebsiteQueryTool(config?: WebsiteConfig): InvarailTool {
   return {
     name: 'website_query',
     description: 'Query a teaching website API for courses, assignments, homework, materials, and student information. Supports GET and POST requests.',
@@ -24,7 +24,7 @@ export function createWebsiteQueryTool(config?: WebsiteConfig): LocalClawTool {
       const apiKey = config?.apiKey ?? process.env.WEBSITE_API_KEY;
 
       if (!baseUrl) {
-        return 'Error: Website base URL not configured. Set tools.website.baseUrl in localclaw.config.json5.';
+        return 'Error: Website base URL not configured. Set tools.website.baseUrl in invarail.config.json5.';
       }
 
       const endpoint = params.endpoint as string;

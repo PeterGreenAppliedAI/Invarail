@@ -4,7 +4,7 @@
  */
 import { writeFileSync, readFileSync, existsSync, readdirSync, statSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import type { LocalClawConfig, FactInput, FactEntry } from '../config/types.js';
+import type { InvarailConfig, FactInput, FactEntry } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ChannelRegistry } from '../channels/registry.js';
@@ -16,12 +16,12 @@ import type { EmbeddingStore } from '../memory/embeddings.js';
 import type { CronService } from '../cron/service.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { enrichTasks, getAutoActions, filterForModel, formatTaskBoard } from '../temporal/urgency.js';
-import { LocalClawError } from '../errors.js';
+import { InvarailError } from '../errors.js';
 import { logAutonomousAction } from '../metrics.js';
 import { resolvePrincipal } from '../identity/principal.js';
 
 export interface HeartbeatDeps {
-  config: LocalClawConfig;
+  config: InvarailConfig;
   client: OllamaClient;
   toolRegistry: ToolRegistry;
   channelRegistry: ChannelRegistry;
@@ -221,32 +221,6 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
       }
     }
 
-    // Curate skills — archive stale, flag duplicates
-    try {
-      const { SkillStore } = await import('../skills/store.js');
-      const skillStore = new SkillStore(workspacePath);
-      const allSkills = skillStore.listAll();
-      const now = Date.now();
-      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-      let archived = 0;
-
-      for (const skill of allSkills) {
-        const lastUsedMs = new Date(skill.lastUsed || skill.created).getTime();
-        if (now - lastUsedMs > THIRTY_DAYS && skill.successCount < 2) {
-          skillStore.archive(skill.slug);
-          archived++;
-        }
-      }
-      if (archived > 0) console.log(`[Heartbeat] Archived ${archived} stale skill(s)`);
-    } catch (err) {
-      console.warn('[Heartbeat] Skill curation failed:', err instanceof Error ? err.message : err);
-    }
-
-    // Clean up old generated media files
-    const cleaned = deps.cleanupOldMedia();
-    if (cleaned > 0) {
-      console.log(`[Heartbeat] Cleaned up ${cleaned} old media files`);
-    }
 
     // --- Memory decay ---
     // Memory ops key on the principal — the delivery target is a channel alias
@@ -634,7 +608,7 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
       }
     }
   } catch (err) {
-    const wrapped = err instanceof LocalClawError ? err : new LocalClawError('TOOL_EXECUTION_ERROR', 'Heartbeat failed', err);
+    const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Heartbeat failed', err);
     console.error(`[Heartbeat] ${wrapped.code}: ${wrapped.message}`);
   }
 }

@@ -8,7 +8,7 @@ export async function runTierStep(): Promise<SetupTier> {
   printHeader('Setup style');
   printInfo('Starter — one model, web console only, nothing else to install (~15 min)');
   printInfo('Custom  — pick channels, models, and services yourself (full wizard)\n');
-  const choice = await askChoice('How do you want to run LocalClaw?', ['Starter', 'Custom']);
+  const choice = await askChoice('How do you want to run Invarail?', ['Starter', 'Custom']);
   return choice.toLowerCase() as SetupTier;
 }
 
@@ -25,14 +25,14 @@ export async function runStarterGenerate(models: string[]): Promise<void> {
     printWarning('No models found in Ollama — defaulting to qwen3:8b. Pull it with: ollama pull qwen3:8b');
   }
 
-  let template = readFileSync('localclaw.config.starter.json5', 'utf-8');
+  let template = readFileSync('invarail.config.starter.json5', 'utf-8');
   template = template.replaceAll('qwen3:8b', model);
 
-  let configPath = 'localclaw.config.json5';
+  let configPath = 'invarail.config.json5';
   if (existsSync(configPath)) {
-    printWarning('localclaw.config.json5 already exists');
-    const overwrite = await askYesNo('Overwrite localclaw.config.json5?', false);
-    if (!overwrite) configPath = 'localclaw.config.json5.starter';
+    printWarning('invarail.config.json5 already exists');
+    const overwrite = await askYesNo('Overwrite invarail.config.json5?', false);
+    if (!overwrite) configPath = 'invarail.config.json5.starter';
   }
   writeFileSync(configPath, template, 'utf-8');
 

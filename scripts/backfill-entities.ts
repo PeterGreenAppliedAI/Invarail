@@ -13,7 +13,7 @@ async function main() {
   console.log(`Using Ollama at: ${url}`);
   const client = new OllamaClient(url, '30m');
   const db = await FalkorDB.connect({ socket: { host: 'localhost', port: 6379 } });
-  const graph = db.selectGraph('localclaw_memory');
+  const graph = db.selectGraph('invarail_memory');
 
   // Find facts with no ABOUT edges
   const orphans = await graph.query(

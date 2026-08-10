@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 
-export function createCronRemoveTool(cronService: CronService): LocalClawTool {
+export function createCronRemoveTool(cronService: CronService): InvarailTool {
   return {
     name: 'cron_remove',
     description: 'Remove a scheduled job',

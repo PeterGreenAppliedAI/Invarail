@@ -12,13 +12,21 @@ import { join, resolve } from 'node:path';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { PluginManifest, PluginExport } from './types.js';
 
+// Split literal keeps the mechanical rename sweep from rewriting the LEGACY path
+const LEGACY_USER_DIR = join(process.env.HOME ?? '', '.local' + 'claw', 'plugins');
+
+// Precedence order: project-level, then Invarail user dir, then LEGACY dir
+// (TEMPORARY shim — see DECISIONS for the removal condition). A plugin name
+// already loaded from an earlier dir is SKIPPED, never double-registered.
 const PLUGIN_DIRS = [
-  'plugins',                              // project-level
-  join(process.env.HOME ?? '', '.localclaw', 'plugins'),  // user-level
+  'plugins',                                              // project-level
+  join(process.env.HOME ?? '', '.invarail', 'plugins'),   // user-level
+  LEGACY_USER_DIR,                                        // legacy user-level (deprecated)
 ];
 
 export async function loadPlugins(toolRegistry: ToolRegistry): Promise<number> {
   let loaded = 0;
+  const seen = new Set<string>();
 
   for (const dir of PLUGIN_DIRS) {
     if (!existsSync(dir)) continue;
@@ -29,6 +37,15 @@ export async function loadPlugins(toolRegistry: ToolRegistry): Promise<number> {
 
       const manifestPath = join(dir, entry.name, 'plugin.json');
       if (!existsSync(manifestPath)) continue;
+
+      if (seen.has(entry.name)) {
+        console.log(`[Plugins] Skipping duplicate "${entry.name}" in ${dir} — already loaded from a higher-precedence dir`);
+        continue;
+      }
+      seen.add(entry.name);
+      if (dir === LEGACY_USER_DIR) {
+        console.warn(`[Plugins] DEPRECATED: "${entry.name}" loaded from legacy ${LEGACY_USER_DIR} — move it to ~/.invarail/plugins`);
+      }
 
       try {
         const manifest: PluginManifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));

@@ -1,6 +1,6 @@
 import type { OllamaClient } from './ollama/client.js';
 import type { ToolRegistry } from './tools/registry.js';
-import type { LocalClawConfig, SpecialistConfig, ChannelSecurity } from './config/types.js';
+import type { InvarailConfig, SpecialistConfig, ChannelSecurity } from './config/types.js';
 import type { ToolContext, ToolExecutor } from './tools/types.js';
 import type { OllamaMessage } from './ollama/types.js';
 import { classifyMessage, type ClassifyResult } from './router/classifier.js';
@@ -99,7 +99,7 @@ import { appendExecutionRecord } from './mcp/registry-feed.js';
 export interface DispatchParams {
   client: OllamaClient;
   registry: ToolRegistry;
-  config: LocalClawConfig;
+  config: InvarailConfig;
   message: string;
   agentId?: string;
   sessionKey?: string;
@@ -184,7 +184,7 @@ function stripThinking(text: string): string {
 }
 
 function resolveChannelSecurity(
-  config: LocalClawConfig,
+  config: InvarailConfig,
   channel?: string,
 ): ChannelSecurity | undefined {
   if (!channel) return undefined;
@@ -643,7 +643,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   }
 
   // LLM-as-judge quality scoring for pipeline categories
-  const QUALITY_CATEGORIES = new Set(['web_search', 'research', 'analytics', 'multi', 'exec', 'code_gen']);
+  const QUALITY_CATEGORIES = new Set(['web_search', 'research', 'multi', 'exec', 'code_gen']);
   if (QUALITY_CATEGORIES.has(effectiveCategory) && result.answer?.length > 100 && !params.cronMode) {
     try {
       const qualityResponse = await client.chat({
@@ -1099,7 +1099,7 @@ const REVIEW_CATEGORIES = new Set(['exec', 'multi', 'web_search']);
  */
 async function runPostTaskReview(
   client: OllamaClient,
-  config: LocalClawConfig,
+  config: InvarailConfig,
   originalMessage: string,
   answer: string,
   steps: Array<{ tool?: string; observation?: string }> | undefined,
@@ -1525,7 +1525,7 @@ IMPORTANT: Respond with ONLY the JSON array, no other text.`;
 
 async function runAsBareChat(
   client: OllamaClient,
-  config: LocalClawConfig,
+  config: InvarailConfig,
   message: string,
   classification: ClassifyResult,
   history?: OllamaMessage[],
@@ -1600,7 +1600,7 @@ async function runAsBareChat(
   };
 }
 
-function getDefaultSpecialist(config: LocalClawConfig, category: string): SpecialistConfig | undefined {
+function getDefaultSpecialist(config: InvarailConfig, category: string): SpecialistConfig | undefined {
   if (category === 'chat') {
     return {
       model: config.router.model,

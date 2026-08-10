@@ -1,4 +1,4 @@
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ChannelRegistry } from '../channels/registry.js';
@@ -12,7 +12,7 @@ import type { DispatchParams } from '../dispatch.js';
 import type { ExecutionMetricsStore } from '../metrics/execution-store.js';
 
 export interface ConsoleApiDeps {
-  config: LocalClawConfig;
+  config: InvarailConfig;
   ollamaClient: OllamaClient;
   toolRegistry: ToolRegistry;
   channelRegistry: ChannelRegistry;

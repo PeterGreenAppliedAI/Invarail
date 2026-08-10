@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { dispatchMessage } from '../../src/dispatch.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import type { OllamaClient } from '../../src/ollama/client.js';
-import type { LocalClawConfig } from '../../src/config/types.js';
+import type { InvarailConfig } from '../../src/config/types.js';
 import { loadConfig } from '../../src/config/loader.js';
 
 function createMockClient(routerCategory: string, specialistAnswer: string): OllamaClient {
@@ -322,5 +322,27 @@ describe('dispatchMessage', () => {
     // Verify chat was called with history messages
     const chatCall = chatFn.mock.calls[0][0];
     expect(chatCall.messages.length).toBeGreaterThan(2);
+  });
+});
+
+describe('removed-category tolerance (Invarail trim, 2026-08-10)', () => {
+  // Persisted data (old cron jobs, session state, metrics) may still carry
+  // category strings whose pipelines/specialists were removed. Dispatch must
+  // degrade gracefully — never throw on a historical value.
+  it('dispatch with a removed category degrades to bare chat, no throw', async () => {
+    const client = createMockClient('chat', 'Handled gracefully.');
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    const registry = new ToolRegistry();
+
+    for (const removed of ['analytics', 'document', 'config', 'personal']) {
+      const result = await dispatchMessage({
+        client,
+        registry,
+        config,
+        message: 'a request shaped for a subsystem that no longer exists',
+        overrideCategory: removed,
+      });
+      expect(result.answer).toBeTruthy();
+    }
   });
 });

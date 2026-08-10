@@ -1,4 +1,4 @@
-import type { LocalClawTool } from '../tools/types.js';
+import type { InvarailTool } from '../tools/types.js';
 
 export interface PluginManifest {
   name: string;
@@ -9,6 +9,6 @@ export interface PluginManifest {
 }
 
 export interface PluginExport {
-  tool?: LocalClawTool;
-  tools?: LocalClawTool[];
+  tool?: InvarailTool;
+  tools?: InvarailTool[];
 }

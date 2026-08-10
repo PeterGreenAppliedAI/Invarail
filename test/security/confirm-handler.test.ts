@@ -5,13 +5,13 @@ import { join } from 'node:path';
 import { handleConfirmation } from '../../src/security/confirm-handler.js';
 import { PendingActionStore } from '../../src/security/pending-actions.js';
 import { GrantStore } from '../../src/security/grants.js';
-import type { LocalClawConfig } from '../../src/config/types.js';
+import type { InvarailConfig } from '../../src/config/types.js';
 import type { ToolRegistry } from '../../src/tools/registry.js';
 
 const config = {
   principals: { peter: { aliases: ['discord-1', 'telegram-1'] } },
   agents: { default: 'main', list: [], bindings: [] },
-} as unknown as LocalClawConfig;
+} as unknown as InvarailConfig;
 
 function makeRegistry(result = 'sent!'): ToolRegistry {
   return {

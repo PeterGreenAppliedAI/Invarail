@@ -2,7 +2,7 @@
  * Command handler types — extracted from orchestrator.
  * Commands are !-prefixed messages that bypass routing.
  */
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ChannelRegistry } from '../channels/registry.js';
@@ -12,7 +12,7 @@ import type { GraphMemoryStore } from '../memory/graph-store.js';
 import type { InboundMessage } from '../channels/types.js';
 
 export interface CommandContext {
-  config: LocalClawConfig;
+  config: InvarailConfig;
   client: OllamaClient;
   toolRegistry: ToolRegistry;
   channelRegistry: ChannelRegistry;

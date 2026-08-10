@@ -36,7 +36,7 @@ export default defineContentScript({
         });
       }
 
-      // Browser action execution — structured commands from LocalClaw
+      // Browser action execution — structured commands from Invarail
       if (message.type === 'BROWSER_ACTION') {
         const action = message.action as string;
         const ref = message.ref as string | undefined;

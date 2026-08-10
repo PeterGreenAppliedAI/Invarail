@@ -8,14 +8,19 @@ import { Orchestrator } from './orchestrator.js';
 import { registerAllTools } from './tools/register-all.js';
 import type { OllamaMessage } from './ollama/types.js';
 
-// TLS safety: only disable cert verification if explicitly opted in
-if (process.env.LOCALCLAW_UNSAFE_TLS === '1') {
+// TLS safety: only disable cert verification if explicitly opted in.
+// LEGACY_UNSAFE_TLS_VAR is a TEMPORARY migration shim (see DECISIONS for removal).
+const LEGACY_UNSAFE_TLS_VAR = 'LOCAL' + 'CLAW_UNSAFE_TLS';
+if (process.env.INVARAIL_UNSAFE_TLS === '1' || process.env[LEGACY_UNSAFE_TLS_VAR] === '1') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  console.warn('[LocalClaw] WARNING: TLS verification disabled (LOCALCLAW_UNSAFE_TLS=1). Do NOT use in production.');
+  if (process.env[LEGACY_UNSAFE_TLS_VAR] === '1' && process.env.INVARAIL_UNSAFE_TLS !== '1') {
+    console.warn(`[Invarail] DEPRECATED: ${LEGACY_UNSAFE_TLS_VAR} — use INVARAIL_UNSAFE_TLS=1`);
+  }
+  console.warn('[Invarail] WARNING: TLS verification disabled (INVARAIL_UNSAFE_TLS=1). Do NOT use in production.');
 } else if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
-  // Block accidental insecure TLS — must use LOCALCLAW_UNSAFE_TLS instead
+  // Block accidental insecure TLS — must use INVARAIL_UNSAFE_TLS instead
   delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-  console.warn('[LocalClaw] Removed NODE_TLS_REJECT_UNAUTHORIZED=0. Use LOCALCLAW_UNSAFE_TLS=1 if you need insecure TLS, or set NODE_EXTRA_CA_CERTS for custom CAs.');
+  console.warn('[Invarail] Removed NODE_TLS_REJECT_UNAUTHORIZED=0. Use INVARAIL_UNSAFE_TLS=1 if you need insecure TLS, or set NODE_EXTRA_CA_CERTS for custom CAs.');
 }
 
 // Process-level safety net: a long-running personal agent must not die to a
@@ -24,10 +29,10 @@ if (process.env.LOCALCLAW_UNSAFE_TLS === '1') {
 // keep running — every known-fatal path already has its own handling, and
 // masking is mitigated by the prominent log lines.
 process.on('unhandledRejection', (reason) => {
-  console.error('[LocalClaw] UNHANDLED REJECTION (process continues):', reason instanceof Error ? reason.stack : reason);
+  console.error('[Invarail] UNHANDLED REJECTION (process continues):', reason instanceof Error ? reason.stack : reason);
 });
 process.on('uncaughtException', (err) => {
-  console.error('[LocalClaw] UNCAUGHT EXCEPTION (process continues):', err.stack ?? err.message);
+  console.error('[Invarail] UNCAUGHT EXCEPTION (process continues):', err.stack ?? err.message);
 });
 
 async function main() {
@@ -68,36 +73,16 @@ async function runOrchestrator(config: ReturnType<typeof loadConfig>) {
           channelRegistry.register(new WebApiAdapter());
           break;
         }
-        case 'slack': {
-          const { SlackAdapter } = await import('./channels/slack/index.js');
-          channelRegistry.register(new SlackAdapter());
-          break;
-        }
         case 'gmail': {
           const { GmailAdapter } = await import('./channels/gmail/index.js');
           channelRegistry.register(new GmailAdapter());
           break;
         }
-        case 'msgraph': {
-          const { MsGraphAdapter } = await import('./channels/msgraph/index.js');
-          channelRegistry.register(new MsGraphAdapter());
-          break;
-        }
-        case 'whatsapp': {
-          const { WhatsAppAdapter } = await import('./channels/whatsapp/index.js');
-          channelRegistry.register(new WhatsAppAdapter());
-          break;
-        }
-        case 'imessage': {
-          const { IMessageAdapter } = await import('./channels/imessage/index.js');
-          channelRegistry.register(new IMessageAdapter());
-          break;
-        }
         default:
-          console.warn(`[LocalClaw] Unknown channel: ${channelId}`);
+          console.warn(`[Invarail] Unknown channel: ${channelId}`);
       }
     } catch (err) {
-      console.warn(`[LocalClaw] CHANNEL_CONNECT_ERROR: Failed to load ${channelId} adapter —`, err instanceof Error ? err.message : err);
+      console.warn(`[Invarail] CHANNEL_CONNECT_ERROR: Failed to load ${channelId} adapter —`, err instanceof Error ? err.message : err);
     }
   }
 
@@ -107,21 +92,21 @@ async function runOrchestrator(config: ReturnType<typeof loadConfig>) {
   const shutdown = async () => {
     // Second Ctrl-C while a graceful stop is in flight → exit immediately.
     if (shuttingDown) {
-      console.log('\n[LocalClaw] Force exit.');
+      console.log('\n[Invarail] Force exit.');
       process.exit(1);
     }
     shuttingDown = true;
-    console.log('\n[LocalClaw] Shutting down... (Ctrl-C again to force)');
+    console.log('\n[Invarail] Shutting down... (Ctrl-C again to force)');
     // Safety net: a stuck channel disconnect (e.g. a hung socket) must never block exit.
     const forceTimer = setTimeout(() => {
-      console.warn('[LocalClaw] Shutdown timed out after 5s — forcing exit.');
+      console.warn('[Invarail] Shutdown timed out after 5s — forcing exit.');
       process.exit(1);
     }, 5000);
     forceTimer.unref();
     try {
       await orchestrator.stop();
     } catch (err) {
-      console.warn('[LocalClaw] Error during shutdown:', err instanceof Error ? err.message : err);
+      console.warn('[Invarail] Error during shutdown:', err instanceof Error ? err.message : err);
     }
     clearTimeout(forceTimer);
     process.exit(0);
@@ -137,17 +122,17 @@ async function runRepl(config: ReturnType<typeof loadConfig>) {
 
   const available = await client.isAvailable();
   if (!available) {
-    console.error(`[LocalClaw] Cannot reach Ollama at ${config.ollama.url}`);
-    console.error('[LocalClaw] Make sure Ollama is running: ollama serve');
+    console.error(`[Invarail] Cannot reach Ollama at ${config.ollama.url}`);
+    console.error('[Invarail] Make sure Ollama is running: ollama serve');
     process.exit(1);
   }
 
   const models = await client.listModels();
-  console.log(`[LocalClaw] Connected to Ollama — ${models.length} model(s) available`);
-  console.log(`[LocalClaw] Router model: ${config.router.model}`);
-  console.log(`[LocalClaw] Specialists: ${Object.keys(config.specialists).join(', ') || '(defaults)'}`);
-  console.log(`[LocalClaw] Tools: ${registry.list().join(', ') || '(none)'}`);
-  console.log('[LocalClaw] Type a message (Ctrl+C to exit)\n');
+  console.log(`[Invarail] Connected to Ollama — ${models.length} model(s) available`);
+  console.log(`[Invarail] Router model: ${config.router.model}`);
+  console.log(`[Invarail] Specialists: ${Object.keys(config.specialists).join(', ') || '(defaults)'}`);
+  console.log(`[Invarail] Tools: ${registry.list().join(', ') || '(none)'}`);
+  console.log('[Invarail] Type a message (Ctrl+C to exit)\n');
 
   const rl = createInterface({
     input: process.stdin,
@@ -194,12 +179,12 @@ async function runRepl(config: ReturnType<typeof loadConfig>) {
 
   rl.on('close', async () => {
     await mcpManager?.stop();
-    console.log('\n[LocalClaw] Goodbye!');
+    console.log('\n[Invarail] Goodbye!');
     process.exit(0);
   });
 }
 
 main().catch(err => {
-  console.error('[LocalClaw] Fatal error:', err);
+  console.error('[Invarail] Fatal error:', err);
   process.exit(1);
 });

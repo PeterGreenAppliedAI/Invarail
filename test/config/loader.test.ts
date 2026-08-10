@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { loadConfig } from '../../src/config/loader.js';
 
-const TEST_CONFIG_PATH = '/tmp/localclaw-test-config.json5';
+const TEST_CONFIG_PATH = '/tmp/invarail-test-config.json5';
 
 describe('loadConfig', () => {
   afterEach(() => {

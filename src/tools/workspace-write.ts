@@ -1,10 +1,10 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 
 const WRITABLE_FILES = ['TOOLS.md', 'USER.md', 'HEARTBEAT.md'] as const;
 
-export function createWorkspaceWriteTool(): LocalClawTool {
+export function createWorkspaceWriteTool(): InvarailTool {
   return {
     name: 'workspace_write',
     description: `Write to a workspace file. Writable files: ${WRITABLE_FILES.join(', ')}. Protected files (SOUL.md, IDENTITY.md, AGENTS.md, BOOTSTRAP.md) are read-only.`,
