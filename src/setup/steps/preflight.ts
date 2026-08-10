@@ -84,9 +84,6 @@ export async function runPreflightStep(state: WizardState): Promise<void> {
     }
   }
 
-  if (state.channels.slack.enabled) {
-    checks.push({ name: 'Slack tokens', status: 'WARN', detail: 'Cannot validate without connecting — will be tested on first run' });
-  }
 
   // 5. TTS/STT endpoints
   if (state.services.tts.enabled && state.services.tts.url) {
