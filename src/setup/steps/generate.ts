@@ -40,14 +40,6 @@ function buildEnv(state: WizardState): string {
     lines.push('');
   }
 
-  // Slack
-  if (state.channels.slack.enabled) {
-    lines.push('# Slack (Socket Mode)');
-    if (state.channels.slack.token) lines.push(`SLACK_BOT_TOKEN=${state.channels.slack.token}`);
-    if (state.channels.slack.appToken) lines.push(`SLACK_APP_TOKEN=${state.channels.slack.appToken}`);
-    lines.push('');
-  }
-
   // Web search API key
   if (state.services.webSearch.enabled && state.services.webSearch.apiKey) {
     const provider = state.services.webSearch.provider ?? 'brave';
@@ -94,9 +86,7 @@ function getEnabledCategories(state: WizardState): Set<string> {
   }
 
   const hasChannels = state.channels.discord.enabled
-    || state.channels.telegram.enabled
-    || state.channels.slack.enabled
-    || state.channels.whatsapp.enabled;
+    || state.channels.telegram.enabled;
   if (hasChannels) {
     enabled.add('message');
   }
@@ -158,11 +148,9 @@ function buildConfig(state: WizardState): string {
 
   // Build channels block with security
   const channelLines: string[] = [];
-  const channelEntries: Array<{ name: string; result: { enabled: boolean; token?: string; appToken?: string; port?: number } }> = [
+  const channelEntries: Array<{ name: string; result: { enabled: boolean; token?: string; port?: number } }> = [
     { name: 'discord', result: state.channels.discord },
     { name: 'telegram', result: state.channels.telegram },
-    { name: 'slack', result: state.channels.slack },
-    { name: 'whatsapp', result: state.channels.whatsapp },
     { name: 'web', result: state.channels.web },
   ];
 
@@ -177,10 +165,6 @@ function buildConfig(state: WizardState): string {
     // Token
     if (ch.name === 'discord' && ch.result.token) parts.push(`      token: "\${DISCORD_BOT_TOKEN}",`);
     if (ch.name === 'telegram' && ch.result.token) parts.push(`      token: "\${TELEGRAM_BOT_TOKEN}",`);
-    if (ch.name === 'slack') {
-      if (ch.result.token) parts.push(`      token: "\${SLACK_BOT_TOKEN}",`);
-      if (ch.result.appToken) parts.push(`      appToken: "\${SLACK_APP_TOKEN}",`);
-    }
     if (ch.name === 'web' && ch.result.port) parts.push(`      port: ${ch.result.port},`);
 
     // Security block

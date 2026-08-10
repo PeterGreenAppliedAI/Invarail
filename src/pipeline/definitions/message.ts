@@ -17,7 +17,7 @@ export const messagePipeline: PipelineDefinition = {
           type: 'string',
           description: 'Channel adapter ID to send the message through',
           required: true,
-          enum: ['discord', 'telegram', 'slack', 'whatsapp'],
+          enum: ['discord', 'telegram'],
         },
         channelId: {
           type: 'string',
@@ -70,10 +70,8 @@ export const messagePipeline: PipelineDefinition = {
         const fromSource = channelId === ctx.sourceContext?.channelId;
 
         const plausible: Record<string, RegExp> = {
-          whatsapp: /@(s\.whatsapp\.net|g\.us)$|^\d{7,15}$/,   // jid or bare phone number
           telegram: /^-?\d{6,14}$/,                             // chat id
           discord: /^\d{17,20}$/,                               // snowflake
-          slack: /^[CDG][A-Z0-9]{6,12}$/,                       // channel id
         };
         const re = plausible[channel];
         if (channelId && re && !re.test(channelId) && !fromSource) {
