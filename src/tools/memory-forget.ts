@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { GraphMemoryStore } from '../memory/graph-store.js';
 
@@ -6,7 +6,7 @@ export function createMemoryForgetTool(
   workspacePath: string,
   factStore?: FactStore,
   graphMemory?: GraphMemoryStore,
-): LocalClawTool {
+): InvarailTool {
   return {
     name: 'memory_forget',
     description: 'Remove a specific fact from memory. Use when the user says something stored is wrong or outdated. Searches facts by text match and removes them.',

@@ -1,6 +1,6 @@
 # Building a Production Memory System for Local AI Agents with FalkorDB
 
-*How LocalClaw gives local models long-term memory using a graph database, vector search, and deterministic pipelines — all running on personal hardware with zero cloud dependencies.*
+*How Invarail gives local models long-term memory using a graph database, vector search, and deterministic pipelines — all running on personal hardware with zero cloud dependencies.*
 
 ---
 
@@ -19,7 +19,7 @@ We needed something better. After 4 phases of iteration on a flat JSONL fact sto
 
 ## Architecture: Dual-Backend with Write-Through
 
-LocalClaw's memory has two backends:
+Invarail's memory has two backends:
 
 ```
                     ┌─────────────────────────┐
@@ -111,7 +111,7 @@ Known entities (classify consistently with these):
 - "Peter Green", "Sarah" → person
 - "DevMesh", "Anthropic" → organization
 - "DGX Spark", "Mac Mini", "A5000" → hardware
-- "FalkorDB", "Ollama", "LocalClaw" → software
+- "FalkorDB", "Ollama", "Invarail" → software
 ```
 
 Now when phi4-mini sees "DGX Spark" in a new fact, it has graph context showing this is hardware — and classifies correctly. Each correctly typed entity becomes reference context for future extractions. The graph gets smarter over time.
@@ -325,7 +325,7 @@ The context is injected as a preamble before the specialist's system prompt:
 ```
 ## Background context about this user (do NOT reference unless directly relevant)
 - Peter works at DevMesh as ML engineer
-- Peter runs LocalClaw on DGX Spark + Mac Mini + A5000
+- Peter runs Invarail on DGX Spark + Mac Mini + A5000
 - Peter's wife prefers soft chocolate chip cookies with precise measurements
 
 ## User preferences (adapt your style accordingly)
@@ -491,4 +491,4 @@ No cloud services. No API costs. No data leaving the machine. The graph, vectors
 
 ---
 
-*LocalClaw is an open-source local-model-first AI agent framework. The memory system described here is part of a larger architecture with 39 tools, 12 deterministic pipelines, and 8 channel adapters — all running on personal hardware via Ollama.*
+*Invarail is an open-source local-model-first AI agent framework. The memory system described here is part of a larger architecture with 39 tools, 12 deterministic pipelines, and 8 channel adapters — all running on personal hardware via Ollama.*

@@ -9,8 +9,8 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.removeAll(() => {
       chrome.contextMenus.create({
-        id: 'ask-localclaw',
-        title: 'Ask LocalClaw about "%s"',
+        id: 'ask-invarail',
+        title: 'Ask Invarail about "%s"',
         contexts: ['selection'],
       });
       chrome.contextMenus.create({
@@ -30,7 +30,7 @@ export default defineBackground(() => {
 
     // Small delay to let panel mount
     setTimeout(() => {
-      if (info.menuItemId === 'ask-localclaw' && info.selectionText) {
+      if (info.menuItemId === 'ask-invarail' && info.selectionText) {
         chrome.runtime.sendMessage({
           type: 'CONTEXT_MENU_ACTION',
           action: 'ask',

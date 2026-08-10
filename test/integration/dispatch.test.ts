@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { dispatchMessage } from '../../src/dispatch.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import type { OllamaClient } from '../../src/ollama/client.js';
-import type { LocalClawConfig } from '../../src/config/types.js';
+import type { InvarailConfig } from '../../src/config/types.js';
 import { loadConfig } from '../../src/config/loader.js';
 
 function createMockClient(routerCategory: string, specialistAnswer: string): OllamaClient {

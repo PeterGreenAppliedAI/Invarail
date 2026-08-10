@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 
 function getAuth() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -13,7 +13,7 @@ function getAuth() {
   return oauth2;
 }
 
-export function createGmailSearchTool(): LocalClawTool {
+export function createGmailSearchTool(): InvarailTool {
   return {
     name: 'gmail_search',
     description: 'Search Gmail inbox. Returns subject, sender, date, and snippet for matching emails. Read-only — cannot send, delete, or modify emails. WHEN TO USE: User asks about their emails, wants to find a specific email, or check for messages from someone.',
@@ -75,7 +75,7 @@ export function createGmailSearchTool(): LocalClawTool {
   };
 }
 
-export function createGmailReadTool(): LocalClawTool {
+export function createGmailReadTool(): InvarailTool {
   return {
     name: 'gmail_read',
     description: 'Read the full content of a specific email by ID. Use gmail_search first to find the email, then gmail_read to get the full body. Read-only.',

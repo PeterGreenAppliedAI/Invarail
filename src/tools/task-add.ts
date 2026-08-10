@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { TaskStore } from '../tasks/store.js';
 
-export function createTaskAddTool(taskStore: TaskStore): LocalClawTool {
+export function createTaskAddTool(taskStore: TaskStore): InvarailTool {
   return {
     name: 'task_add',
     description: 'Create a new task on the task board. Returns the created task with its ID.',

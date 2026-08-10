@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import { BrowserClient } from '../browser/client.js';
 import type { BrowserConfig } from '../config/types.js';
 import { visualSnapshot, type VisualBrowserConfig } from '../browser/visual.js';
@@ -44,7 +44,7 @@ async function captureAndDescribe(
 
 const MEDIA_DIR = 'data/media/browser';
 
-export function createBrowserTool(config?: BrowserConfig, ollamaUrl?: string): LocalClawTool {
+export function createBrowserTool(config?: BrowserConfig, ollamaUrl?: string): InvarailTool {
   // Build visual config for automatic escalation (only used when DOM fails)
   // Enable when display is set (Xvfb) OR when running headed (real display)
   const visualConfig: VisualBrowserConfig | null = (config?.display || config?.headless === false)

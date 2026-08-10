@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { z } from 'zod';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import type { PiConfigSchema } from '../config/schema.js';
 
 type PiConfig = z.infer<typeof PiConfigSchema>;
@@ -78,7 +78,7 @@ function listFiles(dir: string, prefix = ''): string[] {
   return out;
 }
 
-export function createPiBuildTool(config: PiConfig): LocalClawTool {
+export function createPiBuildTool(config: PiConfig): InvarailTool {
   return {
     name: 'pi_build',
     description: `Build code with the Pi coding agent. Pi reads, writes, and edits files in an isolated project directory to implement the requested feature or project.
@@ -129,7 +129,7 @@ Returns the project directory and a list of files created.`,
       const cliPath = piCliPath();
       // -p print mode, -a trust this run (non-interactive), tools allowlisted, cwd = projectDir so
       // every write is scoped to the build dir. --no-context-files is important: Pi otherwise walks
-      // UP from the build dir and loads AGENTS.md/CLAUDE.md — which would pull LocalClaw's OWN
+      // UP from the build dir and loads AGENTS.md/CLAUDE.md — which would pull Invarail's OWN
       // CLAUDE.md (the build dir lives inside this repo) into every unrelated build. The pipeline's
       // enriched spec + quality standards are the single source of build instructions.
       const args = [

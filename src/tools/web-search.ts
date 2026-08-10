@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { WebSearchConfig } from '../config/types.js';
 import { readCache, writeCache, normalizeCacheKey, type CacheEntry } from './web-shared.js';
 
@@ -6,7 +6,7 @@ type SearchResult = { title: string; url: string; snippet: string };
 
 const searchCache = new Map<string, CacheEntry<SearchResult[]>>();
 
-export function createWebSearchTool(config?: WebSearchConfig): LocalClawTool {
+export function createWebSearchTool(config?: WebSearchConfig): InvarailTool {
   const provider = config?.provider ?? 'brave';
   const cacheTtl = config?.cacheTtlMs ?? 15 * 60 * 1000;
   const baseUrl = config?.baseUrl;
@@ -293,7 +293,7 @@ async function searchSearxng(
 
   const url = `${baseUrl.replace(/\/+$/, '')}/search?${params}`;
   const res = await fetch(url, {
-    headers: { 'Accept': 'application/json', 'User-Agent': 'LocalClaw/1.0' },
+    headers: { 'Accept': 'application/json', 'User-Agent': 'Invarail/1.0' },
     signal: AbortSignal.timeout(15_000),
   });
 

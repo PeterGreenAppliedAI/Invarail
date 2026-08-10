@@ -1,8 +1,8 @@
-# CLAUDE.md — LocalClaw AI Code Generation Guidelines
+# CLAUDE.md — Invarail AI Code Generation Guidelines
 
 ## Architecture
 
-LocalClaw uses a **Router + Specialist** pattern with a **tool-loop (ReAct) engine** and **deterministic pipelines**.
+Invarail uses a **Router + Specialist** pattern with a **tool-loop (ReAct) engine** and **deterministic pipelines**.
 
 ```
 Channel (Discord/Telegram/Slack/Web/Gmail/WhatsApp/MS Graph/iMessage/Chrome Extension)
@@ -108,7 +108,7 @@ console.error('Something broke:', err);
 
 **Available error codes:** `ROUTER_TIMEOUT`, `ROUTER_PARSE_FAILURE`, `REACT_MAX_ITERATIONS`, `REACT_PARSE_FAILURE`, `TOOL_EXECUTION_ERROR`, `TOOL_NOT_FOUND`, `OLLAMA_UNREACHABLE`, `OLLAMA_INFERENCE_ERROR`, `CONFIG_INVALID`, `CHANNEL_CONNECT_ERROR`, `CHANNEL_SEND_ERROR`, `SSRF_BLOCKED`, `SESSION_IO_ERROR`, `PIPELINE_STAGE_ERROR`, `PIPELINE_EXTRACT_FAILURE`.
 
-Each has a corresponding factory function. All errors are `LocalClawError` instances with a `code` property.
+Each has a corresponding factory function. All errors are `InvarailError` instances with a `code` property.
 
 ### Module System
 
@@ -149,7 +149,7 @@ Additional security:
 ### SOLID / DRY / YAGNI / KISS
 
 - **Single responsibility** per module. Tools do one thing. Adapters implement 5 methods. Router classifies.
-- **Open/Closed** — New tools implement `LocalClawTool` interface without changing core. New adapters implement `ChannelAdapter` without changing core.
+- **Open/Closed** — New tools implement `InvarailTool` interface without changing core. New adapters implement `ChannelAdapter` without changing core.
 - **No speculative features** — Only build what has a real use case now.
 - **Reuse existing utilities** — Check `src/tools/`, `src/errors.ts`, `src/config/` before creating new abstractions.
 - **Simple systems fail predictably** — Prefer straightforward logic over clever abstractions.
@@ -157,15 +157,15 @@ Additional security:
 ### Contracts & Types
 
 - Zod schemas in `src/config/schema.ts` are the **source of truth** for configuration.
-- TypeScript types are inferred from Zod: `type LocalClawConfig = z.infer<typeof LocalClawConfigSchema>` (in `src/config/types.ts`).
+- TypeScript types are inferred from Zod: `type InvarailConfig = z.infer<typeof InvarailConfigSchema>` (in `src/config/types.ts`).
 - **Never duplicate types** — always derive from Zod schemas using `z.infer<>`.
 - Config flow: JSON5 file -> env variable interpolation -> Zod parse/validate -> TypeScript types.
 
 ### Tools
 
-- Must implement the `LocalClawTool` interface from `src/tools/types.ts`:
+- Must implement the `InvarailTool` interface from `src/tools/types.ts`:
   ```typescript
-  interface LocalClawTool {
+  interface InvarailTool {
     name: string;
     description: string;
     parameterDescription: string;
@@ -177,7 +177,7 @@ Additional security:
     execute: (params: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
   }
   ```
-- Each tool is created by a factory function: `createXxxTool(deps) -> LocalClawTool`.
+- Each tool is created by a factory function: `createXxxTool(deps) -> InvarailTool`.
 - Register new tools in `src/tools/register-all.ts` via `registry.register(tool)`.
 - Tool descriptions should include: WHEN TO USE, DO NOT, and common chain patterns.
 - Tool results are truncated to `MAX_TOOL_RESULT_CHARS` (2000, 8000 for browser) by the tool-loop engine.
@@ -186,7 +186,7 @@ Additional security:
 
 ### MCP bridge (`src/mcp/`)
 
-- External MCP servers (configured in `tools.mcp.servers[]`) are spawned as stdio children and their tools auto-registered as `LocalClawTool`s named `<server>_<tool>`, category `mcp:<server>`.
+- External MCP servers (configured in `tools.mcp.servers[]`) are spawned as stdio children and their tools auto-registered as `InvarailTool`s named `<server>_<tool>`, category `mcp:<server>`.
 - Protocol client is a **zero-dep** JSON-RPC 2.0 implementation (initialize → tools/list → tools/call only) — deliberately not the official SDK; swap path stays behind `McpManager`.
 - **Security default:** tools without `annotations.readOnlyHint` get `requiresConfirm: true`; per-server `trust: 'auto'` in config waives it (owner-authored config = code gate). Channel-layer gates work unchanged (name-based).
 - **Small-model layer:** descriptions capped at 500 chars on a sentence boundary; per-server `toolAllowlist`, `toolDescriptions` (hand-curated rewrites), `maxResultChars` (raise for gathering tools — the 2000 default cuts bulk material), and **schema param filtering** (`filterToSchema` in manager.ts): params not in the tool's declared inputSchema are dropped before calling — small models pad arguments, strict servers fail closed, accommodation is the bridge's job.
@@ -237,7 +237,7 @@ src/
     types.ts                #   ReActStep, ReActResult, ReActConfig
 
   tools/                    # 34 tool implementations
-    types.ts                #   LocalClawTool, ToolContext, ToolExecutor interfaces
+    types.ts                #   InvarailTool, ToolContext, ToolExecutor interfaces
     registry.ts             #   ToolRegistry class
     register-all.ts         #   registerAllTools() — wires all tools
     ssrf.ts                 #   SSRF protection for URL-fetching tools
@@ -284,10 +284,10 @@ src/
     semantic.ts             #   Skill embeddings in EmbeddingStore (source='skill'); floor via scripts/skill-match-check.ts
 
   plugins/                  # Plugin system — dynamic tool discovery
-    loader.ts               #   Scan plugins/ and ~/.localclaw/plugins/, dynamic import, auto-register
+    loader.ts               #   Scan plugins/ and ~/.invarail/plugins/, dynamic import, auto-register
     types.ts                #   PluginManifest, PluginExport interfaces
 
-  mcp/                      # MCP client bridge — external tool servers as LocalClaw tools
+  mcp/                      # MCP client bridge — external tool servers as Invarail tools
     client.ts               #   McpStdioClient — zero-dep JSON-RPC 2.0 over newline-delimited stdio
     http-client.ts          #   McpHttpClient — streamable HTTP transport (JSON + SSE), same interface
     oauth.ts                #   OAuth 2.1 + PKCE + DCR, fully local; browser flow ONLY via scripts/mcp-oauth-setup.ts
@@ -364,7 +364,7 @@ chrome-extension/             # Browser companion (separate npm project)
     content.ts                #   Content script: page context + DOM action executor
     sidepanel/                #   React side panel (chat UI, settings, action polling)
   lib/
-    api.ts                    #   LocalClaw API client (SSE streaming, browser bridge)
+    api.ts                    #   Invarail API client (SSE streaming, browser bridge)
     storage.ts                #   chrome.storage.local wrappers
     types.ts                  #   Shared types
 ```
@@ -374,14 +374,14 @@ chrome-extension/             # Browser companion (separate npm project)
 ## Patterns to Follow
 
 ### Error factory pattern (`src/errors.ts`)
-All errors use `LocalClawError` with a typed `ErrorCode`. One factory function per error type.
+All errors use `InvarailError` with a typed `ErrorCode`. One factory function per error type.
 ```typescript
 export const toolExecutionError = (tool: string, cause: unknown) =>
-  new LocalClawError('TOOL_EXECUTION_ERROR', `Tool "${tool}" failed`, cause);
+  new InvarailError('TOOL_EXECUTION_ERROR', `Tool "${tool}" failed`, cause);
 ```
 
 ### Tool registration pattern (`src/tools/register-all.ts`)
-Each tool is a factory function that takes dependencies and returns a `LocalClawTool`. Tools are conditionally registered based on config/availability.
+Each tool is a factory function that takes dependencies and returns a `InvarailTool`. Tools are conditionally registered based on config/availability.
 ```typescript
 const webSearch = createWebSearchTool(config.tools?.web?.search);
 registry.register(webSearch);

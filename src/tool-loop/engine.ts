@@ -147,7 +147,7 @@ export async function trimToolLoopMessages(
 }
 
 /**
- * Convert LocalClaw tool definitions to Ollama's native tool format.
+ * Convert Invarail tool definitions to Ollama's native tool format.
  */
 function toOllamaTools(tools: ToolDefinition[]): OllamaTool[] {
   return tools.map(t => ({

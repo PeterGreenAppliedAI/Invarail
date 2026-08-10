@@ -2,9 +2,9 @@ import type { Settings, ChatMessage } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 
 const KEYS = {
-  settings: 'localclaw_settings',
-  messages: 'localclaw_messages',
-  senderId: 'localclaw_sender_id',
+  settings: 'invarail_settings',
+  messages: 'invarail_messages',
+  senderId: 'invarail_sender_id',
 } as const;
 
 const MAX_MESSAGES = 100;

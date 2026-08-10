@@ -1,7 +1,7 @@
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { resolvePrincipal } from '../identity/principal.js';
 import { logAutonomousAction } from '../metrics.js';
-import type { LocalClawConfig } from '../config/types.js';
+import type { InvarailConfig } from '../config/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { SessionStore } from '../sessions/store.js';
 import {
@@ -48,7 +48,7 @@ export interface ConfirmContext {
   /** RAW channel sender id — principal resolution happens here */
   senderId: string;
   channel: string;
-  config: LocalClawConfig;
+  config: InvarailConfig;
   toolRegistry: ToolRegistry;
   sessionStore?: SessionStore;
   store?: PendingActionStore;

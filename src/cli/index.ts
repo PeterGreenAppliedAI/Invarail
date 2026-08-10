@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * LocalClaw CLI — interactive terminal interface with streaming,
+ * Invarail CLI — interactive terminal interface with streaming,
  * slash commands, markdown rendering, and session persistence.
  *
  * Usage: npx tsx src/cli/index.ts
@@ -80,7 +80,7 @@ async function main() {
   const models = await client.listModels();
   console.log('');
   console.log(divider());
-  console.log(`  ${bold(magenta('LocalClaw CLI'))}`);
+  console.log(`  ${bold(magenta('Invarail CLI'))}`);
   console.log(`  ${dim(`Ollama: ${config.ollama.url} — ${models.length} models`)}`);
   console.log(`  ${dim(`Router: ${config.router.model} | Agent: ${agentId}`)}`);
   console.log(`  ${dim(`Tools: ${registry.list().length} | Pipelines: ${pipelineRegistry.list().length}`)}`);

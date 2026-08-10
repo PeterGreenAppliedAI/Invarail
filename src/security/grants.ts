@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { LocalClawTool } from '../tools/types.js';
+import type { InvarailTool } from '../tools/types.js';
 
 /**
  * Target-bound standing grants — the autonomy-ladder rung between
@@ -29,7 +29,7 @@ const STORE_PATH = 'data/grants.json';
 
 /** Compute the grant key for a call, or null when the tool is grant-ineligible
  *  or any target param is missing/empty (fail-closed on both). */
-export function grantTargetFor(tool: LocalClawTool | undefined, params: Record<string, unknown>): string | null {
+export function grantTargetFor(tool: InvarailTool | undefined, params: Record<string, unknown>): string | null {
   if (!tool?.targetArgs?.length) return null;
   const parts: string[] = [];
   for (const arg of tool.targetArgs) {
@@ -107,7 +107,7 @@ export const standingGrants = new GrantStore();
  * Null = ask as usual. Both paths still require the tool to declare targetArgs.
  */
 export function resolveGrantApproval(
-  tool: LocalClawTool | undefined,
+  tool: InvarailTool | undefined,
   params: Record<string, unknown>,
   principal: string,
   origin?: { channel: string; channelId: string },

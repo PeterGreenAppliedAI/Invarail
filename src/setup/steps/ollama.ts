@@ -33,7 +33,7 @@ export async function runOllamaStep(): Promise<OllamaStepResult> {
         return { url: customUrl, models: [] };
       }
     } else {
-      printInfo('Continuing anyway — make sure Ollama is running before starting LocalClaw.');
+      printInfo('Continuing anyway — make sure Ollama is running before starting Invarail.');
       return { url: defaultUrl, models: [] };
     }
   }
@@ -45,7 +45,7 @@ export async function runOllamaStep(): Promise<OllamaStepResult> {
       printInfo(`  - ${m.name} (${sizeMB} MB)`);
     }
   } else {
-    printWarning('No models found. Pull some models before running LocalClaw:');
+    printWarning('No models found. Pull some models before running Invarail:');
     printInfo('  ollama pull phi4-mini');
     printInfo('  ollama pull qwen3-coder:30b');
   }

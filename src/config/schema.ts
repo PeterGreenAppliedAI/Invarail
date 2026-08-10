@@ -201,7 +201,7 @@ export const MemoryConfigSchema = z.object({
   falkordb: z.object({
     host: z.string().default('localhost'),
     port: z.number().default(6379),
-    graphName: z.string().default('localclaw_memory'),
+    graphName: z.string().default('invarail_memory'),
   }).default({}),
 });
 
@@ -269,7 +269,7 @@ export const SessionExecConfigSchema = z.object({
 });
 
 export const DockerConfigSchema = z.object({
-  image: z.string().default('localclaw-sandbox:latest'),
+  image: z.string().default('invarail-sandbox:latest'),
   mountMode: z.enum(['ro', 'rw']).default('ro'),
   memoryLimit: z.string().default('512m'),
   cpuLimit: z.string().default('1.0'),
@@ -370,7 +370,7 @@ export const McpServerConfigSchema = z.object({
   args: z.array(z.string()).default([]),              // stdio: e.g. ["blender-mcp"]
   /** stdio: working directory for the spawned server. Servers that resolve
    *  their own relative paths (config files, child processes) need to run
-   *  from their repo root, not LocalClaw's. */
+   *  from their repo root, not Invarail's. */
   cwd: z.string().optional(),
   url: z.string().optional(),                         // http: e.g. "https://mcp.linear.app/mcp"
   /** http: authorize via local OAuth 2.1 + PKCE + DCR (tokens in the secret
@@ -480,7 +480,7 @@ export const FactInputSchema = z.object({
   importance: z.number().min(1).max(5).default(2),
 });
 
-export const LocalClawConfigSchema = z.object({
+export const InvarailConfigSchema = z.object({
   /** Owner user ID — the single person who can access owner-only tools (gmail, calendar, etc.). Checked in code, not by the model. */
   ownerId: z.string().optional(),
   /** Principals: person → channel sender aliases. See PrincipalSchema. */

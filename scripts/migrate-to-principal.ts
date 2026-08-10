@@ -19,7 +19,7 @@ import { resolveWorkspacePath } from '../src/agents/scope.js';
 const APPLY = process.argv.includes('--apply');
 
 async function main(): Promise<void> {
-  const config = loadConfig('localclaw.config.json5');
+  const config = loadConfig('invarail.config.json5');
   const principals = Object.entries(config.principals ?? {});
   if (principals.length === 0) {
     console.log('No principals configured — nothing to migrate.');
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   // --- Graph ---
   const db = await FalkorDB.connect({ socket: { host: 'localhost', port: 6379 } });
-  const graph = db.selectGraph('localclaw_memory');
+  const graph = db.selectGraph('invarail_memory');
 
   for (const [principal, def] of principals) {
     const aliases = def.aliases.filter(a => a !== principal);

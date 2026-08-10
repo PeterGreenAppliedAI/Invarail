@@ -1,9 +1,9 @@
 import { Cron } from 'croner';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 import { CRON_JOB_CATEGORIES as VALID_CATEGORIES } from '../cron/types.js';
 
-export function createCronEditTool(cronService: CronService): LocalClawTool {
+export function createCronEditTool(cronService: CronService): InvarailTool {
   return {
     name: 'cron_edit',
     description: `Edit an existing cron job. Update its name, schedule, category, message, or enabled status. Category must be one of: ${VALID_CATEGORIES.join(', ')}.`,

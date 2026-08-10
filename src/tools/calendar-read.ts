@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 
 function getAuth() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -13,7 +13,7 @@ function getAuth() {
   return oauth2;
 }
 
-export function createCalendarListTool(): LocalClawTool {
+export function createCalendarListTool(): InvarailTool {
   return {
     name: 'calendar_list',
     description: 'List upcoming events from Google Calendar. Returns event title, time, location, and description. Read-only — cannot create, modify, or delete events. WHEN TO USE: User asks about their schedule, upcoming meetings, what\'s on their calendar.',
@@ -91,7 +91,7 @@ export function createCalendarListTool(): LocalClawTool {
   };
 }
 
-export function createCalendarSearchTool(): LocalClawTool {
+export function createCalendarSearchTool(): InvarailTool {
   return {
     name: 'calendar_search',
     description: 'Search Google Calendar events by keyword. Returns matching events with title, time, and details. Read-only.',

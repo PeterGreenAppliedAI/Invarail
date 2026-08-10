@@ -1,4 +1,4 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { EmbeddingStore } from '../memory/embeddings.js';
 import type { OllamaClient } from '../ollama/client.js';
 import { searchVault, storeDocument, listDomains, reindexVault } from '../knowledge/vault.js';
@@ -8,7 +8,7 @@ import { searchVault, storeDocument, listDomains, reindexVault } from '../knowle
  * Folders under the vault path ARE the taxonomy (business/, coding/, ...).
  */
 
-export function createDocsSearchTool(vaultPath: string, store: EmbeddingStore, client: OllamaClient): LocalClawTool {
+export function createDocsSearchTool(vaultPath: string, store: EmbeddingStore, client: OllamaClient): InvarailTool {
   return {
     name: 'docs_search',
     description: `Search the owner's curated document vault (their authoritative notes: principles, rubrics, operating procedures, business context). WHEN TO USE: the question touches the owner's own standards, procedures, clients, or documented knowledge — the vault OUTRANKS general memory for anything it covers. DO NOT use for current events (web_search) or conversational recall (memory_search). Domains are folders: ${listDomains(vaultPath).join(', ') || '(none yet)'}.`,
@@ -45,7 +45,7 @@ export function createDocsSearchTool(vaultPath: string, store: EmbeddingStore, c
   };
 }
 
-export function createDocsStoreTool(vaultPath: string, store: EmbeddingStore, client: OllamaClient): LocalClawTool {
+export function createDocsStoreTool(vaultPath: string, store: EmbeddingStore, client: OllamaClient): InvarailTool {
   return {
     name: 'docs_store',
     description: `Save a document into the owner's vault under a domain folder. WHEN TO USE: the user asks to save/store context, notes, principles, or procedures as a document ("save this as business context"). DO NOT use for short facts (memory_save) or files (write_file). Existing domains: ${listDomains(vaultPath).join(', ') || '(none — a new folder is created)'}.`,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolvePrincipal, isOwner, selfIdentityLine } from '../../src/identity/principal.js';
-import type { LocalClawConfig } from '../../src/config/types.js';
+import type { InvarailConfig } from '../../src/config/types.js';
 
 const config = {
   ownerId: '415030165005926401',
@@ -11,7 +11,7 @@ const config = {
       aliases: ['415030165005926401', '6555481980', '13478769461_s.whatsapp.net', 'console-user'],
     },
   },
-} as unknown as LocalClawConfig;
+} as unknown as InvarailConfig;
 
 describe('resolvePrincipal', () => {
   it('maps every alias to the principal', () => {
@@ -30,7 +30,7 @@ describe('resolvePrincipal', () => {
   });
 
   it('behaves as identity with no principals configured', () => {
-    const bare = { principals: {} } as unknown as LocalClawConfig;
+    const bare = { principals: {} } as unknown as InvarailConfig;
     expect(resolvePrincipal('6555481980', bare)).toBe('6555481980');
   });
 });
@@ -44,7 +44,7 @@ describe('selfIdentityLine', () => {
   });
 
   it('returns null when no identity metadata is configured', () => {
-    const bare = { principals: { p: { aliases: ['x'], emails: [] } } } as unknown as LocalClawConfig;
+    const bare = { principals: { p: { aliases: ['x'], emails: [] } } } as unknown as InvarailConfig;
     expect(selfIdentityLine('x', bare)).toBeNull();
     expect(selfIdentityLine('stranger', config)).toBeNull();
   });
@@ -63,6 +63,6 @@ describe('isOwner', () => {
   it('rejects strangers and missing config', () => {
     expect(isOwner('random-stranger', config)).toBe(false);
     expect(isOwner(undefined, config)).toBe(false);
-    expect(isOwner('anyone', { principals: {} } as unknown as LocalClawConfig)).toBe(false);
+    expect(isOwner('anyone', { principals: {} } as unknown as InvarailConfig)).toBe(false);
   });
 });

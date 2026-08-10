@@ -73,7 +73,7 @@ export class McpStdioClient {
     await this.request('initialize', {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'localclaw', version: '1.0' },
+      clientInfo: { name: 'invarail', version: '1.0' },
     }, HANDSHAKE_TIMEOUT_MS);
     this.notify('notifications/initialized');
   }

@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync, unlinkSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { LocalClawTool, ToolContext } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import type { z } from 'zod';
 import type { ImageGenConfigSchema } from '../config/schema.js';
 import { toolExecutionError } from '../errors.js';
@@ -392,7 +392,7 @@ function runPython(scriptPath: string, timeout = 60_000): Promise<string> {
 
 // --- Tool factory ---
 
-export function createDiagramGenerateTool(config: ImageGenConfig): LocalClawTool {
+export function createDiagramGenerateTool(config: ImageGenConfig): InvarailTool {
   return {
     name: 'diagram_generate',
     description: `Generate a styled architecture diagram with AI-generated background and composited elements.
@@ -402,7 +402,7 @@ DO NOT use for: simple data charts (use code_session with matplotlib), or genera
 IMPORTANT: Before calling this tool, gather accurate details about the system being diagrammed. Use available tools (read_file, memory_search, etc.) to get real component names, models, and connections. Never use generic placeholders — if you don't have enough information, ask the user.
 
 You provide a structured JSON layout spec with sections, connections, and a theme. Available themes: cyberpunk, corporate, blueprint, minimal, or a custom Flux prompt string.
-Always provide a readable filename (e.g., "localclaw_architecture"), not a timestamp.
+Always provide a readable filename (e.g., "invarail_architecture"), not a timestamp.
 Each section should have 3-6 items max for readability. Use multiple sections to show more detail.
 Returns a [FILE:path] token for the generated diagram PNG.`,
     parameterDescription: 'spec (required): JSON string with: title, subtitle (optional), tagline (optional), theme ("cyberpunk"|"corporate"|"blueprint"|"minimal"|custom prompt), sections (array of {id, label, items[], position: "top"|"middle"|"bottom"|"left"|"right"}), connections (array of {from, to, label?, style?: "solid"|"dashed"|"arrow"}). filename (optional): Output filename without extension.',

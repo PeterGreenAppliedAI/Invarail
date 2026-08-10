@@ -1,7 +1,7 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { TaskStore } from '../tasks/store.js';
 
-export function createTaskDoneTool(taskStore: TaskStore): LocalClawTool {
+export function createTaskDoneTool(taskStore: TaskStore): InvarailTool {
   return {
     name: 'task_done',
     description: 'Mark a task as done. Convenience shortcut — only needs the task ID.',

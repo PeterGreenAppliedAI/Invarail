@@ -51,7 +51,7 @@ function buildIdentity(ownerName: string, botName: string): string {
 
 - **Name:** ${botName}
 - **Owner:** ${ownerName}
-- **Engine:** LocalClaw (Router + Specialist architecture)
+- **Engine:** Invarail (Router + Specialist architecture)
 - **Infrastructure:** Runs on local hardware via Ollama
 `;
 }
@@ -127,7 +127,7 @@ export async function runWorkspaceStep(): Promise<WorkspaceStepResult> {
   console.log('');
 
   const ownerName = await askText('Your name (the bot owner)', 'User');
-  const botName = await askText('Bot display name', 'LocalClaw Assistant');
+  const botName = await askText('Bot display name', 'Invarail Assistant');
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   ensureDir(dir);

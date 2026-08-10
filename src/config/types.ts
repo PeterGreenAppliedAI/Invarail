@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type {
-  LocalClawConfigSchema,
+  InvarailConfigSchema,
   OllamaConfigSchema,
   RouterConfigSchema,
   RouterCategorySchema,
@@ -39,7 +39,7 @@ import type {
   FactInputSchema,
 } from './schema.js';
 
-export type LocalClawConfig = z.infer<typeof LocalClawConfigSchema>;
+export type InvarailConfig = z.infer<typeof InvarailConfigSchema>;
 export type VerificationConfig = z.infer<typeof VerificationConfigSchema>;
 export type OllamaConfig = z.infer<typeof OllamaConfigSchema>;
 export type RouterConfig = z.infer<typeof RouterConfigSchema>;

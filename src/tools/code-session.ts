@@ -1,9 +1,9 @@
-import type { LocalClawTool } from './types.js';
+import type { InvarailTool } from './types.js';
 import type { SessionManager, SessionRuntime } from '../exec/session-manager.js';
 
 export function createCodeSessionTool(
   sessionManager: SessionManager,
-): LocalClawTool {
+): InvarailTool {
   return {
     name: 'code_session',
     description: 'Manage persistent code sessions. Start a REPL, run code that preserves state between calls, get output, or close sessions.',

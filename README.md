@@ -1,8 +1,8 @@
-# LocalClaw
+# Invarail
 
 **A local-model-first AI agent framework that actually works with Ollama.**
 
-LocalClaw runs entirely on your own hardware. No cloud APIs, no per-token costs, no data leaving your machine. It connects to Discord, Telegram, WhatsApp, Chrome (browser extension), and more via pluggable adapters — and handles complex multi-tool tasks using local models through a **Router + Specialist** architecture.
+Invarail runs entirely on your own hardware. No cloud APIs, no per-token costs, no data leaving your machine. It connects to Discord, Telegram, WhatsApp, Chrome (browser extension), and more via pluggable adapters — and handles complex multi-tool tasks using local models through a **Router + Specialist** architecture.
 
 ## The Problem
 
@@ -15,7 +15,7 @@ Existing agent frameworks (LangChain, CrewAI, AutoGen, etc.) are built for GPT-4
 
 ## The Solution
 
-Instead of giving one model all the tools, LocalClaw splits the work:
+Instead of giving one model all the tools, Invarail splits the work:
 
 1. **Router** — A fast model (phi4:14b) classifies intent into categories
 2. **Pipeline or Specialist** — Most categories use **deterministic pipelines** where code controls the workflow and the LLM only extracts parameters or synthesizes text. Open-ended categories fall back to a ReAct tool loop.
@@ -32,7 +32,7 @@ User → Router (phi4:14b) → Category
 
 ## Management Console
 
-LocalClaw includes a full web-based management console at `http://localhost:3100/console/`.
+Invarail includes a full web-based management console at `http://localhost:3100/console/`.
 
 <img width="2554" height="1302" alt="image" src="https://github.com/user-attachments/assets/a309e3d2-0bd5-4cf0-9806-0cbfeb1f0663" />
 
@@ -70,7 +70,7 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 | Voice | TTS/STT | Kokoro TTS + faster-whisper STT — voice in, voice out, with toggle hands-free mode |
 | Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from success |
 | Skills | `skill_find` *(+ automatic)* | Self-improving procedural memory — successful runs are saved (semantic matching with a measured floor, save-time dedup) and reused; specialists can look up proven step sequences on demand |
-| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become LocalClaw tools — stdio (spawned, with `cwd` support) or remote streamable-HTTP, small-model description curation (`toolDescriptions` overrides), schema-filtered params (model-padded args stripped before strict servers see them), per-server `maxResultChars`, readOnlyHint-aware confirm gating, fully-local OAuth (PKCE + DCR, no cloud broker) |
+| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become Invarail tools — stdio (spawned, with `cwd` support) or remote streamable-HTTP, small-model description curation (`toolDescriptions` overrides), schema-filtered params (model-padded args stripped before strict servers see them), per-server `maxResultChars`, readOnlyHint-aware confirm gating, fully-local OAuth (PKCE + DCR, no cloud broker) |
 | Flow-first research | explicit tool naming | Name a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow in a research request and the pipeline uses its compiled searches as the facets+sources (seconds instead of minutes), then synthesizes, verifies, and renders exactly as normal |
 | Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` to a confirmation and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
 | Heartbeat | *(autonomous)* | Deterministic fact diff + LLM reasoning, auto-expire stale facts, interactive memory review via `!heartbeat` |
@@ -89,7 +89,7 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 
 > **Fifteen minutes to a working agent:** [INSTALL.md](INSTALL.md) has the tier
 > ladder — Tier 0 is Node + Ollama + ONE model + the web console, nothing else
-> (`npm run setup`, choose **Starter**, or copy `localclaw.config.starter.json5`).
+> (`npm run setup`, choose **Starter**, or copy `invarail.config.starter.json5`).
 > Everything below describes the full build; every piece of it is optional and
 > degrades gracefully when absent.
 
@@ -116,8 +116,8 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 ### Install
 
 ```bash
-git clone https://github.com/PeterGreenAppliedAI/LocalClaw.git
-cd LocalClaw
+git clone https://github.com/PeterGreenAppliedAI/Invarail.git
+cd Invarail
 npm install
 cd console && npm install && npm run build && cd ..
 ```
@@ -143,7 +143,7 @@ npm run setup
 - Workspace bootstrap (SOUL.md, USER.md, IDENTITY.md, etc.)
 - Preflight verification with completeness warnings
 
-Creates `localclaw.config.json5` and `.env` with your settings. Won't overwrite existing files unless you confirm. Re-run anytime to reconfigure.
+Creates `invarail.config.json5` and `.env` with your settings. Won't overwrite existing files unless you confirm. Re-run anytime to reconfigure.
 
 ### Manual Configuration
 
@@ -212,7 +212,7 @@ The management console is available at `http://localhost:3100/console/` when the
 ## Architecture
 
 ```
-localclaw/
+invarail/
 ├── src/
 │   ├── index.ts              # Entry point
 │   ├── orchestrator.ts       # Lifecycle, rate limiting, streaming
@@ -248,7 +248,7 @@ localclaw/
 │   └── dist/                 # Built static files (served by web adapter)
 ├── test/                     # 389 tests across 26 suites
 ├── CLAUDE.md                 # AI code generation guidelines (for Claude Code)
-├── localclaw.config.json5    # Full configuration
+├── invarail.config.json5    # Full configuration
 └── .env                      # API keys and tokens
 ```
 
@@ -365,7 +365,7 @@ After a successful plan execution, the bot saves the steps as a reusable skill i
 
 ### CLI
 
-LocalClaw includes a terminal interface (`npm run cli`) for direct interaction without channel adapters:
+Invarail includes a terminal interface (`npm run cli`) for direct interaction without channel adapters:
 
 ```
 ❯ /status
@@ -435,7 +435,7 @@ The management console exposes a REST API at `/console/api/`:
 
 ### Voice (TTS/STT)
 
-LocalClaw supports voice input and output through an optional TTS/STT service layer:
+Invarail supports voice input and output through an optional TTS/STT service layer:
 
 - **STT (Speech-to-Text)** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) server on your inference node. Incoming voice messages are automatically transcribed before processing.
 - **TTS (Text-to-Speech)** — [Kokoro](https://github.com/remsky/Kokoro-FastAPI) on your inference node. Near-real-time synthesis (~150ms per sentence). When a user sends a voice message, the response is synthesized back as audio. Voice responses get a TTS-friendly prompt injection (no emojis, no markdown, plain conversational English).
@@ -476,7 +476,7 @@ QWEN_TTS_URL=http://your-gpu-node:5005
 WHISPER_URL=http://your-gpu-node:8000
 ```
 
-Enable in `localclaw.config.json5`:
+Enable in `invarail.config.json5`:
 ```json5
 tts: { enabled: true, url: "${QWEN_TTS_URL}", voice: "af_bella", format: "mp3" },
 stt: { enabled: true, url: "${WHISPER_URL}", model: "whisper-large-v3", language: "en" },
@@ -484,7 +484,7 @@ stt: { enabled: true, url: "${WHISPER_URL}", model: "whisper-large-v3", language
 
 ### Vision (Image Analysis)
 
-When a user sends an image, LocalClaw automatically runs it through a multimodal vision model (`qwen3-vl:8b` by default) via Ollama. The vision description is injected into the message context so the specialist can answer questions about the image naturally — no special commands needed.
+When a user sends an image, Invarail automatically runs it through a multimodal vision model (`qwen3-vl:8b` by default) via Ollama. The vision description is injected into the message context so the specialist can answer questions about the image naturally — no special commands needed.
 
 **How it works:**
 
@@ -495,7 +495,7 @@ When a user sends an image, LocalClaw automatically runs it through a multimodal
 
 If the vision model is unavailable or fails, the message is still processed — the user just gets a note that image analysis wasn't available. Images can also be uploaded directly in the management console chat via the paperclip button, paste, or drag & drop.
 
-**Configuration** (in `localclaw.config.json5`):
+**Configuration** (in `invarail.config.json5`):
 
 ```json5
 vision: {
@@ -513,7 +513,7 @@ Memory uses a **FalkorDB graph database** with native vector search for semantic
 **Architecture:**
 ```
 FalkorDB (Docker, localhost:6379)
-  Graph: localclaw_memory
+  Graph: invarail_memory
     (:Fact {text, importance, category, confidence, embedding, createdAt, senderId})
     (:Entity {name, canonical, type})  # canonical = normalized for dedup
     (:Tag {name})
@@ -547,7 +547,7 @@ Each fact has: category (`stable`/`context`/`decision`/`question`), confidence s
 
 ### Self-Improvement System
 
-LocalClaw learns from its own mistakes through a 5-layer feedback system:
+Invarail learns from its own mistakes through a 5-layer feedback system:
 
 1. **Error Learning Store** — When a tool fails, the error is recorded to `.learnings/errors.jsonl` with tool name, params, error message, and step number. Before executing a tool, the engine checks for past errors with matching tool+params and prepends hints to guide the model.
 
@@ -561,7 +561,7 @@ LocalClaw learns from its own mistakes through a 5-layer feedback system:
 
 ### Document Generation
 
-LocalClaw generates professional documents using LibreOffice headless:
+Invarail generates professional documents using LibreOffice headless:
 
 ```
 document[{"action": "create", "content": "<h1>Report</h1>...", "format": "pdf", "filename": "report"}]
@@ -576,11 +576,11 @@ Output files are delivered as attachments through the channel adapters. The `[FI
 
 ### WhatsApp
 
-LocalClaw connects to WhatsApp using [Baileys](https://github.com/WhiskeySockets/Baileys), a lightweight WebSocket-based library (no Puppeteer/Chrome required).
+Invarail connects to WhatsApp using [Baileys](https://github.com/WhiskeySockets/Baileys), a lightweight WebSocket-based library (no Puppeteer/Chrome required).
 
 **First-time setup:**
 
-1. Enable WhatsApp in `localclaw.config.json5`:
+1. Enable WhatsApp in `invarail.config.json5`:
    ```json5
    whatsapp: { enabled: true },
    ```
@@ -615,7 +615,7 @@ The workspace system supports **channel-aware behavior** — the bot receives th
 
 ### Context Compaction
 
-Long conversations hit context limits quickly. Instead of simply dropping old turns, LocalClaw uses **budget-aware compaction** — a sliding window with summary prefix and memory flush.
+Long conversations hit context limits quickly. Instead of simply dropping old turns, Invarail uses **budget-aware compaction** — a sliding window with summary prefix and memory flush.
 
 **How it works:**
 
@@ -628,7 +628,7 @@ Long conversations hit context limits quickly. Instead of simply dropping old tu
      - **Summary** — The archive is condensed into a compact summary that preserves conversational flow
 4. **Tool loop trimming** — During multi-step tool calls, older tool observations are truncated in-place to prevent within-request overflow
 
-**Configuration** (in `localclaw.config.json5`):
+**Configuration** (in `invarail.config.json5`):
 
 ```json5
 session: {
@@ -690,7 +690,7 @@ Separate from the heartbeat. Runs 3 times daily at **8:00am, 1:15pm, 5:00pm**.
    - Evening: "Here's tomorrow — anything to prep tonight?"
 4. **Deliver** — Structured output: calendar items as bullet points, contextual notes after
 
-**Configuration** (in `localclaw.config.json5`):
+**Configuration** (in `invarail.config.json5`):
 
 ```json5
 heartbeat: {
@@ -728,7 +728,7 @@ Add `"reason"` to any specialist's `tools` array to enable the reasoning pass fo
 
 ## Multi-Model Strategy
 
-LocalClaw assigns different models to different roles based on their strengths. No single model handles everything.
+Invarail assigns different models to different roles based on their strengths. No single model handles everything.
 
 Inference runs across **two backends**: a large reasoning model on **vLLM** (OpenAI-compatible) plus small utility/modality models on an **Ollama-compatible gateway**. A `MultiBackendClient` routes each call by model id.
 
@@ -764,11 +764,11 @@ Synthetic and system messages are filtered out. Over time this builds a dataset 
 
 ### Code Generation (Pi / picoder)
 
-LocalClaw delegates coding tasks to [Pi](https://pi.dev) (`@earendil-works/pi-coding-agent`), an open-source local-first coding agent. Code owns the workflow; Pi fills the bounded "write the files" slot, and the **test result** — not the model — is the gate.
+Invarail delegates coding tasks to [Pi](https://pi.dev) (`@earendil-works/pi-coding-agent`), an open-source local-first coding agent. Code owns the workflow; Pi fills the bounded "write the files" slot, and the **test result** — not the model — is the gate.
 
 **How it works:**
 1. User: "Build a REST API with tests" → routes to the `code_gen` specialist
-2. The pipeline enriches the request into a spec, then calls `pi_build` — which runs Pi **headless, scoped to `builds/<slug>/`** (every write is confined to that dir; it cannot touch LocalClaw's own source)
+2. The pipeline enriches the request into a spec, then calls `pi_build` — which runs Pi **headless, scoped to `builds/<slug>/`** (every write is confined to that dir; it cannot touch Invarail's own source)
 3. The pipeline runs the project's tests. If they fail, it re-runs Pi in the dir with the errors (bounded fix loop); the gate's verdict is the actual test outcome
 4. On settle, it makes an **autonomous local git commit** (remote GitHub push is opt-in, off by default), then delivers a summary
 
@@ -776,7 +776,7 @@ No server, no global session DB — Pi is invoked per-build via its CLI (`-p` / 
 
 **Setup:** Pi ships as an npm dependency — no separate install. Point it at your inference endpoint in `~/.pi/agent/models.json` (any OpenAI-compatible server — Ollama, vLLM):
 ```json5
-// localclaw.config.json5
+// invarail.config.json5
 pi: {
   enabled: true,
   model: "vllm/deepseek-v4-flash",  // provider/id from ~/.pi/agent/models.json
@@ -785,22 +785,22 @@ pi: {
 
 ## AI-Assisted Development
 
-LocalClaw includes a `CLAUDE.md` file that provides project-level guidelines for AI code generation tools (Claude Code, etc.). When you open this repo in Claude Code, it automatically reads `CLAUDE.md` and follows the project's architecture, code standards, error handling patterns, and security rules.
+Invarail includes a `CLAUDE.md` file that provides project-level guidelines for AI code generation tools (Claude Code, etc.). When you open this repo in Claude Code, it automatically reads `CLAUDE.md` and follows the project's architecture, code standards, error handling patterns, and security rules.
 
 This means AI-generated code will:
 - Use the error factory in `src/errors.ts` instead of ad-hoc try/catch
-- Follow the `LocalClawTool` interface and tool registration pattern
+- Follow the `InvarailTool` interface and tool registration pattern
 - Respect the dispatch security pipeline
 - Derive TypeScript types from Zod schemas (never duplicate)
 - Place new code in the correct directories
 
 See `CLAUDE.md` for the full set of patterns, anti-patterns, and review checklist.
 
-## Extending LocalClaw
+## Extending Invarail
 
 ### Add a new tool
 
-1. Create `src/tools/my-tool.ts` implementing `LocalClawTool`
+1. Create `src/tools/my-tool.ts` implementing `InvarailTool`
 2. Register in `src/tools/register-all.ts`
 3. Add to a specialist's `tools` array in config
 
@@ -818,7 +818,7 @@ See `CLAUDE.md` for the full set of patterns, anti-patterns, and review checklis
 
 ### Add an MCP server (external tools)
 
-Any MCP server's tools auto-register as LocalClaw tools — no tool factories needed:
+Any MCP server's tools auto-register as Invarail tools — no tool factories needed:
 
 ```json5
 tools: {
@@ -842,7 +842,7 @@ tools: {
 
 Then add `"mcp:<name>"` to a specialist's `tools` array to expose the server's whole toolset. Tools without `readOnlyHint` are confirm-gated by default (`trust: 'auto'` waives it per server).
 
-**Worked example — [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP)**, a workflow-first MCP server where each tool is one deterministic multi-step workflow (built for exactly the small-model tool-sprawl problem LocalClaw fights): point `args` at its `src/server.ts` with `--flows <dir>`, set `cwd` to its repo root, and its compiled flows appear as tools. Naming a gathering flow in a research request ("use the weekly_gather tool") makes the research pipeline use the flow's output as its facets and sources — see `flow_gather` in `src/pipeline/definitions/research.ts`.
+**Worked example — [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP)**, a workflow-first MCP server where each tool is one deterministic multi-step workflow (built for exactly the small-model tool-sprawl problem Invarail fights): point `args` at its `src/server.ts` with `--flows <dir>`, set `cwd` to its repo root, and its compiled flows appear as tools. Naming a gathering flow in a research request ("use the weekly_gather tool") makes the research pipeline use the flow's output as its facets and sources — see `flow_gather` in `src/pipeline/definitions/research.ts`.
 
 ## Safety
 
@@ -894,7 +894,7 @@ Then add `"mcp:<name>"` to a specialist's `tools` array to expose the server's w
 
 ## Attribution
 
-Several architectural patterns in LocalClaw were adapted from open source agent frameworks:
+Several architectural patterns in Invarail were adapted from open source agent frameworks:
 
 | Project | What We Adapted |
 |---------|----------------|
@@ -902,7 +902,7 @@ Several architectural patterns in LocalClaw were adapted from open source agent 
 | **[Deep Agents](https://github.com/langchain-ai/deepagents)** (LangChain) | Progressive skill disclosure (compact index, read on demand), subagent context isolation (fresh context for plan pipeline), tool argument truncation in older messages |
 | **[agent-reasoning](https://github.com/jasperan/agent-reasoning)** (jasperan) | Self-reflection stage for plan pipeline (draft → critique → improve), inspired by peer-reviewed cognitive architecture research (Chain-of-Thought, Tree of Thoughts, ReAct) |
 
-These frameworks solve similar problems but assume frontier models (GPT-4, Claude) are driving the agent. LocalClaw's contribution is adapting these patterns for local models (7B-30B parameters) running on Ollama, where the model can't reliably orchestrate its own workflow — deterministic pipelines control the flow, and the model only extracts parameters and synthesizes text.
+These frameworks solve similar problems but assume frontier models (GPT-4, Claude) are driving the agent. Invarail's contribution is adapting these patterns for local models (7B-30B parameters) running on Ollama, where the model can't reliably orchestrate its own workflow — deterministic pipelines control the flow, and the model only extracts parameters and synthesizes text.
 
 | **[Goose](https://github.com/aaif-goose/goose)** (AAIF/Block) | Tool-specific error recovery (errors as actionable prompts, not generic "try again"), structured sub-dispatch results (typed metadata over regex extraction), LLM-based observation summarization (smart compaction over hard truncation) |
 

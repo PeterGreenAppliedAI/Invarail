@@ -41,7 +41,7 @@ export function Settings({ settings, onSave, connected }: SettingsProps) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <label style={labelStyle}>LocalClaw Host</label>
+        <label style={labelStyle}>Invarail Host</label>
         <input
           type="text"
           value={host}
@@ -88,7 +88,7 @@ export function Settings({ settings, onSave, connected }: SettingsProps) {
           fontSize: 13,
           color: testResult ? 'var(--success)' : 'var(--error)',
         }}>
-          {testResult ? 'Connected to LocalClaw' : 'Connection failed. Check host and token.'}
+          {testResult ? 'Connected to Invarail' : 'Connection failed. Check host and token.'}
         </div>
       )}
 
@@ -107,8 +107,8 @@ export function Settings({ settings, onSave, connected }: SettingsProps) {
         background: 'var(--bg-input)', fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6,
       }}>
         <div style={{ fontWeight: 600, marginBottom: 4 }}>About</div>
-        <div>LocalClaw browser companion. Connects to your local LocalClaw instance.</div>
-        <div style={{ marginTop: 4 }}>Right-click selected text or a page to send to LocalClaw via context menu.</div>
+        <div>Invarail browser companion. Connects to your local Invarail instance.</div>
+        <div style={{ marginTop: 4 }}>Right-click selected text or a page to send to Invarail via context menu.</div>
       </div>
     </div>
   );
