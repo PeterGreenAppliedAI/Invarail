@@ -259,12 +259,18 @@ export class DiscordAdapter implements ChannelAdapter {
         : undefined;
 
       for (let i = 0; i < chunks.length; i++) {
-        await sendable.send({
+        const sent = await sendable.send({
           content: chunks[i],
           reply: target.replyToId ? { messageReference: target.replyToId } : undefined,
           files: i === 0 && files.length > 0 ? files : undefined,
           components: i === chunks.length - 1 ? components : undefined,
         });
+        // Pre-seed feedback reactions on DELIVERABLES (attachments) only — a
+        // one-tap rating affordance for the experience layer, without nagging
+        // text and without cluttering ordinary chat replies
+        if (i === 0 && files.length > 0) {
+          try { await sent.react('👍'); await sent.react('👎'); } catch { /* cosmetic */ }
+        }
       }
     } catch (err) {
       throw channelSendError('discord', err);
