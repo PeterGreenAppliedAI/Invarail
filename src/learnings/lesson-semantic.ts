@@ -1,5 +1,5 @@
 import type { OllamaClient } from '../ollama/client.js';
-import { upsertSourceEmbedding, deleteSourceEmbedding, findBySourceSimilarity } from '../skills/semantic.js';
+import { upsertSourceEmbedding, deleteSourceEmbedding, findBySourceSimilarity } from '../memory/semantic-helpers.js';
 import { LessonStore, LESSON_EVIDENCE_FLOOR, type Lesson } from './lesson-store.js';
 
 const LESSON_SOURCE = 'lesson';

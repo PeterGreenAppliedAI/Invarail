@@ -37,7 +37,6 @@ import { createTaskListTool } from './task-list.js';
 import { createTaskUpdateTool } from './task-update.js';
 import { createTaskDoneTool } from './task-done.js';
 import { createTaskRemoveTool } from './task-remove.js';
-import { createReasonTool } from './reason.js';
 import { createMemoryCleanupTool } from './memory-cleanup.js';
 import { createDocumentTool } from './document.js';
 import { createGmailSearchTool, createGmailReadTool } from './gmail-read.js';
@@ -161,11 +160,6 @@ export async function registerAllTools(
     registry.register(createTaskRemoveTool(options.taskStore));
   }
 
-  // Reason tool (requires Ollama client + an explicitly configured reasoning model)
-  if (options?.ollamaClient && config.reasoning?.model) {
-    registry.register(createReasonTool(options.ollamaClient, config.reasoning));
-  }
-
   // Document tool (LibreOffice headless)
   registry.register(createDocumentTool());
 
@@ -195,12 +189,6 @@ export async function registerAllTools(
   // Workspace tools (always available)
   registry.register(createWorkspaceReadTool());
   registry.register(createWorkspaceWriteTool());
-
-  // Saved-skill lookup — progressive disclosure for ReAct specialists
-  if (options?.ollamaClient) {
-    const { createSkillFindTool } = await import('./skill-find.js');
-    registry.register(createSkillFindTool(options.ollamaClient));
-  }
 
   // Load plugins from plugins/ and ~/.invarail/plugins/
   try {

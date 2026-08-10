@@ -43,7 +43,7 @@
       maxTokens: 4096,
       temperature: 0.3,
       maxIterations: 8,
-      tools: ["web_search", "web_fetch", "browser", "reason"],
+      tools: ["web_search", "web_fetch", "browser"],
       pipeline: "web_search",
     },
     memory: {
@@ -61,7 +61,7 @@
       maxTokens: 4096,
       temperature: 0.3,
       maxIterations: 8,
-      tools: ["exec", "read_file", "write_file", "code_session", "reason"],
+      tools: ["exec", "read_file", "write_file", "code_session"],
       pipeline: "exec",
     },
     cron: {
@@ -94,7 +94,7 @@
       maxTokens: 4096,
       temperature: 0.3,
       maxIterations: 15,
-      tools: ["web_search", "web_fetch", "browser", "memory_search", "memory_save", "exec", "send_message", "task_add", "task_list", "task_done", "reason"],
+      tools: ["web_search", "web_fetch", "browser", "memory_search", "memory_save", "exec", "send_message", "task_add", "task_list", "task_done"],
       pipeline: "plan",
     },
     config: {
@@ -120,7 +120,7 @@
       maxTokens: 4096,
       temperature: 0.3,
       maxIterations: 20,
-      tools: ["web_search", "web_fetch", "code_session", "write_file", "read_file", "reason"],
+      tools: ["web_search", "web_fetch", "code_session", "write_file", "read_file"],
       pipeline: "research",
     },
   },

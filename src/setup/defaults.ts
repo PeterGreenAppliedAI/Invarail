@@ -22,7 +22,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 8,
-    tools: ['web_search', 'web_fetch', 'browser', 'reason'],
+    tools: ['web_search', 'web_fetch', 'browser'],
     pipeline: 'web_search',
   },
   memory: {
@@ -38,7 +38,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 8,
-    tools: ['exec', 'read_file', 'write_file', 'code_session', 'reason'],
+    tools: ['exec', 'read_file', 'write_file', 'code_session'],
     pipeline: 'exec',
   },
   cron: {
@@ -69,7 +69,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 15,
-    tools: ['web_search', 'web_fetch', 'browser', 'memory_search', 'exec', 'read_file', 'write_file', 'send_message', 'task_add', 'task_list', 'task_done', 'reason'],
+    tools: ['web_search', 'web_fetch', 'browser', 'memory_search', 'exec', 'read_file', 'write_file', 'send_message', 'task_add', 'task_list', 'task_done'],
     pipeline: 'plan',
   },
   config: {
@@ -92,7 +92,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 20,
-    tools: ['web_search', 'web_fetch', 'code_session', 'reason'],
+    tools: ['web_search', 'web_fetch', 'code_session'],
     pipeline: 'research',
   },
   personal: {
@@ -100,7 +100,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 2048,
     temperature: 0.3,
     maxIterations: 5,
-    tools: ['gmail_search', 'gmail_read', 'calendar_list', 'calendar_search', 'reason'],
+    tools: ['gmail_search', 'gmail_read', 'calendar_list', 'calendar_search'],
   },
   image: {
     systemPrompt: 'You are an image generation specialist. Use image_generate for photos/art and diagram_generate for technical diagrams and architecture visuals. Use read_file to check generated files.',
@@ -122,7 +122,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 8,
-    tools: ['code_session', 'read_file', 'reason'],
+    tools: ['code_session', 'read_file'],
     pipeline: 'analytics',
   },
 };

@@ -467,7 +467,6 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
   ];
 
   const steps: ReActStep[] = [];
-  const hasReasonTool = availableToolNames.has('reason');
   let hallucinationRepairAttempted = false;
   let refusalRepairAttempted = false;
   let emptyRetryAttempted = false;
@@ -497,33 +496,6 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     effectiveTemperature !== config.temperature ? `, temp clamped ${config.temperature}→${effectiveTemperature}` : ''
   }`);
 
-  // Step-back planning: when reason tool is available, have the model plan
-  // its approach before diving in. Prevents unstructured multi-draft outputs.
-  if (hasReasonTool && tools.length > 1) {
-    try {
-      const planResponse = await client.chat({
-        model: config.model,
-        messages: [
-          ...messages,
-          {
-            role: 'user',
-            content: 'Before starting, briefly plan your approach in 2-3 bullet points. What tools will you use, in what order, and what is the expected output format? Be concise — just the plan, then I will say "go" and you can begin.',
-          },
-        ],
-        options: { temperature: 0.2, num_predict: 256 },
-      });
-
-      const plan = planResponse.message?.content ?? '';
-      if (plan) {
-        messages.push({ role: 'assistant', content: plan });
-        messages.push({ role: 'user', content: 'Go.' });
-        console.log(`[ReAct] Step-back plan: ${plan.slice(0, 120)}...`);
-      }
-    } catch {
-      // Planning failed — continue without it
-      console.log('[ReAct] Step-back planning failed, proceeding without plan');
-    }
-  }
 
   for (let i = 0; i < config.maxIterations + extraIterations; i++) {
     // Steering: fold in messages the user sent mid-turn — a correction lands
@@ -824,33 +796,6 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       continue;
     }
 
-    // Forced reasoning pass: if reason tool was available but never called,
-    // and the model gathered data (2+ tool calls), run a reasoning pass
-    // to produce a clean, single-draft synthesis.
-    const reasonWasCalled = steps.some(s => s.action?.tool === 'reason');
-    const toolCallSteps = steps.filter(s => s.action);
-
-    if (hasReasonTool && !reasonWasCalled && toolCallSteps.length >= 2) {
-      const observations = toolCallSteps
-        .map(s => `[${s.action!.tool}]: ${s.observation ?? ''}`)
-        .join('\n\n');
-
-      console.log(`[ReAct] Forcing reasoning pass (${toolCallSteps.length} tool calls, reason never invoked)`);
-
-      try {
-        const reasoned = await executor('reason', {
-          prompt: userMessage,
-          context: observations,
-        }, toolContext);
-
-        answer = reasoned;
-        console.log(`[ReAct] Reasoning pass complete (${answer.length} chars)`);
-      } catch (err) {
-        // Reasoning failed — keep the model's original answer
-        console.warn(`[ReAct] OLLAMA_INFERENCE_ERROR: Reasoning pass failed — ${err instanceof Error ? err.message : err}`);
-      }
-    }
-
     steps.push({ thought: '', finalAnswer: answer });
     const fileAppend = fileTokens.map(p => ` [FILE:${p}]`).join('');
     // Stream the final answer to user (answer already computed, no tool-call risk)
@@ -858,34 +803,8 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     return { answer: answer + fileAppend, steps, iterations: i + 1, hitMaxIterations: false, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
   }
 
-  // Max iterations reached — use reasoning pass if available, otherwise ask model to synthesize
+  // Max iterations reached — ask the model to synthesize from observations
   console.log(`[ReAct] Max iterations (${config.maxIterations}) reached, synthesizing final answer`);
-
-  const maxIterToolCalls = steps.filter(s => s.action);
-  const maxIterReasonCalled = steps.some(s => s.action?.tool === 'reason');
-
-  // Prefer reasoning model for synthesis when available
-  if (hasReasonTool && !maxIterReasonCalled && maxIterToolCalls.length >= 2) {
-    try {
-      const observations = maxIterToolCalls
-        .map(s => `[${s.action!.tool}]: ${s.observation ?? ''}`)
-        .join('\n\n');
-
-      console.log(`[ReAct] Max-iter reasoning pass (${maxIterToolCalls.length} tool calls)`);
-      const answer = await executor('reason', {
-        prompt: userMessage,
-        context: observations +
-          '\n\nIMPORTANT: Base your answer ONLY on the tool observations above. If the observations contain errors or do not include the requested information, say so honestly. NEVER fabricate data, file names, or command output.',
-      }, toolContext);
-
-      steps.push({ thought: '', finalAnswer: answer });
-      const fileAppend = fileTokens.map(p => ` [FILE:${p}]`).join('');
-      return { answer: answer + fileAppend, steps, iterations: config.maxIterations, hitMaxIterations: true, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
-    } catch (err) {
-      console.warn(`[ReAct] OLLAMA_INFERENCE_ERROR: Max-iter reasoning pass failed — ${err instanceof Error ? err.message : err}`);
-      // Fall through to normal synthesis
-    }
-  }
 
   const fileAppend = fileTokens.map(p => ` [FILE:${p}]`).join('');
 
