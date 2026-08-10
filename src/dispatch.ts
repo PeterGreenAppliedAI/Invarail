@@ -18,7 +18,7 @@ import {
 } from './sessions/state-tracker.js';
 import { resolveWorkspacePath } from './agents/scope.js';
 import { buildWorkspaceContext, type WorkspaceCategory } from './agents/workspace.js';
-import { logDispatch, logRouterClassification, logAutonomousAction } from './metrics.js';
+import { logDispatch, logRouterClassification, logAutonomousAction, logReviewNote } from './metrics.js';
 
 /**
  * Cached compaction results per session — used for async compaction.
@@ -316,6 +316,21 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
           primingParts.push(`## Lessons from past failures (steer around these)\n${lessonLines.join('\n')}`);
         }
       } catch { /* lessons are best-effort */ }
+    }
+    // Experiences: approach notes judged by REAL user signals. ADVISORY ONLY —
+    // plain prompt text; never permissions/routing/confirm (the authority
+    // boundary, DECISIONS 2026-08-10). Evidence ≥ 2: explicit signals
+    // (reaction/deny) are born at 2; inferred ones must recur.
+    if (params.config.memory?.experiences?.enabled !== false && message.length > 10) {
+      try {
+        const { sharedExperienceStore } = await import('./memory/experience-store.js');
+        const matches = (await sharedExperienceStore(params.client).searchRelevant(message, 2, 0.6))
+          .filter(m => m.evidenceCount >= 2);
+        if (matches.length > 0) {
+          console.log(`[Dispatch] Experience injection: ${matches.length}`);
+          primingParts.push(`## Approach notes from similar past work (advisory — the user's reactions, not rules)\n${matches.map(m => `- ${m.text}`).join('\n')}`);
+        }
+      } catch { /* experiences are best-effort */ }
     }
     if (modelSummary) {
       primingParts.push(`## User preferences (adapt your style accordingly)\n${modelSummary}`);
@@ -759,6 +774,8 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     const correction = await runPostTaskReview(client, config, message, displayAnswer, result.steps, effectiveCategory);
     if (correction) {
       console.log(`[Dispatch] Post-task review: ${correction.slice(0, 150)}`);
+      // Persisted as inferred dissatisfaction evidence for the experience layer
+      logReviewNote({ category: effectiveCategory, note: correction.slice(0, 200) });
     }
   }
 

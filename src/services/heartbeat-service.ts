@@ -207,6 +207,34 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
       }
     }
 
+    // Experiences — approach notes judged by REAL user signals (reactions,
+    // denials, corrections). Advisory-injection only: the authority boundary
+    // (DECISIONS 2026-08-10).
+    let experienceSummary = '';
+    if (config.memory?.experiences?.enabled !== false) {
+      try {
+        const { synthesizeExperiences } = await import('../learnings/experience-synthesis.js');
+        const { sharedExperienceStore } = await import('../memory/experience-store.js');
+        let recentTurns;
+        const turnPrincipal = hb.delivery?.target ? resolvePrincipal(hb.delivery.target, config) : undefined;
+        if (graphMemory && turnPrincipal) {
+          try { recentTurns = await graphMemory.searchTurns('', turnPrincipal, 30); } catch { /* optional */ }
+        }
+        const exp = await synthesizeExperiences({
+          client,
+          model: config.memory?.extractionModel ?? config.router.model,
+          store: sharedExperienceStore(client),
+          recentTurns,
+        });
+        if (exp.created.length > 0 || exp.reinforced > 0 || exp.superseded > 0) {
+          experienceSummary = `🧭 **Experiences**: ${exp.created.length} new, ${exp.reinforced} reinforced${exp.superseded ? `, ${exp.superseded} superseded` : ''}`;
+          console.log(`[Heartbeat] ${experienceSummary}`);
+        }
+      } catch (err) {
+        console.warn('[Heartbeat] Experience synthesis failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
     // Reindex the document vault — mtime/hash driven, so an unchanged vault
     // costs a directory walk and nothing else
     if (deps.embeddingStore) {
@@ -564,6 +592,9 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
 
       if (lessonSummary) {
         reportParts.push(lessonSummary);
+      }
+      if (experienceSummary) {
+        reportParts.push(experienceSummary);
       }
 
       let reportText = reportParts.join('\n\n');

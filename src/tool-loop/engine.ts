@@ -1,4 +1,4 @@
-import { logRepair, logToolCall } from '../metrics.js';
+import { logRepair, logToolCall, logSteering } from '../metrics.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { OllamaMessage, OllamaTool, OllamaToolCall } from '../ollama/types.js';
 import type { ToolDefinition, ToolExecutor, ToolContext } from '../tools/types.js';
@@ -504,6 +504,9 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       for (const steer of pollSteering()) {
         messages.push({ role: 'user', content: `[User interjected mid-task]: ${steer}` });
         console.log(`[ReAct] Steering message injected: "${steer.slice(0, 80)}"`);
+        // Persisted as a dissatisfaction signal for the experience layer —
+        // a user interrupting a run is never praise
+        logSteering({ category: config.model, messagePreview: steer.slice(0, 120) });
       }
     }
 

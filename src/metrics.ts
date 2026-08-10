@@ -123,3 +123,40 @@ export function logAutonomousAction(data: {
     ...data,
   });
 }
+
+/** Explicit user-satisfaction signal (emoji reaction on a bot reply).
+ *  Strongest ground truth the experience layer has — code-detected, zero
+ *  inference. Correlated to the preceding dispatch at harvest time. */
+export function logReaction(data: {
+  valence: 1 | -1;
+  emoji: string;
+  channel: string;
+  channelId: string;
+  senderId: string;
+}): void {
+  logMetric({
+    timestamp: new Date().toISOString(),
+    type: 'reaction',
+    ...data,
+  });
+}
+
+/** Mid-turn user steering — the user interrupting a run is a correction
+ *  signal for the experience layer (steering is never praise). */
+export function logSteering(data: { category: string; messagePreview: string }): void {
+  logMetric({
+    timestamp: new Date().toISOString(),
+    type: 'steering',
+    ...data,
+  });
+}
+
+/** Post-task review note — the reviewer model flagged a quality issue with a
+ *  delivered answer. Inferred (weak) dissatisfaction evidence. */
+export function logReviewNote(data: { category: string; note: string }): void {
+  logMetric({
+    timestamp: new Date().toISOString(),
+    type: 'review_note',
+    ...data,
+  });
+}
