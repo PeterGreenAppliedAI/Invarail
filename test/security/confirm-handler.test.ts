@@ -198,3 +198,19 @@ describe('handleConfirmation — deny + continuation metadata', () => {
     expect(out.executed).toBeUndefined();
   });
 });
+
+describe('continuation replay circuit breaker (Aug 10)', () => {
+  // The breaker itself lives in orchestrator (cancel same-tool pending from a
+  // continuation); this pins the ledger primitive it relies on: consume()
+  // removes an entry so a replayed confirm id can never execute.
+  it('consume() removes a pending action so it cannot be confirmed later', async () => {
+    const { PendingActionStore } = await import('../../src/security/pending-actions.js');
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const store = new PendingActionStore(join(mkdtempSync(join(tmpdir(), 'pa-')), 'pending.json'));
+    const rec = store.record({ tool: 'image_generate', params: { prompt: 'x' }, sender: 'peter', channel: 'discord', agentId: 'main', sessionKey: 's', category: 'image' });
+    expect(store.consume(rec.id)).not.toBeNull();
+    expect(store.consume(rec.id)).toBeNull();   // gone — single-use held
+  });
+});

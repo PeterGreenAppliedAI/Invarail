@@ -1499,12 +1499,28 @@ export class Orchestrator {
               factStore: this.factStore,
               graphMemory: this.graphMemory,
             });
-            const contText = cont.answer?.trim();
-            if (contText) {
+            // Replay circuit breaker: a continuation asking to confirm the
+            // SAME tool that just ran successfully is re-deriving the task
+            // (the Aug 6 continuation-replay class — full redesign still
+            // planned). The deliverable already exists; cancel the replayed
+            // pending and wrap up instead of a déjà-vu confirm button.
+            const replays = (cont.pendingActions ?? []).filter(p => p.tool === ex.tool);
+            if (replays.length > 0) {
+              const { pendingActions: ledger } = await import('./security/pending-actions.js');
+              for (const r of replays) ledger.consume(r.id);
+              console.log(`[Orchestrator] Continuation replay broken: cancelled ${replays.length} duplicate ${ex.tool} confirm(s)`);
               await this.channelRegistry.send(
                 { channel: msg.channel, channelId: msg.channelId! },
-                { text: contText, actions: this.confirmActionsFor(cont) },
-              );
+                { text: `✅ All done — **${ex.tool}** already ran and the result was delivered above.` },
+              ).catch(() => {});
+            } else {
+              const contText = cont.answer?.trim();
+              if (contText) {
+                await this.channelRegistry.send(
+                  { channel: msg.channel, channelId: msg.channelId! },
+                  { text: contText, actions: this.confirmActionsFor(cont) },
+                );
+              }
             }
           } catch (err) {
             console.warn('[Orchestrator] Post-confirm continuation failed:', err instanceof Error ? err.message : err);
