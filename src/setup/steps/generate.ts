@@ -77,7 +77,7 @@ function buildEnv(state: WizardState): string {
  * Determine which specialist categories to include based on enabled services.
  */
 function getEnabledCategories(state: WizardState): Set<string> {
-  const enabled = new Set(['chat', 'memory', 'exec', 'task', 'multi', 'cron', 'config']);
+  const enabled = new Set(['chat', 'memory', 'exec', 'task', 'multi', 'cron']);
 
   if (state.services.webSearch.enabled || state.services.browser.enabled) {
     enabled.add('web_search');
@@ -98,9 +98,6 @@ function getEnabledCategories(state: WizardState): Set<string> {
   if (state.services.pi.enabled) {
     enabled.add('code_gen');
   }
-
-  // personal always available (tools gate on ownerId at runtime)
-  enabled.add('personal');
 
   return enabled;
 }
@@ -172,7 +169,7 @@ function buildConfig(state: WizardState): string {
     if (trusted && trusted.length > 0) {
       parts.push(`      security: {`);
       parts.push(`        trustedUsers: [${trusted.map(id => `"${id}"`).join(', ')}],`);
-      parts.push(`        restrictedCategories: ["exec", "config", "personal"],`);
+      parts.push(`        restrictedCategories: ["exec"],`);
       if (state.channels.ownerId) {
         parts.push(`        ownerOnlyTools: ["gmail_search", "gmail_read", "calendar_list", "calendar_search"],`);
       }

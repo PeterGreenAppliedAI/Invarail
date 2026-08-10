@@ -643,7 +643,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   }
 
   // LLM-as-judge quality scoring for pipeline categories
-  const QUALITY_CATEGORIES = new Set(['web_search', 'research', 'analytics', 'multi', 'exec', 'code_gen']);
+  const QUALITY_CATEGORIES = new Set(['web_search', 'research', 'multi', 'exec', 'code_gen']);
   if (QUALITY_CATEGORIES.has(effectiveCategory) && result.answer?.length > 100 && !params.cronMode) {
     try {
       const qualityResponse = await client.chat({

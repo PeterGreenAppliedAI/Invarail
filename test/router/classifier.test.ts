@@ -142,11 +142,10 @@ describe('classifyMessage', () => {
     expect(result.confidence).not.toBe('sticky');
   });
 
-  it('keyword: "settings" still routes to config', async () => {
+  it('keyword: document-format request routes to exec (document category retired 2026-08-10)', async () => {
     const client = createFailingClient();
-    const config = { ...defaultConfig, categories: { ...defaultConfig.categories, config: { description: 'Config' } } };
-    const result = await classifyMessage(client, config, 'change my notification settings');
-    expect(result.category).toBe('config');
+    const result = await classifyMessage(client, defaultConfig, 'turn this into a pdf');
+    expect(result.category).toBe('exec');
     expect(result.confidence).toBe('keyword');
   });
 });

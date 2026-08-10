@@ -10,8 +10,6 @@ import { heartbeatPipeline } from './heartbeat.js';
 import { researchPipeline } from './research.js';
 import { planPipeline } from './plan.js';
 import { codeGenPipeline } from './code-gen.js';
-import { analyticsPipeline } from './analytics.js';
-import { documentPipeline } from './document.js';
 
 /**
  * Register all pipeline definitions.
@@ -36,11 +34,8 @@ export function registerAllPipelines(registry: PipelineRegistry): void {
   // Code generation
   registry.register(codeGenPipeline);
 
-  // Data analytics
-  registry.register(analyticsPipeline);
 
   // Document generation from provided content (code-driven)
-  registry.register(documentPipeline);
 
   // Meta pipelines
   registry.register(planPipeline);
