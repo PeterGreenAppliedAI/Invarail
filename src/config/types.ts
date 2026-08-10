@@ -25,7 +25,6 @@ import type {
   KnowledgeConfigSchema,
   McpConfigSchema,
   McpServerConfigSchema,
-  ReasoningConfigSchema,
   BrowserConfigSchema,
   TTSConfigSchema,
   STTConfigSchema,
@@ -62,7 +61,6 @@ export type McpConfig = z.infer<typeof McpConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 export type WebsiteConfig = z.infer<typeof WebsiteConfigSchema>;
 export type KnowledgeConfig = z.infer<typeof KnowledgeConfigSchema>;
-export type ReasoningConfig = z.infer<typeof ReasoningConfigSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type TTSConfig = z.infer<typeof TTSConfigSchema>;
 export type STTConfig = z.infer<typeof STTConfigSchema>;

@@ -221,32 +221,6 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
       }
     }
 
-    // Curate skills — archive stale, flag duplicates
-    try {
-      const { SkillStore } = await import('../skills/store.js');
-      const skillStore = new SkillStore(workspacePath);
-      const allSkills = skillStore.listAll();
-      const now = Date.now();
-      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-      let archived = 0;
-
-      for (const skill of allSkills) {
-        const lastUsedMs = new Date(skill.lastUsed || skill.created).getTime();
-        if (now - lastUsedMs > THIRTY_DAYS && skill.successCount < 2) {
-          skillStore.archive(skill.slug);
-          archived++;
-        }
-      }
-      if (archived > 0) console.log(`[Heartbeat] Archived ${archived} stale skill(s)`);
-    } catch (err) {
-      console.warn('[Heartbeat] Skill curation failed:', err instanceof Error ? err.message : err);
-    }
-
-    // Clean up old generated media files
-    const cleaned = deps.cleanupOldMedia();
-    if (cleaned > 0) {
-      console.log(`[Heartbeat] Cleaned up ${cleaned} old media files`);
-    }
 
     // --- Memory decay ---
     // Memory ops key on the principal — the delivery target is a channel alias

@@ -305,14 +305,6 @@ export const VisionConfigSchema = z.object({
   maxTokens: z.number().default(512),
 });
 
-export const ReasoningConfigSchema = z.object({
-  // No default model — the `reason` tool is only registered when a model is explicitly set,
-  // so an empty `reasoning: {}` can never point at a stale/dead model.
-  model: z.string().optional(),
-  maxTokens: z.number().default(8192),
-  temperature: z.number().default(0.6),
-});
-
 export const KnowledgeConfigSchema = z.object({
   maxChunkSize: z.number().default(800),
   overlapSize: z.number().default(100),
@@ -460,7 +452,6 @@ export const InvarailConfigSchema = z.object({
   cron: CronConfigSchema.default({}),
   session: SessionConfigSchema.default({}),
   tools: ToolsConfigSchema.optional(),
-  reasoning: ReasoningConfigSchema.optional(),
   browser: BrowserConfigSchema.default({}),
   tts: TTSConfigSchema.default({}),
   stt: STTConfigSchema.default({}),
