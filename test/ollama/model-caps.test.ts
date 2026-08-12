@@ -28,9 +28,9 @@ describe('think capability (2026-08 eval probe data)', () => {
     expect(capsFor('llama4:scout').think).toBe('none');
   });
 
-  it('gpt-oss:120b gets levels (accepts-but-disobeys false) while 20b keeps toggle', () => {
+  it('gpt-oss family is levels — obedience audit showed BOTH sizes ignore think:false', () => {
     expect(capsFor('gpt-oss:120b').think).toBe('levels');
-    expect(capsFor('gpt-oss:20b').think).toBe('toggle');
+    expect(capsFor('gpt-oss:20b').think).toBe('levels');
   });
 
   it('longest prefix separates coder/embedding variants from their thinking families', () => {

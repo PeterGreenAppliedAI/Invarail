@@ -85,8 +85,8 @@ no rule predicts membership — not family, not size, not "reasoning-tuned" bran
 | Archetype | Models | Evidence |
 |---|---|---|
 | **Thinking is harmful** | qwen3.6:27b, qwen3:32b, qwen3.5, gemma4:26b, Lightning, glm | qwen3.6:27b: 82% → **100%, zero flips** with thinking off, at 1/5 the tokens. gemma4:26b: 11 flips → 0. Lightning's only code failure was thinking-induced. |
-| **Thinking is load-bearing** | gpt-oss:20b, gemma4:31b, nemotron-3-nano | gemma4:31b: 100% → 97% without it. nano: 98% → 88%. gpt-oss:20b: off is worse *and more expensive*. |
-| **Thinking wants a dial, not a switch** | gpt-oss:120b | No off-mode by design (effort levels). At default/high: 99%. At **`low`: 100%, zero flips, half the tokens** — the board's #1 row. The failure mode was never capability; it was effort spent where none was needed. |
+| **Thinking is load-bearing** | gemma4:31b, nemotron-3-nano | gemma4:31b: 100% → 97% without it. nano: 98% → 88%. |
+| **Thinking wants a dial, not a switch** | gpt-oss (both sizes) | No off-mode by design (effort levels; the obedience audit showed BOTH sizes ignore `think:false` — 20b leaked thinking on 40% of "suppressed" rows, 120b on 27%). Their `@think=off` rows measured *leaky* reduced thinking, asterisked accordingly. The valid measurement: 120b at **`low`: 100%, zero flips, half the tokens** — the board's #1 row. The failure mode was never capability; it was effort spent where none was needed. |
 | **Thinking is a pure tax** | muse-glimmer, deepseek-v4-flash*, qwen3.6:35b, cascade-2, nemotron3 | qwen3.6:35b: *identical scorecard* at 5.7× the cost. muse: same 99, same flaw, 2.3× the bill. (*deepseek's thinking buys chat manners only.) |
 
 Within one family (gemma4 26B vs 31B; the nemotrons), siblings land in opposite camps.
@@ -195,9 +195,26 @@ in `results.json`). Resolved:
   silent output-discard under format+ignored-suppression (Ollama bug, reported
   upstream). Replaced by the legitimate measurement: **`@think=low`, which took the
   board's #1 row.** The retired row is preserved in `results.json` under `retired`.
-- **Pending**: the fleet-wide **obedience audit** (`think=false AND
-  length(thinking) > 0` across the gateway audit trail) to confirm every other
-  `@think=off` row's suppression was honored. The board is otherwise final.
+- **Obedience audit complete** ✅ — every `@think=off` row cross-checked against the
+  gateway audit trail (~2,600 A/B rows: did the model return thinking despite
+  suppression?). **15 of 17 models clean** — zero disobedient rows for every qwen,
+  gemma4, glm, nemotron, muse, and the coder one-offs: their think-off columns are
+  honest measurements. **Both gpt-oss sizes disobey** (20b: 40% of suppressed rows
+  returned thinking; 120b: 27%) — the 20b had merely looked honest because it never
+  trips the format-collision discard. Both gpt-oss `@think=off` rows are therefore
+  asterisked: they measured *leaky reduced thinking*, not off; the family's valid
+  control is effort levels.
+- **A third silent-discard shape** surfaced in the audit: muse-glimmer (5 rows) and
+  nemotron3:33b (3 rows) returned token-generating, all-empty responses under
+  `think:false` with *no format schema* — the grammar-collision explanation doesn't
+  cover these. Retroactive detection against our token meter shows exactly one
+  scored casualty: muse-glimmer@think=off's single T2 failure (554 tokens generated,
+  empty answer) — the one blemish keeping that row from 100% is *possibly this
+  runtime bug*, unresolvable retroactively, annotated not rescored. Reported
+  upstream alongside the format-collision variant; the gateway's silent-discard
+  detector now logs all shapes.
+
+**The board is final.**
 
 ## Limitations
 

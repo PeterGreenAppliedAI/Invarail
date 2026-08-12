@@ -48,8 +48,11 @@ const MODEL_CAPS: Record<string, Partial<ModelCaps>> = {
   'glm': { think: 'toggle' },
   'devstral': { think: 'none' },
   'llama4': { think: 'none' },
-  'gpt-oss': { think: 'toggle' },          // 20b honors false (eval-verified)
-  'gpt-oss:120b': { think: 'levels' },     // accepts false, silently disobeys it
+  // Family-wide: accepts think:false, silently disobeys it (obedience audit
+  // 2026-08-12: 20b leaked thinking on 40% of suppressed rows, 120b on 27% —
+  // the 20b merely never trips the format-collision discard). Effort levels
+  // ('low'|'medium'|'high') are the family's real control.
+  'gpt-oss': { think: 'levels' },
   'llava': { vision: true },
 };
 
