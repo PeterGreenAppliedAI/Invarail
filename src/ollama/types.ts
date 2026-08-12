@@ -39,9 +39,11 @@ export interface OllamaChatParams {
    *  /guided_json for OpenAI-compatible backends). */
   format?: 'json' | Record<string, unknown>;
   /** Thinking control for reasoning models: true = separated thinking channel,
-   *  false = suppress reasoning, unset = model default. Ollama returns 400 on
-   *  models without thinking support — callers gate via config/model-caps. */
-  think?: boolean;
+   *  false = suppress reasoning, 'low'|'medium'|'high' = effort level (gpt-oss
+   *  family — its native knob; it has no trained off-mode and silently ignores
+   *  false), unset = model default. Ollama returns 400 on models without
+   *  thinking support — callers gate via config/model-caps. */
+  think?: boolean | 'low' | 'medium' | 'high';
   options?: {
     temperature?: number;
     num_predict?: number;
