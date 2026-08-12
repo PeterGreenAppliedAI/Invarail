@@ -63,6 +63,25 @@ from the model card. You can only measure it.
 Score of the week: eval found ~zero model bugs it went looking for, and six bugs in
 the two systems doing the measuring.
 
+## The ending (use this)
+
+The #1 row on the final board belongs to a model I'd personally written off months
+ago. It kept failing in ways I couldn't reproduce — I ran in circles, said fuck it,
+and moved on. This week the eval pinned why: it needs THREE coincident conditions to
+break (a grammar constraint + a suppression request + a model that silently ignores
+suppression), and one of those conditions couldn't even reach it until we fixed the
+serving layer.
+
+Then we sent it the request it actually understands — think at LOW effort, its
+native dial — and it swept every task, every rep, zero instability, at the lowest
+token cost of any perfect row. A 120B model that didn't need more thinking. It
+needed permission to think LESS, and nothing in the stack could deliver that request
+until Tuesday.
+
+Three perfect scorecards on the final board. Three different thinking configurations:
+off, on, low. Not one of them a default. That's the whole finding: there is no best
+model. There are only best configurations — and nobody ships them.
+
 ## Quotable lines
 
 - Thinking models rarely fail at tasks — they fail at budgets. Timeouts, token caps,
@@ -78,9 +97,10 @@ the two systems doing the measuring.
 
 - 39 rows · 23 models · 14 tasks · 3 reps · ~50 deterministic checks per row
 - Biggest single turnaround: +18 points from one config flag
-- Token cost spread: 950 to 19,225 per identical battery (20×) — the most expensive
-  row scored 50%
-- Heavyweights (67-124GB): 7 rows, 1 podium finish
-- 2 perfect scorecards, achieved with OPPOSITE thinking configurations
+- Token cost spread: 950 to 23,085 per identical battery (24×) — the most expensive
+  row scored 43%
+- 3 perfect scorecards, achieved with THREE DIFFERENT thinking configurations
+  (off / on / low) — none of them defaults
+- The board's #1: a 120B model at MINIMUM reasoning effort — cheapest perfect row
 - 6 infrastructure/harness bugs found and fixed across 2 codebases + 2 reported
   upstream to Ollama
