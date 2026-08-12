@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import JSON5 from 'json5';
 import { InvarailConfigSchema } from './schema.js';
 import { configInvalid } from '../errors.js';
+import { capsFor } from '../ollama/model-caps.js';
 import type { InvarailConfig } from './types.js';
 
 /**
@@ -114,7 +115,26 @@ export function loadConfig(filePath?: string): InvarailConfig {
   }
 
   warnOnSecurityFootguns(result.data);
+  warnOnThinkFootguns(result.data);
   return result.data;
+}
+
+/**
+ * Flag specialist `think` settings the model cannot honor (2026-08 eval:
+ * a model may reject the field, or — worse — accept and silently ignore it;
+ * gpt-oss:120b combined ignored suppression with `format` into discarded
+ * output). Config-time warning beats a runtime 400 or a silent no-op.
+ */
+function warnOnThinkFootguns(config: InvarailConfig): void {
+  for (const [name, spec] of Object.entries(config.specialists)) {
+    if (spec.think === undefined) continue;
+    const cap = capsFor(spec.model).think;
+    if (cap === 'none') {
+      console.warn(`[config] specialists.${name}: think is set but ${spec.model} does not support thinking control (Ollama rejects the field) — remove it.`);
+    } else if (cap === 'levels' && typeof spec.think === 'boolean') {
+      console.warn(`[config] specialists.${name}: ${spec.model} only supports effort levels ('low'|'medium'|'high') — boolean think is silently ignored by the model (and think:false + format triggers a known Ollama output-discard bug). Use an effort string.`);
+    }
+  }
 }
 
 /**

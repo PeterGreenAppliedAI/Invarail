@@ -16,17 +16,40 @@ export interface ModelCaps {
   /** May emit multiple tool calls in one turn without mangling them */
   parallelToolCalls: boolean;
   vision: boolean;
+  /** Thinking control (2026-08 eval, runtime-probed):
+   *  'toggle' — accepts AND honors think true/false
+   *  'levels' — effort strings only ('low'|'medium'|'high'); ACCEPTS booleans but
+   *             silently ignores false (accepts ≠ obeys — gpt-oss:120b). Boolean
+   *             think on these models is a no-op at best; combined with `format`
+   *             it triggers an Ollama output-discard bug. Use effort strings.
+   *  'none'   — rejects the think field (Ollama 400)
+   *  undefined — unprobed; treat as unknown */
+  think?: 'toggle' | 'levels' | 'none';
 }
 
 const DEFAULT_CAPS: ModelCaps = { supportsFormat: true, parallelToolCalls: false, vision: false };
 
 /** Prefix → caps. Order-independent (longest prefix wins). */
 const MODEL_CAPS: Record<string, Partial<ModelCaps>> = {
-  'deepseek': { supportsFormat: true, parallelToolCalls: true },
-  'phi4': { supportsFormat: true },
-  'qwen3-embedding': { supportsFormat: false },
+  'deepseek': { supportsFormat: true, parallelToolCalls: true, think: 'toggle' }, // ds4-verified
+  'deepseek-coder': { think: 'none' },
+  'phi4': { supportsFormat: true, think: 'none' },
+  'qwen3-embedding': { supportsFormat: false, think: 'none' },
   'qwen': { supportsFormat: true },
+  'qwen2.5': { think: 'none' },
+  'qwen3': { think: 'toggle' },
+  'qwen3-coder': { think: 'none' },
+  'qwen3.5': { think: 'toggle' },
+  'qwen3.6': { think: 'toggle' },
   'gemma': { supportsFormat: true, vision: true },
+  'gemma4': { supportsFormat: true, vision: true, think: 'toggle' },
+  'muse-glimmer': { think: 'toggle' },
+  'nemotron': { think: 'toggle' },
+  'glm': { think: 'toggle' },
+  'devstral': { think: 'none' },
+  'llama4': { think: 'none' },
+  'gpt-oss': { think: 'toggle' },          // 20b honors false (eval-verified)
+  'gpt-oss:120b': { think: 'levels' },     // accepts false, silently disobeys it
   'llava': { vision: true },
 };
 
