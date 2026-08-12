@@ -4,6 +4,40 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Model Eval That Kept Finding Our Bugs Instead (August 11-12 2026)
+
+### What it was
+A "which 20-30B model is best" question (muse-glimmer release day) became a publishable eval harness (`scripts/model-eval.ts`) and a two-day, two-codebase forensic. Final form: 23 base models × 3 reps × 14 tasks (tool-loop incl. 9-hop long-horizon chain, grammar-constrained extraction, chat discipline, execution-verified real-world coding in a Docker sandbox), deterministic code checks only, failure taxonomy (MODEL_FAILURE / TIMEOUT / SERVING_INCOMPATIBLE / PROVIDER_OUTAGE with retry→UNSCORED), think on/off A/B rows via runtime capability probing, per-task completion-token metering (`ctok` — hardware-independent cost), full provenance (digests, harness commit, dual serving topology). Raw outputs published for human read; prose quality deliberately unscored ([[feedback_regressions]]: trust the human side-by-side).
+
+### Disproven theories — record them, they cost the most
+1. **"The gateway silently doesn't enforce JSON schemas."** Wrong. Wire-level fetch interception + curl bisect of the exact request body proved `format` was attached AND enforcement works. Real cause: `chatMaybeStructured`'s 256-token default — thinking models burn the whole budget on reasoning (thinking counts against num_predict) and the constrained JSON never gets emitted. Same bug class as the vLLM reasoning-headroom fix in openai-client.ts; the Ollama path never got it. muse-glimmer extract: 33% → 100% with 2048 budget.
+2. **"qwen3.6:27B leaks untagged thinking; 35B doesn't."** Wrong premise from a 9-sample eval batch. The gateway team's 200-sample audit grep: BOTH distillations leak untagged reasoning prose (27B ~10%, 35B ~5%) — weights-side gradient, not template (identical serving setup, verified).
+3. **"ds4's /v1/chat/completions has no per-request thinking knob."** Wrong — I read one README section instead of testing. Direct curl: ds4 honors `think:false` AND `thinking:{type:disabled}` (1 completion token vs 18 default on trivial math). Never declare an endpoint's capabilities from docs when the endpoint is one curl away.
+4. **Three "model failures" were infrastructure**: gateway 503s (`all_providers_unavailable`) zeroing T5 for three models, and deepseek-coder's HTTP 400s (serving path rejects tools entirely). An external report caught both — error strings were sitting untriaged in our own results.json. Hence the failure taxonomy.
+5. **Single-run scores lie in both directions**: qwen3.6:35b measured 84% and 100% the same day. 3-rep pass rates + a flipped-checks stability column are the minimum honest unit. (And even 3-rep batteries have variance-of-variance: cascade-2's C1 went 0/3 → 3/3 between batteries.)
+
+### What it changed in Invarail (all committed 31d4701, live on next boot)
+- **`think` plumbed end-to-end** (OllamaChatParams → specialist config → engine → dispatch). OpenAI-compat path forwards only for backends declaring `supportsThink` (ds4 verified) — an unverified backend gets warn-once+omit, because a silently ignored request field is the exact failure shape that cost both teams a day. Policy: config-driven, static per specialist, set AFTER the A/B data; think:false measured ~14x cheaper at equal quality on qwen3.6 chat.
+- **Premature-refusal repair prompt softened** (engine.ts): the old unconditional "you MUST use your tools" sent 13/16 models spiraling through fabricated web fetches on a unit conversion — models obey authority over sense. New wording keeps anti-refusal teeth but offers the no-tool exit. Old-prompt baseline preserved in run-2026-08-11T21-10-06 for before/after.
+- **Extractor**: `tryParseJson` now uses `stripThinkingTags` (was inline `<think>`-only — every Gemma-4 extraction burned a repair); default budget 256→2048.
+- **VllmBackendConfig** derived from Zod (hand-written duplicate had already drifted — the CLAUDE.md rule proven again).
+- Flagged, unchanged: three more `num_predict: 256` caps (web-search branch, consolidation, graph NER) — fine for today's non-thinking models, same rot class as [[stale rationing caps]]; audit before any thinking model takes those roles.
+
+### What it changed outside Invarail
+Gateway (their commits): request-shape audit logging (format/options/think per row), `think` passthrough + `thinking` field on non-streaming responses, bare-tag model matching. Plus a dead-replica hypothesis for the glm 503 parity pattern, and an Ollama-upstream nit (budget-truncated thinking under `format` returns prose in `content` instead of erroring — the silent shape that misled everyone).
+
+### Standing eval lessons
+- **Eval the system, not the model.** Four "model failures" in a row were harness/infra bugs. Triage error strings before attributing anything to weights.
+- **Accommodate transport, never content** (Peter's contract rule): dedent the markdown-nested code fence, strip the thinking tags, parse the Action: fallback — but a wrong output value or format is a failure regardless of how sound the internals were. "It failed the contract" ends the discussion.
+- **tok/s is a serving-stack fact, not a model property** — NVIDIA's "30% faster than qwen3.6-35B" measured dead even on our quants/serving. Report ctok (tokens-to-finish-battery) for transferable cost; asterisk all throughput.
+- **Training-dialect accommodation is the harness's job** and every accommodation choice is part of the score — list them in the methodology (we do).
+- Serving topology matters for comparisons: 22 models via Ollama-behind-gateway, deepseek DIRECT to ds4/DwarfStar (github.com/antirez/ds4 — not vLLM, config comment corrected) running default thinking/high effort.
+
+### Status
+Publication run in flight (run-2026-08-12T07-34-43, clean commit 6b9b22f). Pre-fix boards: run-2026-08-11T21-10-06 (3-dim, 16 models, old repair prompt) + addenda. Model-caps updates pending run data. Repo/README scaffolding pending final board.
+
+---
+
 ## Graph Experience Memory — Approaches Judged by the User's Actual Reactions (August 10 2026)
 
 ### The build
