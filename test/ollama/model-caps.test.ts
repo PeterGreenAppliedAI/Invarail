@@ -18,3 +18,29 @@ describe('capsFor', () => {
     expect(capsFor('gemma4:12b').vision).toBe(true);
   });
 });
+
+describe('think capability (2026-08 eval probe data)', () => {
+  it('distinguishes toggle, levels, and none', () => {
+    expect(capsFor('qwen3.6:27b').think).toBe('toggle');
+    expect(capsFor('muse-glimmer:latest').think).toBe('toggle');
+    expect(capsFor('devstral:24b').think).toBe('none');
+    expect(capsFor('qwen3-coder:30b').think).toBe('none');
+    expect(capsFor('llama4:scout').think).toBe('none');
+  });
+
+  it('gpt-oss:120b gets levels (accepts-but-disobeys false) while 20b keeps toggle', () => {
+    expect(capsFor('gpt-oss:120b').think).toBe('levels');
+    expect(capsFor('gpt-oss:20b').think).toBe('toggle');
+  });
+
+  it('longest prefix separates coder/embedding variants from their thinking families', () => {
+    expect(capsFor('qwen3-embedding:8b').think).toBe('none');
+    expect(capsFor('qwen3.5:27b').think).toBe('toggle');
+    expect(capsFor('deepseek-coder:33b').think).toBe('none');
+    expect(capsFor('deepseek-v4-flash').think).toBe('toggle');
+  });
+
+  it('unprobed models report undefined (unknown), not a guess', () => {
+    expect(capsFor('mistral:7b').think).toBeUndefined();
+  });
+});
