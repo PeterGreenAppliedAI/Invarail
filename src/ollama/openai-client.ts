@@ -33,6 +33,10 @@ export class OpenAICompatClient {
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey?: string,
+    /** Backend honors per-request `think` on chat completions (ds4 does; generic
+     *  OpenAI-compat servers silently ignore unknown fields — declare via config
+     *  only after verifying). */
+    private readonly supportsThink = false,
   ) {}
 
   /** Translate Ollama-shape messages to OpenAI, stitching tool_call_ids. */
@@ -97,8 +101,22 @@ export class OpenAICompatClient {
       body.response_format = { type: 'json_object' };
       body.guided_json = params.format;
     }
+    // `think` forwarding is config-gated per backend: ds4/DwarfStar honors it
+    // (verified 2026-08-12), but a generic OpenAI-compat server silently ignores
+    // unknown fields — and a silent no-op is the exact bug class the 2026-08
+    // gateway forensics traced. Unverified backend → warn once and omit.
+    if (params.think !== undefined) {
+      if (this.supportsThink) {
+        body.think = params.think;
+      } else if (!OpenAICompatClient.thinkWarned) {
+        OpenAICompatClient.thinkWarned = true;
+        console.warn(`[OpenAI] \`think\` omitted for ${params.model} — backend not declared think-capable (set supportsThink: true in the backend config after verifying). Warning shown once.`);
+      }
+    }
     return body;
   }
+
+  private static thinkWarned = false;
 
   /** Translate an OpenAI tool_calls array (string args) to Ollama shape (object args). */
   private parseToolCalls(toolCalls: any[] | undefined): OllamaMessage['tool_calls'] {

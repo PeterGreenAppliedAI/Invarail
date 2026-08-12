@@ -21,6 +21,36 @@ const OK_RESPONSE = {
   usage: { prompt_tokens: 10, completion_tokens: 2 },
 };
 
+describe('OpenAICompatClient think handling', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('omits think and warns once when the backend is not declared think-capable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const captured = mockFetchOnce(OK_RESPONSE);
+    const client = new OpenAICompatClient('http://openai-compat.local');
+    await client.chat({
+      model: 'some-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      think: false,
+    });
+    expect(parseBody(captured).think).toBeUndefined();
+    const thinkWarnings = warn.mock.calls.filter(c => String(c[0]).includes('think'));
+    expect(thinkWarnings.length).toBe(1);
+    warn.mockRestore();
+  });
+
+  it('forwards think when the backend declares supportsThink (ds4)', async () => {
+    const captured = mockFetchOnce(OK_RESPONSE);
+    const client = new OpenAICompatClient('http://ds4.local', undefined, true);
+    await client.chat({
+      model: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      think: false,
+    });
+    expect(parseBody(captured).think).toBe(false);
+  });
+});
+
 describe('OpenAICompatClient max_tokens reasoning headroom', () => {
   afterEach(() => vi.unstubAllGlobals());
 

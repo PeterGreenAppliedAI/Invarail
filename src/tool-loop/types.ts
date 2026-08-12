@@ -31,6 +31,9 @@ export interface ReActConfig {
   /** Tool-calling convention: 'native' (API tools field, no text-format prompt block)
    *  or 'text' (prompt-described tools + Action: format, no native tools). Default 'native'. */
   toolStyle?: 'native' | 'text';
+  /** Thinking control for reasoning models — passed through to Ollama `think`.
+   *  Unset = model default. Callers must only set this for thinking-capable models. */
+  think?: boolean;
 }
 
 export type ParsedReActResponse =

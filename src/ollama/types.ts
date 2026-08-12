@@ -11,6 +11,9 @@ export interface OllamaMessage {
   tool_calls?: OllamaToolCall[];
   /** Base64-encoded images for vision models */
   images?: string[];
+  /** Separated reasoning from thinking models (returned when `think` is enabled;
+   *  requires gateway >= f0dfb63 which forwards it on non-streaming responses) */
+  thinking?: string;
 }
 
 /** Ollama tool definition (OpenAI-compatible format) */
@@ -35,6 +38,10 @@ export interface OllamaChatParams {
    *  for grammar-constrained decoding (Ollama 0.5+; translated to response_format
    *  /guided_json for OpenAI-compatible backends). */
   format?: 'json' | Record<string, unknown>;
+  /** Thinking control for reasoning models: true = separated thinking channel,
+   *  false = suppress reasoning, unset = model default. Ollama returns 400 on
+   *  models without thinking support — callers gate via config/model-caps. */
+  think?: boolean;
   options?: {
     temperature?: number;
     num_predict?: number;

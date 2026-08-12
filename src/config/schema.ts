@@ -5,12 +5,18 @@ export const OllamaConfigSchema = z.object({
   keepAlive: z.string().default('30m'),
 });
 
-/** An OpenAI-compatible inference backend (e.g. vLLM). Additive — Ollama path is unchanged. */
+/** An OpenAI-compatible inference backend (e.g. ds4/DwarfStar, vLLM). Additive — Ollama path is unchanged. */
 export const VllmBackendSchema = z.object({
   url: z.string(),
   apiKey: z.string().optional(),
-  /** Exact model ids this backend serves, e.g. "cyankiwi/MiniMax-M2.7-AWQ-4bit" */
+  /** Exact model ids this backend serves, e.g. "deepseek-v4-flash" */
   models: z.array(z.string()).default([]),
+  /** Whether this backend honors the per-request `think` field on chat completions
+   *  (ds4/DwarfStar does — verified 2026-08-12: think:false → 1 completion token vs
+   *  default thinking mode). Default false: generic OpenAI-compat servers silently
+   *  ignore unknown fields, and a silent no-op is worse than an omitted field —
+   *  only declare true after verifying the backend actually enforces it. */
+  supportsThink: z.boolean().default(false),
 });
 
 export const InferenceConfigSchema = z.object({
@@ -56,6 +62,14 @@ export const SpecialistConfigSchema = z.object({
    *  prompt with Action:-format instructions, nothing passed natively — for models
    *  whose template lacks tool support. One convention per model, never both. */
   toolStyle: z.enum(['native', 'text']).default('native'),
+  /** Thinking control for reasoning models (Ollama `think` passthrough).
+   *  true = reason in the separated thinking channel; false = suppress reasoning
+   *  (measured ~14x cheaper on qwen3.6 for equal chat quality, 2026-08 eval);
+   *  unset = model default. Ollama rejects the field on non-thinking models —
+   *  only set for models that support it. Not available on the OpenAI-compat
+   *  path (ds4/DwarfStar serves deepseek directly; its chat-completions endpoint
+   *  has no per-request thinking knob — dropped with a warning, never silently). */
+  think: z.boolean().optional(),
 });
 
 /** Identity: one principal (person) with per-channel sender aliases.
