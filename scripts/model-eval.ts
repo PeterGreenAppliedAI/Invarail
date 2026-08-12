@@ -48,16 +48,19 @@ const SPEED_SAMPLES = 3;
 // (engine, extractor, chat, code alike), and completion/prompt tokens metered
 // so each task carries its hardware-independent cost.
 
-interface ModelRow { label: string; name: string; think?: boolean }
+type ThinkMode = boolean | 'low' | 'medium' | 'high';
+interface ModelRow { label: string; name: string; think?: ThinkMode }
 
 function parseModelArg(arg: string): ModelRow {
-  const m = arg.match(/^(.*)@think=(true|false)$/);
+  const m = arg.match(/^(.*)@think=(true|false|on|off|low|medium|high)$/);
   if (!m) return { label: arg, name: arg };
-  return { label: arg, name: m[1], think: m[2] === 'true' };
+  const v = m[2];
+  const think: ThinkMode = v === 'true' || v === 'on' ? true : v === 'false' || v === 'off' ? false : v as ThinkMode;
+  return { label: `${m[1]}@think=${typeof think === 'boolean' ? (think ? 'on' : 'off') : think}`, name: m[1], think };
 }
 
 const tokenMeter = { completion: 0, prompt: 0 };
-let currentThink: boolean | undefined;
+let currentThink: ThinkMode | undefined;
 
 /** Probe which think modes a model accepts. Ollama rejects `think` on
  *  non-thinking models and `think:false` on forced-thinking models. */
@@ -302,7 +305,7 @@ interface TaskAgg {
 interface SpeedSample { tokPerSec: number | null; raw: string }
 interface ModelResult {
   model: string;            // row label, e.g. "qwen3.6:27b@think=false"
-  thinkMode?: boolean;      // undefined = engine default
+  thinkMode?: ThinkMode;    // undefined = engine default
   /** Sum of per-task mean completion tokens — hardware-independent battery cost */
   batteryTokens: number;
   digest?: string;

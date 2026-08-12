@@ -65,11 +65,12 @@ export const SpecialistConfigSchema = z.object({
   /** Thinking control for reasoning models (Ollama `think` passthrough).
    *  true = reason in the separated thinking channel; false = suppress reasoning
    *  (measured ~14x cheaper on qwen3.6 for equal chat quality, 2026-08 eval);
-   *  unset = model default. Ollama rejects the field on non-thinking models —
-   *  only set for models that support it. Not available on the OpenAI-compat
-   *  path (ds4/DwarfStar serves deepseek directly; its chat-completions endpoint
-   *  has no per-request thinking knob — dropped with a warning, never silently). */
-  think: z.boolean().optional(),
+   *  unset = model default. Effort levels ('low'|'medium'|'high') are for the
+   *  gpt-oss family — their native knob; they have no off-mode and silently
+   *  ignore `false`. Ollama rejects the field on non-thinking models — only set
+   *  for models that support it. On the OpenAI-compat path, forwarded only for
+   *  backends declaring supportsThink (never silently dropped). */
+  think: z.union([z.boolean(), z.enum(['low', 'medium', 'high'])]).optional(),
 });
 
 /** Identity: one principal (person) with per-channel sender aliases.

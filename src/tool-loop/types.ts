@@ -32,8 +32,10 @@ export interface ReActConfig {
    *  or 'text' (prompt-described tools + Action: format, no native tools). Default 'native'. */
   toolStyle?: 'native' | 'text';
   /** Thinking control for reasoning models — passed through to Ollama `think`.
-   *  Unset = model default. Callers must only set this for thinking-capable models. */
-  think?: boolean;
+   *  Boolean toggles; 'low'|'medium'|'high' effort levels for gpt-oss-family
+   *  models (their native knob; they have no off-mode). Unset = model default.
+   *  Callers must only set this for thinking-capable models. */
+  think?: boolean | 'low' | 'medium' | 'high';
 }
 
 export type ParsedReActResponse =
