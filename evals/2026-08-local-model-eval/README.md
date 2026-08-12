@@ -1,6 +1,6 @@
 # The Local Model Eval That Kept Finding Our Bugs Instead
 
-**39 scorecard rows · 23 base models (20–124B) · thinking on/off A/B · 14 tasks × 3 repetitions · deterministic code checks only**
+**39 scorecard rows · 23 base models (20–124B) · thinking on/off/low A/B · 14 tasks × 3 repetitions · deterministic code checks only**
 
 An engine-in-the-loop evaluation of every local model on our cluster, run through the
 *production* harness of [Invarail/LocalClaw](../../) — the real ReAct engine, the real
@@ -9,8 +9,11 @@ sandbox that executes the code the models write. Not a model-in-isolation benchm
 a measurement of what these models do inside a working agent system.
 
 It began as "is Meta's new 28B any good?" It ended with five of our own theories
-disproven, six bugs fixed across two codebases, and a leaderboard whose top entry is
-a mid-tier model with one config flag changed.
+disproven, six bugs fixed across two codebases, and a podium of three perfect
+scorecards achieved with three *different* thinking configurations — none of them
+the default. The #1 row belongs to a model its owner had written off as unusable:
+it needed permission to think *less*, and until this week no layer of the stack
+could even deliver that request.
 
 > **TL;DR:** The second-most important spec of a local model is its default
 > configuration. Thinking models rarely fail at tasks — they fail at *budgets*
@@ -33,45 +36,45 @@ a **hardware-independent cost metric**. `tok/s` is serving-stack-specific (see
 
 | # | Row | Overall | Tool | Extract | Chat | Code | Flips | ctok | tok/s* |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | qwen3.6:27b@think=off | **100%** | 100% | 100% | 100% | 100% | 0 | 2,307 | 12 |
-| 2 | gemma4:31b@think=on | **100%** | 100% | 100% | 100% | 100% | 0 | 5,436 | 10.4 |
-| 3 | gpt-oss:120b@think=on | **99%** | 97% | 100% | 100% | 100% | 1 | 4,605 | 41.1 |
-| 4 | muse-glimmer:latest@think=on | **99%** | 97% | 100% | 100% | 100% | 3 | 8,995 | 12.1 |
-| 5 | deepseek-v4-flash@think=on | **99%** | 100% | 100% | 96% | 100% | 1 | 6,774 | 20.2 |
-| 6 | muse-glimmer:latest@think=off | **99%** | 96% | 100% | 100% | 100% | 4 | 3,839 | 12 |
-| 7 | nemotron-3-nano:30b@think=on | **98%** | 100% | 100% | 93% | 100% | 1 | 8,009 | 74 |
-| 8 | gemma4:31b@think=off | **97%** | 100% | 100% | 100% | 89% | 3 | 1,503 | 10.1 |
-| 9 | gemma4:26b@think=off | **97%** | 100% | 100% | 89% | 100% | 0 | 1,648 | 59.3 |
-| 10 | nemotron-3.5-lightning:latest@think=off | **97%** | 100% | 100% | 89% | 100% | 0 | 2,187 | 55.8 |
-| 11 | gpt-oss:20b@think=on | **97%** | 100% | 100% | 100% | 89% | 3 | 4,212 | 109.8 |
-| 12 | deepseek-v4-flash@think=off | **96%** | 100% | 100% | 85% | 100% | 1 | 2,079 | 21.5 |
-| 13 | qwen3:32b@think=off | **95%** | 100% | 100% | 81% | 100% | 1 | 1,431 | 10 |
-| 14 | qwen3-coder:30b (no think) | **95%** | 100% | 92% | 89% | 100% | 0 | 1,910 | 85.1 |
-| 15 | qwen3.6:35b@think=off | **94%** | 100% | 100% | 100% | 78% | 3 | 2,377 | 69.9 |
+| 1 | gpt-oss:120b@think=low | **100%** | 100% | 100% | 100% | 100% | 0 | 2,299 | 41.6 |
+| 2 | qwen3.6:27b@think=off | **100%** | 100% | 100% | 100% | 100% | 0 | 2,307 | 12 |
+| 3 | gemma4:31b@think=on | **100%** | 100% | 100% | 100% | 100% | 0 | 5,436 | 10.4 |
+| 4 | gpt-oss:120b@think=on | **99%** | 97% | 100% | 100% | 100% | 1 | 4,605 | 41.1 |
+| 5 | muse-glimmer:latest@think=on | **99%** | 97% | 100% | 100% | 100% | 3 | 8,995 | 12.1 |
+| 6 | deepseek-v4-flash@think=on | **99%** | 100% | 100% | 96% | 100% | 1 | 6,774 | 20.2 |
+| 7 | muse-glimmer:latest@think=off | **99%** | 96% | 100% | 100% | 100% | 4 | 3,839 | 12 |
+| 8 | nemotron-3-nano:30b@think=on | **98%** | 100% | 100% | 93% | 100% | 1 | 8,009 | 74 |
+| 9 | gemma4:31b@think=off | **97%** | 100% | 100% | 100% | 89% | 3 | 1,503 | 10.1 |
+| 10 | gemma4:26b@think=off | **97%** | 100% | 100% | 89% | 100% | 0 | 1,648 | 59.3 |
+| 11 | nemotron-3.5-lightning:latest@think=off | **97%** | 100% | 100% | 89% | 100% | 0 | 2,187 | 55.8 |
+| 12 | gpt-oss:20b@think=on | **97%** | 100% | 100% | 100% | 89% | 3 | 4,212 | 109.8 |
+| 13 | deepseek-v4-flash@think=off | **96%** | 100% | 100% | 85% | 100% | 1 | 2,079 | 21.5 |
+| 14 | qwen3:32b@think=off | **95%** | 100% | 100% | 81% | 100% | 1 | 1,431 | 10 |
+| 15 | qwen3-coder:30b (no think) | **95%** | 100% | 92% | 89% | 100% | 0 | 1,910 | 85.1 |
 | 16 | gpt-oss:20b@think=off | **94%** | 100% | 100% | 100% | 78% | 6 | 4,952 | 32.1 |
-| 17 | qwen3.6:35b@think=on | **94%** | 100% | 100% | 100% | 78% | 3 | 13,551 | 71.9 |
-| 18 | nemotron3:33b@think=on | **94%** | 96% | 100% | 93% | 89% | 6 | 9,303 | 70.8 |
-| 19 | nemotron-cascade-2:30b@think=on | **94%** | 97% | 97% | 93% | 89% | 9 | 8,603 | 73.2 |
-| 20 | nemotron-3.5-lightning:latest@think=on | **94%** | 100% | 100% | 96% | 78% | 4 | 9,564 | 65.2 |
-| 21 | nemotron-3-super:latest@think=on | **93%** | 100% | 97% | 96% | 78% | 8 | 8,435 | 21.2 |
+| 17 | nemotron3:33b@think=on | **94%** | 96% | 100% | 93% | 89% | 6 | 9,303 | 70.8 |
+| 18 | nemotron-cascade-2:30b@think=on | **94%** | 97% | 97% | 93% | 89% | 9 | 8,603 | 73.2 |
+| 19 | nemotron-3.5-lightning:latest@think=on | **94%** | 100% | 100% | 96% | 78% | 4 | 9,564 | 65.2 |
+| 20 | nemotron-3-super:latest@think=on | **93%** | 100% | 97% | 96% | 78% | 8 | 8,435 | 21.2 |
+| 21 | qwen3.6:35b@think=on | **93%** | 100% | 100% | 93% | 78% | 5 | 13,707 | 69.9 |
 | 22 | nemotron3:33b@think=off | **93%** | 89% | 100% | 93% | 89% | 6 | 1,349 | 69.8 |
 | 23 | gemma4:26b@think=on | **92%** | 92% | 100% | 89% | 89% | 11 | 9,987 | 62.3 |
 | 24 | nemotron-cascade-2:30b@think=off | **92%** | 100% | 100% | 89% | 78% | 3 | 2,157 | 71.7 |
-| 25 | qwen3-coder-next:latest (no think) | **89%** | 100% | 100% | 89% | 67% | 0 | 1,841 | 58.5 |
-| 26 | qwen3.5:27b@think=off | **89%** | 100% | 100% | 89% | 67% | 0 | 2,525 | 12 |
-| 27 | llama4:scout (no think) | **89%** | 86% | 92% | 100% | 78% | 8 | 2,662 | 18.3 |
-| 28 | nemotron-3-super:latest@think=off | **88%** | 93% | 100% | 70% | 89% | 9 | 3,861 | 21.1 |
-| 29 | nemotron-3-nano:30b@think=off | **88%** | 95% | 100% | 89% | 67% | 0 | 1,689 | 72.8 |
-| 30 | devstral:24b (no think) | **86%** | 99% | 100% | 100% | 44% | 4 | 1,469 | 13.8 |
-| 31 | qwen2.5-coder:32b (no think) | **85%** | 50% | 100% | 100% | 89% | 3 | 950 | 3.2 |
-| 32 | qwen2.5:72b (no think) | **83%** | 100% | 100% | 100% | 33% | 0 | 1,551 | 4.4 |
-| 33 | qwen3.5:27b@think=on | **83%** | 100% | 67% | 100% | 67% | 0 | 13,102 | 12.1 |
-| 34 | qwen3.6:27b@think=on | **82%** | 100% | 67% | 85% | 78% | 5 | 12,437 | 12.1 |
-| 35 | qwen3:32b@think=on | **81%** | 100% | 100% | 93% | 33% | 1 | 6,537 | 10 |
-| 36 | gpt-oss:120b@think=off | **72%** | 100% | 0% | 100% | 89% | 3 | 4,413 | 41.4 |
-| 37 | glm-4.7-flash:latest@think=off | **61%** | 81% | 86% | 78% | 0% | 8 | 10,328 | 61.3 |
+| 25 | qwen3.6:35b@think=off | **92%** | 100% | 100% | 100% | 67% | 0 | 2,400 | 68.3 |
+| 26 | qwen3-coder-next:latest (no think) | **89%** | 100% | 100% | 89% | 67% | 0 | 1,841 | 58.5 |
+| 27 | qwen3.5:27b@think=off | **89%** | 100% | 100% | 89% | 67% | 0 | 2,525 | 12 |
+| 28 | llama4:scout (no think) | **89%** | 86% | 92% | 100% | 78% | 8 | 2,662 | 18.3 |
+| 29 | nemotron-3-super:latest@think=off | **88%** | 93% | 100% | 70% | 89% | 9 | 3,861 | 21.1 |
+| 30 | nemotron-3-nano:30b@think=off | **88%** | 95% | 100% | 89% | 67% | 0 | 1,689 | 72.8 |
+| 31 | devstral:24b (no think) | **86%** | 99% | 100% | 100% | 44% | 4 | 1,469 | 13.8 |
+| 32 | qwen2.5-coder:32b (no think) | **85%** | 50% | 100% | 100% | 89% | 3 | 950 | 3.2 |
+| 33 | qwen2.5:72b (no think) | **83%** | 100% | 100% | 100% | 33% | 0 | 1,551 | 4.4 |
+| 34 | qwen3.5:27b@think=on | **83%** | 100% | 67% | 100% | 67% | 0 | 13,102 | 12.1 |
+| 35 | qwen3.6:27b@think=on | **82%** | 100% | 67% | 85% | 78% | 5 | 12,437 | 12.1 |
+| 36 | qwen3:32b@think=on | **81%** | 100% | 100% | 93% | 33% | 1 | 6,537 | 10 |
+| 37 | glm-4.7-flash:latest@think=off | **61%** | 87% | 89% | 67% | 0% | 8 | 8,766 | 61.7 |
 | 38 | deepseek-coder:33b (no think) | **59%** | 0% | 97% | 74% | 67% | 8 | 980 | 4.3 |
-| 39 | glm-4.7-flash:latest@think=on | **50%** | 81% | 67% | 52% | 0% | 13 | 19,225 | 62.6 |
+| 39 | glm-4.7-flash:latest@think=on | **43%** | 83% | 39% | 48% | 0% | 18 | 23,085 | 62.5 |
 
 ## The Thinking A/B — the headline result
 
@@ -82,7 +85,8 @@ no rule predicts membership — not family, not size, not "reasoning-tuned" bran
 | Archetype | Models | Evidence |
 |---|---|---|
 | **Thinking is harmful** | qwen3.6:27b, qwen3:32b, qwen3.5, gemma4:26b, Lightning, glm | qwen3.6:27b: 82% → **100%, zero flips** with thinking off, at 1/5 the tokens. gemma4:26b: 11 flips → 0. Lightning's only code failure was thinking-induced. |
-| **Thinking is load-bearing** | gpt-oss (20b & 120b), gemma4:31b, nemotron-3-nano | gemma4:31b: 100% → 97% without it. nano: 98% → 88%. gpt-oss:20b: off is worse *and more expensive*. |
+| **Thinking is load-bearing** | gpt-oss:20b, gemma4:31b, nemotron-3-nano | gemma4:31b: 100% → 97% without it. nano: 98% → 88%. gpt-oss:20b: off is worse *and more expensive*. |
+| **Thinking wants a dial, not a switch** | gpt-oss:120b | No off-mode by design (effort levels). At default/high: 99%. At **`low`: 100%, zero flips, half the tokens** — the board's #1 row. The failure mode was never capability; it was effort spent where none was needed. |
 | **Thinking is a pure tax** | muse-glimmer, deepseek-v4-flash*, qwen3.6:35b, cascade-2, nemotron3 | qwen3.6:35b: *identical scorecard* at 5.7× the cost. muse: same 99, same flaw, 2.3× the bill. (*deepseek's thinking buys chat manners only.) |
 
 Within one family (gemma4 26B vs 31B; the nemotrons), siblings land in opposite camps.
@@ -100,15 +104,17 @@ Traced mechanisms, all reproducible:
 
 ## Other Findings
 
-1. **The heavyweight tier failed its audition.** Seven rows from 67–124B models
-   produced one top-tier result (gpt-oss:120b thinking, 99%). Everything else placed
-   mid-pack or worse — llama4:scout (67GB) scored 89% with 8 flips, beaten by a 17GB
-   model running with reasoning disabled. On this workload class, VRAM buys nothing.
+1. **Unconfigured heavyweights are dead weight; configured, one redeemed itself.**
+   Of eight rows from 67–124B models, six placed mid-pack or worse — llama4:scout
+   (67GB) scored 89% with 8 flips, beaten by a 17GB model running with reasoning
+   disabled. The exception proves the config thesis: gpt-oss:120b at *floor effort*
+   took the board's #1 row. On this workload class, VRAM alone buys nothing; VRAM
+   plus the right configuration bought first place exactly once.
 2. **Coder-tuned models are metronomes** — qwen3-coder, qwen2.5-coder,
    qwen3-coder-next all posted **zero flipped checks**: reliably imperfect, precisely
    gateable. Thinking-mode chat models are coin-flips (up to 13 flips).
-3. **Cost decouples from quality entirely**: 950 → 19,225 ctok across the board
-   (20×), with the most expensive row scoring 50%.
+3. **Cost decouples from quality entirely**: 950 → 23,085 ctok across the board
+   (24×), with the most expensive row scoring 43%.
 4. **Real-world coding beats puzzle coding as a discriminator.** Our three tasks
    (messy-CSV cleanup, an off-by-one booking bug, a log summarizer) produced
    *plausible* failures: silently dropped quoted amounts (wrong totals that look
@@ -170,22 +176,28 @@ Every one of these was initially misdiagnosed as a model failure:
 - **Quantization**: Q4_K_M / MXFP4 throughout. Results may differ at higher precision.
 - Model digests per row in `results.json`.
 
-## Reclassifications & pending verification
+## Reclassifications & verification status
 
-- **glm-4.7-flash**: tool-task "outages" were Ollama's GLM parser crashing on the
-  model's own malformed tool-call XML — reclassified model-attributable (as served).
-- **gpt-oss:120b@think=off is not a valid row**: the model ignores suppression at
-  the weights level (it has effort levels, not an off switch). Two defects, two
-  layers: no off-mode (model design, permanent) and silent output discard under
-  format+suppression (Ollama bug, reported). The chat-only results under ignored
-  suppression are honest; the extraction zeros are the collision. A `@think=low`
-  floor-effort row is planned as the legitimate replacement measurement.
-- **Pending before this report is final** (tracked, in progress):
-  ① an **obedience audit** of every `@think=off` row against the gateway's audit
-  trail (think requested vs thinking returned) — the 120B proved *accepts ≠ obeys*;
-  ② a rerun of qwen3.6:35b's pair now that the node timeout that killed its T5 is
-  fixed (its model-side transcript was verified clean);
-  ③ the 120B `@think=low` addendum.
+This board merges the base run with a post-deploy addendum (both provenance blocks
+in `results.json`). Resolved:
+
+- **qwen3.6:35b pair rerun** ✅ — its T5 exclusions were a 120s node timeout killing
+  healthy long generations (the model-side transcript was verified clean in the
+  gateway audit). With the timeout raised, its pair was rerun with T5 fully measured.
+- **glm-4.7-flash pair rerun** ✅ — its tool-task "outages" were Ollama's GLM parser
+  crashing on the model's own malformed tool-call XML (a model failure surfacing as
+  an infra symptom, pre-fix invisible in the audit log). Rerun post-deploy with
+  cause-carrying errors: the failures now score as the model failures they are
+  (43%/61%, the board's floor).
+- **gpt-oss:120b@think=off retired as invalid** ✅ — the model ignores boolean
+  suppression at the weights level (effort levels are its native control; *accepts ≠
+  obeys*). Two defects at two layers: no off-mode (model design, permanent) and
+  silent output-discard under format+ignored-suppression (Ollama bug, reported
+  upstream). Replaced by the legitimate measurement: **`@think=low`, which took the
+  board's #1 row.** The retired row is preserved in `results.json` under `retired`.
+- **Pending**: the fleet-wide **obedience audit** (`think=false AND
+  length(thinking) > 0` across the gateway audit trail) to confirm every other
+  `@think=off` row's suppression was honored. The board is otherwise final.
 
 ## Limitations
 
