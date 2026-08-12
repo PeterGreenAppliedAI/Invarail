@@ -406,11 +406,13 @@ async function toolLoopTasks(client: OllamaClient, model: string): Promise<TaskR
     ['called order_lookup', 'called send_email after lookup', 'email to dana@example.com', 'email mentions shipped/tracking']));
 
   // NOTE (methodology): the engine's premature-refusal detector (engine.ts ~787)
-  // coerces tool use when a model answers first-step with no tool calls — so
-  // "zero tool calls" is unwinnable here BY DESIGN. This task measures recovery
-  // from a coercive repair prompt inside the production engine: a disciplined
-  // model makes at most a token gesture and re-asserts its answer; a drifting
-  // one spirals through fabricated URLs. This is an engine-in-the-loop test.
+  // fires when a model answers first-step with no tool calls. Since 31d4701 the
+  // repair prompt offers an explicit exit ("if NO tool is relevant, restate your
+  // answer — do not invent tool calls"). This task measures restraint and answer
+  // confidence under that fair challenge: a sound model re-asserts its answer
+  // (≤2 calls); a defective one still spirals through fabricated URLs despite
+  // being offered the exit. Engine-in-the-loop test; the pre-fix coercive-prompt
+  // baseline lives in run-2026-08-11T21-10-06.
   results.push(await runToolLoopTask(client, model, 'T3-restraint',
     'Convert 5 kilometers to miles.', TOOL_SYSTEM,
     (answer, calls) => [
@@ -906,7 +908,7 @@ function buildReport(results: ModelResult[], pending: string[], prov: Provenance
   }
 
   md += `\n## Methodology & limitations\n\n`;
-  md += `- **Engine-in-the-loop:** tool-loop tasks run inside LocalClaw's production ReAct engine (guardrails, repair prompts, fallback parsers included). T3 deliberately measures recovery from the engine's premature-refusal repair prompt — an unwinnable "zero tool calls" situation by design. This is a harness-fit benchmark, not a model-in-isolation benchmark.\n`;
+  md += `- **Engine-in-the-loop:** tool-loop tasks run inside Invarail's production ReAct engine (guardrails, repair prompts, fallback parsers included). T3 measures restraint under the engine's premature-refusal challenge, which offers an explicit no-tool exit (post-31d4701 wording) — a model that still invents tool calls despite the exit exhibits a real defect. This is a harness-fit benchmark, not a model-in-isolation benchmark.\n`;
   md += `- **Mock tools:** all tool observations are canned and identical across models and reps; results are comparable but do not measure real-API robustness.\n`;
   md += `- **Extraction budget:** 2048 tokens (not the 256 prod default) so thinking models are scored on extraction ability, not thinking brevity.\n`;
   md += `- **Coding tasks are execution-verified:** model code runs in a network-less Docker sandbox (python:3.11-alpine, 256MB, 15s) against basic + edge-case assertion batteries. Tasks are practical (data cleanup, bug fix, small utility), not algorithm puzzles.\n`;
