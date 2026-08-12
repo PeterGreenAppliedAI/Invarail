@@ -1027,10 +1027,13 @@ async function main(): Promise<void> {
     }),
   };
 
-  // Models routed to a non-Ollama backend have no think-control (our OpenAI
-  // translation layer would silently drop it — the exact bug class this run
-  // exists to avoid). They get one honestly-labeled default row.
-  const noThinkControl = new Set((config.inference?.backends ?? []).flatMap(b => b.models ?? []));
+  // Models routed to a non-Ollama backend only get think A/B rows when the
+  // backend explicitly declares supportsThink (ds4 does — verified); otherwise
+  // the translation layer omits `think` and the model gets one honestly-labeled
+  // default row. Never probe a backend that might silently ignore the field.
+  const noThinkControl = new Set(
+    (config.inference?.backends ?? []).filter(b => !b.supportsThink).flatMap(b => b.models ?? []),
+  );
 
   const baseNames = [...new Set(rows.map(r => r.name))];
   console.log(`Model eval — ${baseNames.length} base models × ${REPS} reps (thinking models expand to think=on/off rows) -> ${RUN_DIR}`);
