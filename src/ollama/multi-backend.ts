@@ -1,15 +1,12 @@
+import type { z } from 'zod';
 import { OllamaClient } from './client.js';
 import { OpenAICompatClient } from './openai-client.js';
 import type { OllamaChatParams, OllamaChatResponse } from './types.js';
+import type { VllmBackendSchema } from '../config/schema.js';
 
-export interface VllmBackendConfig {
-  /** OpenAI-compatible base URL, e.g. http://10.0.0.15:8000 */
-  url: string;
-  /** Optional bearer token */
-  apiKey?: string;
-  /** Exact model ids served by this backend, e.g. ["cyankiwi/MiniMax-M2.7-AWQ-4bit"] */
-  models: string[];
-}
+/** Derived from the Zod schema (source of truth) — was a hand-written duplicate
+ *  that silently drifted when supportsThink landed. */
+export type VllmBackendConfig = z.infer<typeof VllmBackendSchema>;
 
 /**
  * Routing inference client. Extends OllamaClient so it's a drop-in replacement
@@ -26,10 +23,10 @@ export class MultiBackendClient extends OllamaClient {
   constructor(ollamaUrl: string, keepAlive: string | undefined, backends: VllmBackendConfig[]) {
     super(ollamaUrl, keepAlive);
     for (const b of backends) {
-      const client = new OpenAICompatClient(b.url, b.apiKey);
+      const client = new OpenAICompatClient(b.url, b.apiKey, b.supportsThink);
       for (const model of b.models) {
         this.routes.set(model, client);
-        console.log(`[Inference] Route: "${model}" → vLLM ${b.url}`);
+        console.log(`[Inference] Route: "${model}" → OpenAI-compat ${b.url}${b.supportsThink ? ' (think-capable)' : ''}`);
       }
     }
   }

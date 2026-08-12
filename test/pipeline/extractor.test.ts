@@ -59,6 +59,24 @@ describe('extractParams', () => {
     expect(client.chat).toHaveBeenCalledTimes(1);
   });
 
+  it('parses JSON after a Gemma-4 thought block without burning a repair call', async () => {
+    const client = mockClient([
+      `<|channel>thought\nThe user wants a search. I should extract the query.<channel|>{"query": "AI news", "count": 3}`,
+    ]);
+    const result = await extractParams(client, 'test', schema, 'search AI news');
+    expect(result).toEqual({ query: 'AI news', count: 3 });
+    expect(client.chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('parses JSON after a Qwen think block without burning a repair call', async () => {
+    const client = mockClient([
+      `<think>Extract query and count from the message.</think>\n{"query": "AI news", "count": 2}`,
+    ]);
+    const result = await extractParams(client, 'test', schema, 'search AI news');
+    expect(result).toEqual({ query: 'AI news', count: 2 });
+    expect(client.chat).toHaveBeenCalledTimes(1);
+  });
+
   it('repairs unparseable output on second attempt', async () => {
     const client = mockClient([
       'Sure! Here is what I found for you.',

@@ -521,6 +521,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       model: config.model,
       messages,
       tools: ollamaTools.length > 0 ? ollamaTools : undefined,
+      ...(config.think === undefined ? {} : { think: config.think }),
       options: buildOllamaOptions(config, effectiveTemperature),
     });
 
@@ -782,17 +783,20 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     }
 
     // Premature refusal detector: if a tool-using specialist gives a final answer
-    // on the first step without calling ANY tools, it's almost always wrong —
-    // the model is refusing or hallucinating constraints that don't exist.
+    // on the first step without calling ANY tools, it is often refusing or
+    // hallucinating constraints. But the repair must leave an exit for questions
+    // no tool serves — an unconditional "you MUST use tools" order sends most
+    // models spiraling through irrelevant calls (2026-08 eval: 13/16 models
+    // fabricated web fetches for a unit conversion rather than defy the order).
     if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted) {
       console.log(`[ReAct] Step ${i + 1}: premature answer without tool use — "${answer.slice(0, 80)}..."`);
       messages.push(msg);
       messages.push({
         role: 'user',
         content: 'You gave a final answer without using any tools. '
-          + 'You MUST use your available tools to fulfill this request — do not refuse or claim you cannot. '
+          + 'If one of your tools serves this request, call it now — do not refuse or claim you cannot. '
           + 'You have full access to: ' + tools.map(t => t.name).join(', ') + '. '
-          + 'Start by calling the most relevant tool now.',
+          + 'If NO tool is relevant to this request, simply restate your answer directly — do not invent tool calls.',
       });
       refusalRepairAttempted = true;
       extraIterations++;
@@ -821,6 +825,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     const finalChatParams = {
       model: config.model,
       messages,
+      ...(config.think === undefined ? {} : { think: config.think }),
       options: buildOllamaOptions(config, config.temperature),
       // No tools — force a text answer
     };

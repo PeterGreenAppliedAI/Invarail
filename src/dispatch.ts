@@ -1052,6 +1052,7 @@ RULES:
       systemPrompt,
       contextSize: specialist.contextSize ?? config.session.contextSize,
       toolStyle: specialist.toolStyle,
+      think: specialist.think,
     },
     tools: toolDefs,
     executor,

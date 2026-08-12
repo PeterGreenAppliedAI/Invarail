@@ -1,6 +1,7 @@
 import JSON5 from 'json5';
 import type { OllamaClient } from '../ollama/client.js';
 import { capsFor } from '../ollama/model-caps.js';
+import { stripThinkingTags } from '../utils/text.js';
 import type { ExtractFieldSchema as FieldSchema } from './types.js';
 import { pipelineExtractFailure } from '../errors.js';
 
@@ -129,13 +130,19 @@ function buildJsonSchema(schema: Record<string, FieldSchema>): Record<string, un
 // as the safety net for models the matrix mispredicts.
 let structuredOutputsSupported = true;
 
-/** Chat with grammar-constrained JSON output when supported; plain chat otherwise. */
+/** Chat with grammar-constrained JSON output when supported; plain chat otherwise.
+ *  Default budget is 2048, not the old 256: thinking models spend output tokens
+ *  reasoning BEFORE the constrained JSON (thinking counts against num_predict),
+ *  and 256 starved them into returning reasoning prose with the JSON never
+ *  emitted. Grammar constraints make the larger cap free for terse models —
+ *  they stop at the closing brace regardless. (2026-08 eval finding; see
+ *  data/model-eval/gateway-brief.md.) */
 export async function chatMaybeStructured(
   client: OllamaClient,
   model: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   jsonSchema: Record<string, unknown>,
-  maxTokens = 256,
+  maxTokens = 2048,
 ): Promise<string> {
   const options = { temperature: 0.1, num_predict: maxTokens };
   if (structuredOutputsSupported && capsFor(model).supportsFormat) {
@@ -228,8 +235,10 @@ async function repairExtraction(
 }
 
 function tryParseJson(text: string): Record<string, unknown> | null {
-  // Strip thinking model tags (qwen3.6, nemotron, etc.)
-  const cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  // Strip thinking blocks — Qwen <think> AND Gemma 4 <|channel>thought formats.
+  // (The inline <think>-only regex this replaced burned a repair round-trip on
+  // every Gemma-4 extraction whose valid JSON followed a thought block.)
+  const cleaned = stripThinkingTags(text);
 
   // Try direct parse — strict JSON, then JSON5 (trailing commas, single quotes,
   // unquoted keys — classic small-model sloppiness that shouldn't burn a repair call)
