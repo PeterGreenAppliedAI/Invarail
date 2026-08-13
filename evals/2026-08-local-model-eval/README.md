@@ -138,6 +138,30 @@ Every one of these was initially misdiagnosed as a model failure:
 | gpt-oss:120b + format + think:false → output generated then silently discarded | Ollama (upstream) | reported; see [reclassifications](#reclassifications--pending-verification) |
 | Long generations killed by a 120s node timeout, surfacing as anonymous 503s | Gateway config | timeout raised; 503s now carry their cause |
 
+## Exhibition entry: a frontier model on the same battery
+
+Out of competition — different harness, so not a board row. A Claude (Opus 4.7)
+subagent ran the identical 14 tasks: same canned tool observations (served via a
+mock-tool CLI, calls logged for grading), same prompts verbatim, same deterministic
+checks, same Docker sandbox for the code.
+
+**Result: 100% — 56/56 checks, single rep.** Zero tool calls on the restraint task,
+the 9-hop hunt in exactly 9 calls with zero wrong codes, exact cron expression,
+perfect stop-rule discipline ("You're welcome, Peter." — 22 characters), all three
+code submissions passing every basic and edge assertion.
+
+Read this with its caveats: one repetition (no stability column); its own agentic
+loop rather than our ReAct engine (it never faced the premature-refusal challenge
+the local models did); a frontier cloud model against local Q4 quants; token costs
+not comparable (a subagent's turn includes its own system apparatus). What it
+honestly establishes is the battery's ceiling: **these tasks are fully solvable, and
+the top locally-served rows — 120b@low, qwen3.6@off, gemma31@on — matched a frontier
+model's score on this workload.** Which is both a compliment to well-configured
+local models and a confession about the battery: it measures production harness-fit,
+not capability frontiers. The planned reasoning-loaded addendum exists precisely
+because a battery three local models and a frontier model all ace cannot rank what
+none of them was forced to struggle with.
+
 ## Methodology
 
 - **Dimensions**: tool-loop (single call, dependent chain, restraint-under-challenge,
