@@ -152,8 +152,17 @@ code submissions passing every basic and edge assertion.
 
 Read this with its caveats: one repetition (no stability column); its own agentic
 loop rather than our ReAct engine (it never faced the premature-refusal challenge
-the local models did); a frontier cloud model against local Q4 quants; token costs
-not comparable (a subagent's turn includes its own system apparatus). What it
+the local models did); a frontier cloud model against local Q4 quants.
+
+**The token footprint is its own finding.** The exhibition's 100% cost ~413k total
+tokens — but ~28.9k of every agent's ~29.5k was a near-constant baseline: the
+general-purpose agent apparatus (system prompt, tool schemas) shipped to each task.
+Marginal task work above baseline: **~8.5k tokens across all 14 tasks** — the same
+band as the local batteries (2.3k–9k ctok). 98% of the frontier run's traffic was
+harness, not work. (Footprint comparison, not strict: total tokens vs
+completion-only ctok.) A purpose-built specialist harness running a well-configured
+local model did identical work for 2,307 completion tokens — the generality tax is
+real, and it dwarfs the model-capability gap on this workload class. What it
 honestly establishes is the battery's ceiling: **these tasks are fully solvable, and
 the top locally-served rows — 120b@low, qwen3.6@off, gemma31@on — matched a frontier
 model's score on this workload.** Which is both a compliment to well-configured
