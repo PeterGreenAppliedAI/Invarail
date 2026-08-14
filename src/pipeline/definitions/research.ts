@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { capsFor } from '../../ollama/model-caps.js';
 import { join, resolve } from 'node:path';
 import { mapQueriesToLenses, appendGatherSignal } from '../../mcp/registry-feed.js';
 import type { PipelineDefinition, PipelineContext } from '../types.js';
@@ -166,6 +167,26 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
+/** Verdict-shaped internal calls (claim extraction, entailment judge, Tier-1
+ *  judge) suppress thinking when the model supports it: their output is an enum
+ *  contract nobody reads the reasoning of, and default-high thinking turned
+ *  single entailment checks into 300s timeouts (live, 2026-08-14). The
+ *  user-facing prose calls (facet findings, final synthesis, sentence
+ *  corrections) keep the model's default — the owner reads those. */
+const noThink = (model: string): { think?: false } =>
+  capsFor(model).think === 'toggle' ? { think: false } : {};
+
+/** Serialize the heavy facet-synthesis LLM calls: fetches run in parallel, but
+ *  three concurrent 284B generations on one box split its throughput three
+ *  ways and time each other out. Search has a politeness throttle; this is
+ *  the same courtesy pointed at our own inference. */
+let synthesisChain: Promise<unknown> = Promise.resolve();
+function serializeSynthesis<T>(fn: () => Promise<T>): Promise<T> {
+  const run = synthesisChain.then(fn, fn);
+  synthesisChain = run.catch(() => {});
+  return run;
+}
+
 /** Investigate ONE facet: search → deep fetch → focused synthesis.
  *  With presetUrls (flow-gathered), the search step is skipped — the compiled
  *  flow already selected the sources; fetch/cache/synthesis are identical. */
@@ -224,7 +245,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
     if (sourceText) for (const f of valid) if (!sourceText[f.url]) sourceText[f.url] = f.content;
 
     const sourceBlocks = valid.map((f, i) => `[Source ${i + 1}: ${f.url}]\n${f.content}`).join('\n\n---\n\n');
-    const resp = await ctx.client.chat({
+    const resp = await serializeSynthesis(() => ctx.client.chat({
       model: ctx.model,
       messages: [
         { role: 'system', content: [
@@ -237,7 +258,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
         { role: 'user', content: `Facet: ${angle}\n\nSources:\n${sourceBlocks}` },
       ],
       options: { temperature: 0.3, num_predict: 1600, ...(ctx.contextSize ? { num_ctx: ctx.contextSize } : {}) },
-    });
+    }));
     return { angle, findings: stripThinking(resp.message?.content ?? ''), sources: valid.map(f => f.url) };
   } catch (err) {
     console.warn(`[Research] Angle failed "${angle.slice(0, 50)}":`, err instanceof Error ? err.message : err);
@@ -564,6 +585,7 @@ export const researchPipeline: PipelineDefinition = {
           const chatParams = {
             model,
             messages: [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }],
+            ...noThink(model),
             options: { temperature: 0.1, num_predict: 2000 },
           };
           let resp;
@@ -616,6 +638,7 @@ export const researchPipeline: PipelineDefinition = {
             const resp = await ctx.client.chat({
               model,
               messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+              ...noThink(model),
               options: { temperature: 0.2, num_predict: 600 },
             });
             return parseVerdict(resp.message?.content ?? '', claim, citedUrl);
@@ -671,7 +694,7 @@ export const researchPipeline: PipelineDefinition = {
             }
             if (fetched.length === 0) return v;
             const { system, user } = tier1JudgePrompt(claim, fetched);
-            const resp = await ctx.client.chat({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], options: { temperature: 0.1, num_predict: 400 } });
+            const resp = await ctx.client.chat({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...noThink(model), options: { temperature: 0.1, num_predict: 400 } });
             const t1 = parseTier1(resp.message?.content ?? '');
             if (t1.status === 'CONTRADICTED') contradicted++;
             return applyTier1(v, t1);
