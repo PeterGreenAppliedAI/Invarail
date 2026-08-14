@@ -8,7 +8,8 @@ const TASK_CLASSIFY_PROMPT = `You are a task intent classifier. Given the user's
 - "update" — the user wants to CHANGE a task's details like date, priority, or title (e.g., "change the due date", "reschedule task X")
 - "remove" — the user wants to DELETE a task entirely (e.g., "remove task abc123", "delete that task")
 
-IMPORTANT: Questions like "is it done?", "is that it?", "are there more?" are ALWAYS "list" — they are asking for information, not performing an action.`;
+IMPORTANT: Questions like "is it done?", "is that it?", "are there more?" are ALWAYS "list" — they are asking for information, not performing an action.
+- "question" — the user is asking what the task system CAN do or how it works — capabilities, not content (e.g., "can tasks repeat?", "can I set priorities?", "how do due dates work?"). Content questions about existing tasks stay "list".`;
 
 export const taskPipeline: PipelineDefinition = {
   name: 'task',
@@ -17,9 +18,29 @@ export const taskPipeline: PipelineDefinition = {
       name: 'route',
       type: 'llm_branch',
       prompt: TASK_CLASSIFY_PROMPT,
-      options: ['add', 'list', 'done', 'update', 'remove'],
+      options: ['add', 'list', 'done', 'update', 'remove', 'question'],
       fallback: 'list',
       branches: {
+        // --- QUESTION --- (the enum exit ramp: capability questions get an
+        // honest answer, never a forced action)
+        question: [
+          {
+            name: 'answer',
+            type: 'llm',
+            stream: true,
+            temperature: 0.3,
+            maxTokens: 1024,
+            buildPrompt: (ctx) => ({
+              system: [
+                'Answer the user\'s question about the task board honestly and concisely.',
+                'CAPABILITIES (the truth — do not invent others): tasks can be added, listed, marked done, updated (title, due date YYYY-MM-DD, priority low/medium/high, assignee, tags, details), and removed. One-off tasks only — recurring work belongs to the scheduler (cron), not the task board.',
+                'If asked for something unsupported, say so plainly and point to the closest real capability.',
+                'Answer the question. Do not perform any action. Do not ask "anything else?".',
+              ].join('\n'),
+              user: ctx.userMessage,
+            }),
+          },
+        ],
         // --- ADD ---
         add: [
           {
