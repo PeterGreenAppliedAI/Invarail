@@ -4,6 +4,16 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Enum Routes Need an Exit Ramp (August 14 2026)
+
+**The failure:** "Can we trigger a cron to run early?" → routed to the cron pipeline, whose `llm_branch` route offers ONLY action buckets (add/list/remove/edit). An enum-constrained choice with no escape forced the model to pick the least-wrong action (edit); the dispatch context rewrite had already converted the question into a command ("Can we schedule a cron job to execute earlier…?" → imperative); extraction produced the empty-required-id "unknown" signal; and — because pipelines have no reaction step, unlike the ReAct loop — the raw tool error ("Error: id parameter is required") went straight to the user's DM. Four small design gaps stacking into one rude non-answer.
+
+**The doctrine (same as the engine repair-prompt fix, one layer up):** every constrained model choice needs a no-action exit. Applied (75cd5b6): all three `llm_branch` pipelines (cron/memory/task) gain a `question` branch that answers from an honest hardcoded capability list — cron's states plainly that run-now does not exist and offers the real workarounds; the rewrite prompt now preserves interrogative mood; cron edit/remove `when`-guard their tools on id and ask "which job?" with the list when the extractor signals unknown. Rule for future pipelines: an enum route ships with a question exit, and any required-param extraction seam decides what the USER sees when the param comes back empty — a raw tool error is never that answer.
+
+**Deferred with trigger:** an actual `cron_run` (trigger-now) tool, owner-gated — build when the honest "there is no run-now" answer annoys the owner twice.
+
+---
+
 ## Recency Research: the Model Cannot Know What It Doesn't Know (August 14 2026)
 
 ### The failure (live, first boot after the eval week)
