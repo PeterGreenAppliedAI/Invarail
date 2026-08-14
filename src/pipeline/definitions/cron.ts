@@ -7,7 +7,8 @@ const CRON_CLASSIFY_PROMPT = `You are a scheduling intent classifier. Given the 
 - "list" — the user wants to VIEW current scheduled jobs or is asking a question about them (e.g., "what's scheduled", "show my cron jobs", "any recurring tasks?")
 - "remove" — the user wants to DELETE or CANCEL a scheduled job (e.g., "remove the daily search", "cancel that cron job", "stop the weekly task")
 - "edit" — the user wants to CHANGE an existing job's schedule, message, or settings (e.g., "change it to run at 10am", "update the search query", "disable that job")
-- "question" — the user is asking whether/how something CAN be done, or about scheduling capabilities — NOT requesting an action (e.g., "can we trigger a cron early?", "can jobs run twice a day?", "how do reminders work?"). A question must get an answer, never an action.`;
+- "run" — the user wants to EXECUTE an existing job right NOW, ahead of its schedule (e.g., "run the weekly report now", "trigger the news job", "fire that cron early"). This is an imperative — they are commanding, not asking.
+- "question" — the user is asking whether/how something CAN be done, or about scheduling capabilities — NOT requesting an action (e.g., "can jobs run twice a day?", "how do reminders work?"). A question must get an answer, never an action.`;
 
 export const cronPipeline: PipelineDefinition = {
   name: 'cron',
@@ -16,9 +17,49 @@ export const cronPipeline: PipelineDefinition = {
       name: 'route',
       type: 'llm_branch',
       prompt: CRON_CLASSIFY_PROMPT,
-      options: ['add', 'list', 'remove', 'edit', 'question'],
+      options: ['add', 'list', 'remove', 'edit', 'run', 'question'],
       fallback: 'list',
       branches: {
+        // --- RUN (trigger-now) ---
+        run: [
+          {
+            name: 'extract_run',
+            type: 'extract',
+            schema: {
+              job: { type: 'string', description: 'The job to run now — its ID or (part of) its name', required: true },
+            },
+            examples: [
+              { input: 'run the Weekly AI Developments cron now', output: { job: 'Weekly AI Developments' } },
+              { input: 'trigger job abc123', output: { job: 'abc123' } },
+              { input: 'fire the news job early', output: { job: 'news' } },
+            ],
+          },
+          {
+            name: 'gather_for_run',
+            type: 'tool',
+            tool: 'cron_list',
+            when: (ctx) => !ctx.params.job,
+            resolveParams: () => ({}),
+          },
+          {
+            name: 'run',
+            type: 'tool',
+            tool: 'cron_run',
+            when: (ctx) => !!ctx.params.job,
+            resolveParams: (ctx) => ({ job: ctx.params.job }),
+          },
+          {
+            name: 'confirm_run',
+            type: 'code',
+            execute: (ctx) => {
+              if (!ctx.params.job) {
+                ctx.answer = `Which job should I run now? Here's the current list:\n${ctx.stageResults.gather_for_run as string}`;
+                return;
+              }
+              ctx.answer = ctx.stageResults.run as string;
+            },
+          },
+        ],
         // --- QUESTION ---
         // The exit ramp: an enum-constrained route with only action buckets
         // coerces questions into wrong actions (live failure 2026-08-14:
@@ -41,8 +82,7 @@ export const cronPipeline: PipelineDefinition = {
             buildPrompt: (ctx) => ({
               system: [
                 'Answer the user\'s question about scheduling honestly and concisely.',
-                'CAPABILITIES (the truth — do not invent others): recurring jobs on 5-field cron expressions (evaluated in local time), one-shot future reminders (run once then auto-disable), jobs can be added / listed / edited (schedule, message, category, enable/disable) / removed. Heartbeat tasks run together on a shared periodic schedule.',
-                'NOT SUPPORTED: triggering a job to run immediately ("run it now") — there is no run-now. If asked, say so plainly and offer the real workarounds: (1) ask for the job\'s underlying action directly right now (e.g. "research this week\'s AI news"), or (2) temporarily edit the job\'s schedule.',
+                'CAPABILITIES (the truth — do not invent others): recurring jobs on 5-field cron expressions (evaluated in local time), one-shot future reminders (run once then auto-disable), jobs can be added / listed / edited (schedule, message, category, enable/disable) / removed, and an existing job can be RUN IMMEDIATELY on request ("run the weekly report now") — the schedule is untouched and results deliver to the job\'s configured channel. Heartbeat tasks run together on a shared periodic schedule.',
                 'The current job list is provided for reference — cite real names/schedules when relevant.',
                 'Answer the question. Do not perform any action. Do not ask "anything else?".',
               ].join('\n'),

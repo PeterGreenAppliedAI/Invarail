@@ -33,13 +33,38 @@ describe('enum routes have a question exit', () => {
   }
 });
 
-describe('cron question branch tells the truth about run-now', () => {
-  it('states there is no trigger-now and offers the real workarounds', () => {
+describe('cron question branch tells the truth about capabilities', () => {
+  it('describes run-now as a real capability (cron_run exists since 2026-08-14)', () => {
     const route = cronPipeline.stages[0] as LlmBranchStage;
     const answer = route.branches.question[1] as LlmStage;
     const { system } = answer.buildPrompt({ userMessage: 'can we trigger a cron early?', params: {}, stageResults: { gather_jobs: '(jobs)' } } as unknown as PipelineContext);
-    expect(system).toMatch(/no run-now/i);
-    expect(system).toMatch(/edit the job/i);
+    expect(system).toMatch(/RUN IMMEDIATELY/);
+    expect(system).toMatch(/do not invent others/i);
+  });
+});
+
+describe('cron run branch (trigger-now)', () => {
+  it('route offers "run" and the branch guards on the job param', () => {
+    const route = cronPipeline.stages[0] as LlmBranchStage;
+    expect(route.options).toContain('run');
+    const branch = route.branches.run;
+    const runTool = branch.find(s => s.name === 'run') as ToolStage;
+    expect(runTool.tool).toBe('cron_run');
+    expect(runTool.when!({ params: {} } as unknown as PipelineContext)).toBe(false);
+    expect(runTool.when!({ params: { job: 'Weekly AI Developments' } } as unknown as PipelineContext)).toBe(true);
+
+    const confirm = branch.find(s => s.name === 'confirm_run') as CodeStage;
+    const ctx = { params: {}, stageResults: { gather_for_run: 'JOB LIST' }, answer: '' } as unknown as PipelineContext;
+    confirm.execute(ctx);
+    expect(ctx.answer).toContain('Which job');
+  });
+
+  it('question branch capability text no longer denies run-now', () => {
+    const route = cronPipeline.stages[0] as LlmBranchStage;
+    const answer = route.branches.question[1] as LlmStage;
+    const { system } = answer.buildPrompt({ userMessage: 'q', params: {}, stageResults: { gather_jobs: '' } } as unknown as PipelineContext);
+    expect(system).not.toMatch(/no run-now/i);
+    expect(system).toMatch(/RUN IMMEDIATELY/);
   });
 });
 

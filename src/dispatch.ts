@@ -1292,7 +1292,7 @@ async function runPipelineDispatch(
           model: config.router.model,
           messages: [{
             role: 'user',
-            content: `The user said: "${message}"\n\nThis is a follow-up to this conversation:\n${recentHistory}\n\nRewrite the user's message as a clear, self-contained sentence. Include the specific topic. PRESERVE THE MOOD: a question must stay a question (keep "can/should/how/is" phrasing) — never convert a question into a command. Write ONLY the rewritten sentence.`,
+            content: `The user said: "${message}"\n\nThis is a follow-up to this conversation:\n${recentHistory}\n\nRewrite the user's message as a clear, self-contained sentence. Include the specific topic. PRESERVE THE MOOD IN BOTH DIRECTIONS: a question must stay a question (keep "can/should/how/is" phrasing) and a command must stay a command ("run X now" stays imperative) — never convert one into the other, even if earlier conversation turns had a different mood. Write ONLY the rewritten sentence.`,
           }],
           options: { temperature: 0.1, num_predict: 100 },
         });
