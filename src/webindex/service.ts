@@ -84,8 +84,11 @@ export class WebIndexService {
     console.log(`[WebIndex] Scheduled (${this.deps.config.refreshCron}) — ${this.deps.config.seeds.length} seed(s), next: ${this.cron.nextRun()?.toISOString() ?? '?'}`);
     // First boot (or wiped DB): don't make the owner wait for the next cron
     // boundary to have an index at all — populate now, in the background.
-    if (this.stats().docs === 0) {
-      console.log('[WebIndex] Empty index — running initial refresh now');
+    // Same if a prior cycle was interrupted mid-embed: pending docs shouldn't
+    // sit unembedded until the next cron boundary.
+    const s = this.stats();
+    if (s.docs === 0 || s.pending > 0) {
+      console.log(s.docs === 0 ? '[WebIndex] Empty index — running initial refresh now' : `[WebIndex] ${s.pending} pending doc(s) — running refresh now`);
       void this.refresh().catch(err => console.warn('[WebIndex] Initial refresh failed:', err instanceof Error ? err.message : err));
     }
   }
@@ -194,17 +197,24 @@ export class WebIndexService {
     }
   }
 
-  /** Retry embedding for docs stored during an embeddings outage. */
+  /** Retry embedding for docs stored during an embeddings outage. Drains in
+   *  batches until done; stops early if a whole batch fails (outage ongoing). */
   private async backfillPending(): Promise<number> {
-    const pending = this.db.prepare(`SELECT url, title, text FROM docs WHERE status = 'pending' LIMIT 20`).all() as Array<{ url: string; title: string; text: string }>;
-    let done = 0;
-    for (const d of pending) {
-      if (await this.embedDoc(d.url, d.title, d.text)) done++;
-      // Backfill has no fetch-politeness gaps between docs — space it out so
-      // recovery from an outage doesn't itself hammer the embeddings node.
-      await new Promise(r => setTimeout(r, 300));
+    let total = 0;
+    for (;;) {
+      const pending = this.db.prepare(`SELECT url, title, text FROM docs WHERE status = 'pending' LIMIT 20`).all() as Array<{ url: string; title: string; text: string }>;
+      if (pending.length === 0) break;
+      let done = 0;
+      for (const d of pending) {
+        if (await this.embedDoc(d.url, d.title, d.text)) done++;
+        // Backfill has no fetch-politeness gaps between docs — space it out so
+        // recovery from an outage doesn't itself hammer the embeddings node.
+        await new Promise(r => setTimeout(r, 300));
+      }
+      total += done;
+      if (done === 0) break;
     }
-    return done;
+    return total;
   }
 
   // --- etiquette ---
