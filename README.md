@@ -731,13 +731,15 @@ Add `"reason"` to any specialist's `tools` array to enable the reasoning pass fo
 
 Invarail assigns different models to different roles based on their strengths. No single model handles everything.
 
-Inference runs across **two backends**: a large reasoning model on **vLLM** (OpenAI-compatible) plus small utility/modality models on an **Ollama-compatible gateway**. A `MultiBackendClient` routes each call by model id.
+Inference runs across **two backends**: a large reasoning model on an **OpenAI-compatible server** (currently [ds4/DwarfStar](https://github.com/antirez/ds4); vLLM works identically) plus small utility/modality models on an **Ollama-compatible gateway**. A `MultiBackendClient` routes each call by model id.
+
+**Thinking control** (2026-08): reasoning models' thinking is a per-specialist config choice (`think: true/false` or `'low'|'medium'|'high'` effort for gpt-oss-family models), validated at boot against a per-model capability matrix — a conflicting setting warns instead of silently no-opping. OpenAI-compat backends forward `think` only when the config declares `supportsThink: true` (verified, never assumed). Why it matters: [our 39-row eval](evals/2026-08-local-model-eval/) measured the same model swinging 82%→100% on one thinking flag, with per-model direction — there is no universal right setting, only measured ones.
 
 | Role | Model | Backend | Why |
 |------|-------|---------|-----|
-| Chat + foreground specialists + `reason` tool | DeepSeek-V4-Flash | vLLM | Strong multi-step reasoning + tool sequencing, 256K context |
+| Chat + foreground specialists + `reason` tool | DeepSeek-V4-Flash | ds4 (OpenAI-compat) | Strong multi-step reasoning + tool sequencing, 100K served context |
 | Router | phi4:14b | gateway | Fast classification (~50ms), few-shot |
-| Briefing + Heartbeat (synthesis) | DeepSeek-V4-Flash | vLLM | Background reasoning on the foreground model |
+| Briefing + Heartbeat (synthesis) | DeepSeek-V4-Flash | ds4 (OpenAI-compat) | Background reasoning on the foreground model |
 | Embedding | qwen3-embedding:8b | gateway | Vector search for memory + knowledge import |
 | Vision | qwen3.6:27b (multimodal) | gateway | Image analysis |
 | Image Generation | flux2-klein:4b-fp8 | dedicated | Text-to-image |
@@ -868,9 +870,9 @@ Then add `"mcp:<name>"` to a specialist's `tools` array to expose the server's w
 | Language | TypeScript 5.7 (strict) |
 | AI Backend | Ollama |
 | Router Model | phi4:14b |
-| Foreground reasoning | DeepSeek-V4-Flash (vLLM) |
+| Foreground reasoning | DeepSeek-V4-Flash (ds4/DwarfStar, OpenAI-compat) |
 | Utility models | phi4:14b, qwen3.6:27b, qwen3-embedding (gateway) |
-| Briefing Model | DeepSeek-V4-Flash (vLLM) |
+| Briefing Model | DeepSeek-V4-Flash (ds4/DwarfStar, OpenAI-compat) |
 | Embedding Model | qwen3-embedding:8b |
 | Reasoning Model | nemotron-3-nano:30b (optional) |
 | Image Generation | flux2-klein:4b-fp8 (dedicated Mac Mini) |
@@ -909,7 +911,7 @@ These frameworks solve similar problems but assume frontier models (GPT-4, Claud
 
 ## Roadmap
 
-**Recently shipped:** MCP client bridge (stdio + streamable-HTTP + fully-local OAuth — external servers' tools auto-register, no custom factories), [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flow-first research gathering behind an explicit-naming code gate, target-bound standing grants + confirm buttons on the autonomy ladder, the Lessons system (negative procedural memory), SearXNG self-hosted search, two-backend inference (vLLM + Ollama via `MultiBackendClient`), and the research evidence-verification layer (cited-source + Tier-1 cross-check).
+**Recently shipped:** a [published 39-row engine-in-the-loop model eval](evals/2026-08-local-model-eval/) (thinking on/off/low A/B, execution-verified coding, failure taxonomy — it found six bugs in our own stack and a new #1 model hiding behind one config flag), per-specialist thinking control with boot-time capability validation, evidence gates (zero search results → honest failure, never a fabricated report), discovery-first research decompose for recency topics, `cron_run` (trigger any job now), question exits on all enum-routed pipelines, MCP client bridge (stdio + streamable-HTTP + fully-local OAuth — external servers' tools auto-register, no custom factories), [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flow-first research gathering behind an explicit-naming code gate, target-bound standing grants + confirm buttons on the autonomy ladder, the Lessons system (negative procedural memory), SearXNG self-hosted search, two-backend inference (vLLM + Ollama via `MultiBackendClient`), and the research evidence-verification layer (cited-source + Tier-1 cross-check).
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
