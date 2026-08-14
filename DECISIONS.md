@@ -10,7 +10,7 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 **The doctrine (same as the engine repair-prompt fix, one layer up):** every constrained model choice needs a no-action exit. Applied (75cd5b6): all three `llm_branch` pipelines (cron/memory/task) gain a `question` branch that answers from an honest hardcoded capability list — cron's states plainly that run-now does not exist and offers the real workarounds; the rewrite prompt now preserves interrogative mood; cron edit/remove `when`-guard their tools on id and ask "which job?" with the list when the extractor signals unknown. Rule for future pipelines: an enum route ships with a question exit, and any required-param extraction seam decides what the USER sees when the param comes back empty — a raw tool error is never that answer.
 
-**Deferred with trigger:** an actual `cron_run` (trigger-now) tool, owner-gated — build when the honest "there is no run-now" answer annoys the owner twice.
+**Deferred with trigger — TRIGGER MET SAME DAY:** the owner asked for run-now twice within 24h (once as a question, once as a command the rewrite then mangled into a question — the mood-preservation instruction needed to be symmetric, fixed). Built (9eaeadf): `cron_run` resolves by id or partial name (disambiguates, never guesses), fires through `CronService.run`'s existing path fire-and-forget (a manual trigger behaves exactly like the clock firing; results via the job's own channel — awaiting would hold the chat turn hostage for a 20-minute research job), route gains a `run` branch with empty-param grace, and the question branch's capability truth was updated in the same commit — an exit-ramp answer that denies a capability the same PR adds would be its own little lie.
 
 ---
 
