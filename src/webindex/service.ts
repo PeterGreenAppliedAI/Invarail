@@ -6,10 +6,11 @@
  * unconstrained web search, never a boundary on it).
  *
  * Ingestion is 100% deterministic — no LLM anywhere. RSS/Atom-first over
- * owner-curated seeds; conditional GET on feeds; item pages fetched through
- * the real web_fetch tool (Readability + SSRF) behind honest crawler etiquette:
- * named UA, robots.txt respected, per-domain pacing. Content-hash dedup makes
- * re-crawls of unchanged pages no-ops.
+ * owner-curated seeds; conditional GET on feeds; item pages fetched directly
+ * (SSRF-checked per hop, Readability extraction, publish-date sniffing from
+ * head metadata) behind honest crawler etiquette: named UA, robots.txt
+ * respected, per-domain pacing. Content-hash dedup makes re-crawls of
+ * unchanged pages no-ops.
  *
  * Embedding resilience: content + metadata land immediately with
  * status='pending'; vectors are backfilled with retry at each cycle. An
@@ -24,9 +25,11 @@ import { dirname } from 'node:path';
 import { Cron } from 'croner';
 import type { EmbeddingStore } from '../memory/embeddings.js';
 import type { OllamaClient } from '../ollama/client.js';
-import type { InvarailTool, ToolContext } from '../tools/types.js';
 import type { LocalIndexConfig } from '../config/types.js';
+import { assertPublicUrl, assertPublicRedirect } from '../tools/ssrf.js';
+import { extractReadableContent, htmlToMarkdown, truncateText } from '../tools/web-fetch-utils.js';
 import { parseFeed, type FeedItem } from './feed.js';
+import { extractPublishedDate } from './page-date.js';
 
 const USER_AGENT = 'InvarailBot/1.0 (+https://github.com/PeterGreenAppliedAI/Invarail)';
 const SOURCE = 'webindex';
@@ -38,7 +41,6 @@ interface WebIndexDeps {
   embeddings: EmbeddingStore;
   client: OllamaClient;
   embedModel: string;
-  webFetch: InvarailTool;
   timezone?: string;
   dbPath?: string;
 }
@@ -152,8 +154,15 @@ export class WebIndexService {
       return { newDocs: 0, embedded: 0 };
     }
     await this.politeness(url);
-    const content = await this.deps.webFetch.execute({ url, extractMode: 'text', maxChars: '20000' }, { agentId: 'webindex', sessionKey: 'webindex' } as ToolContext);
-    if (typeof content !== 'string' || content.startsWith('Error') || content.length < 200) return { newDocs: 0, embedded: 0 };
+    let page: { text: string; publishedAt: string | null };
+    try {
+      page = await this.fetchPage(url);
+    } catch (err) {
+      console.warn(`[WebIndex] Fetch failed ${url}:`, err instanceof Error ? err.message : err);
+      return { newDocs: 0, embedded: 0 };
+    }
+    const content = page.text;
+    if (content.length < 200) return { newDocs: 0, embedded: 0 };
 
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
     const existing = this.db.prepare('SELECT hash FROM docs WHERE url = ?').get(url) as { hash?: string } | undefined;
@@ -161,7 +170,7 @@ export class WebIndexService {
 
     const title = item?.title ?? (content.split('\n').find(l => l.trim().length > 10)?.trim().slice(0, 140) ?? url);
     const meta: IndexedDocMeta = {
-      url, title, publishedAt: item?.publishedAt ?? null, fetchedAt: new Date().toISOString(),
+      url, title, publishedAt: item?.publishedAt ?? page.publishedAt, fetchedAt: new Date().toISOString(),
       hash, tags: tags.join(','), seedUrl, status: 'pending',
     };
     this.db.prepare(`INSERT INTO docs (url, title, publishedAt, fetchedAt, hash, tags, seedUrl, status, text)
@@ -171,6 +180,45 @@ export class WebIndexService {
 
     const ok = await this.embedDoc(url, title, content);
     return { newDocs: 1, embedded: ok ? 1 : 0 };
+  }
+
+  /** Raw page fetch with per-hop SSRF checks, then Readability extraction and
+   *  publish-date sniffing from head metadata (which the text extraction would
+   *  otherwise discard — undated docs can't be recency-ranked). */
+  private async fetchPage(url: string): Promise<{ text: string; publishedAt: string | null }> {
+    await assertPublicUrl(url);
+    const fetchOptions: RequestInit = {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(30_000),
+      redirect: 'manual',
+    };
+    let currentUrl = url;
+    let res = await fetch(currentUrl, fetchOptions);
+    let hops = 0;
+    while (res.status >= 300 && res.status < 400 && hops < 5) {
+      const location = res.headers.get('location');
+      if (!location) break;
+      await assertPublicRedirect(currentUrl, location);
+      currentUrl = new URL(location, currentUrl).toString();
+      res = await fetch(currentUrl, fetchOptions);
+      hops++;
+    }
+    if (!res.ok) return { text: '', publishedAt: null };
+
+    const contentType = res.headers.get('content-type') ?? '';
+    const body = await res.text();
+    if (!contentType.includes('html')) return { text: truncateText(body, 20_000), publishedAt: null };
+
+    const publishedAt = extractPublishedDate(body);
+    try {
+      const article = await extractReadableContent(body, currentUrl);
+      return { text: truncateText(`${article.title}\n\n${article.textContent}`, 20_000), publishedAt };
+    } catch {
+      return { text: truncateText(htmlToMarkdown(body), 20_000), publishedAt };
+    }
   }
 
   /** Chunk + embed one doc into the EmbeddingStore. Failure leaves status='pending'. */
