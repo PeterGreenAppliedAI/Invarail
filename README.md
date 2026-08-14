@@ -68,7 +68,7 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 | Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
 | Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only security gate |
 | Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands, persistent Python/Node/Bash REPL sessions, safe file I/O |
-| Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit` | Real cron expressions, timezone-aware, persistent |
+| Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit`, `cron_run` | Real cron expressions, timezone-aware, persistent; `cron_run` triggers any job immediately ("run the weekly report now") without touching its schedule |
 | Task Board | `task_add`, `task_list`, `task_update`, `task_done`, `task_remove` | Persistent kanban-style task system with TASKS.md rendering |
 | Reasoning | `reason` | Forced synthesis pass over gathered tool observations (uses the foreground reasoning model) — deep analysis, content formatting |
 | Config | `cron_edit`, `workspace_read`, `workspace_write` | Self-administration — edit cron jobs, read/write workspace files |
@@ -77,7 +77,8 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
 | Vision | *(automatic)* | Image analysis via multimodal model — descriptions injected into context for natural Q&A |
 | Voice | TTS/STT | Kokoro TTS + faster-whisper STT — voice in, voice out, with toggle hands-free mode |
 | Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from success |
-| Skills | `skill_find` *(+ automatic)* | Self-improving procedural memory — successful runs are saved (semantic matching with a measured floor, save-time dedup) and reused; specialists can look up proven step sequences on demand |
+| Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment) — advisory notes injected into similar future work. Experience informs execution; it never expands authority |
+| Lessons | `!lessons` *(+ automatic)* | Negative procedural memory — approach-level boundaries harvested from observed failures, injected only after recurrence (evidence ≥ 2) |
 | MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become Invarail tools — stdio (spawned, with `cwd` support) or remote streamable-HTTP, small-model description curation (`toolDescriptions` overrides), schema-filtered params (model-padded args stripped before strict servers see them), per-server `maxResultChars`, readOnlyHint-aware confirm gating, fully-local OAuth (PKCE + DCR, no cloud broker) |
 | Flow-first research | explicit tool naming | Name a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow in a research request and the pipeline uses its compiled searches as the facets+sources (seconds instead of minutes), then synthesizes, verifies, and renders exactly as normal |
 | Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` to a confirmation and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
@@ -113,8 +114,10 @@ The console uses React + Vite + TailwindCSS, served as static files from the sam
   ollama pull qwen3.6:27b           # vision + briefing/heartbeat reasoning (multimodal)
   ollama pull qwen2.5:7b            # voice fast-path
   # Foreground reasoning + chat + specialists: a large model (e.g. DeepSeek-V4-Flash)
-  # served via vLLM (OpenAI-compatible) and wired through `inference.backends` in config,
-  # OR any capable Ollama model (e.g. qwen3-coder:30b / gemma4:26b) for an all-Ollama setup.
+  # served by any OpenAI-compatible server (ds4/DwarfStar, vLLM, ...) wired through
+  # `inference.backends` in config, OR any capable Ollama model for an all-Ollama setup
+  # (see evals/2026-08-local-model-eval/ for measured 20-120B picks — configuration,
+  # especially thinking on/off, matters more than the model card).
   ```
 - Python 3 with data science packages (for research/charting):
   ```bash
@@ -235,7 +238,7 @@ invarail/
 │   │   └── definitions/      # Pipeline definitions per category
 │   ├── tool-loop/            # ReAct tool-calling loop engine (fallback for open-ended categories)
 │   ├── browser/              # Dual-mode browser client (DOM + Visual via Xvfb)
-│   ├── skills/               # Self-improving procedural memory (store + keyword matcher)
+│   ├── learnings/            # Error store, lessons (negative procedural memory), experience synthesis
 │   ├── cli/                  # Terminal interface (streaming, commands, markdown rendering)
 │   ├── ollama/               # Ollama HTTP client (chat, stream, embed)
 │   ├── channels/             # Pluggable adapters (Discord, Telegram, Web, Slack, Gmail, Microsoft Graph, WhatsApp, Chrome Extension)
@@ -320,16 +323,15 @@ The model writes markdown (its strength) and **code** renders the HTML/PDF — a
 
 The `plan` pipeline handles complex multi-step tasks that require browser interaction, web searches, and tool coordination. Instead of asking the model to orchestrate 10+ tool calls (which local models can't do reliably), the pipeline uses a hybrid approach:
 
-1. **Skill Check** — Before planning, searches saved skills for a matching execution pattern. If found, skips plan generation and uses the proven recipe
-2. **Plan** — LLM generates a step-by-step plan as a JSON array of `{tool, params, purpose}` objects
-3. **Self-Reflection** — LLM critiques its own plan: checks for missing snapshots, bad ordering, unrealistic assumptions, generic placeholders, wrong browser mode, and blind first-result selection. Revises the plan if issues found
-4. **Execute loop** — Code iterates through the plan, calling tools directly via `ctx.executor()`:
+1. **Plan** — LLM generates a step-by-step plan as a JSON array of `{tool, params, purpose}` objects (always fresh — the skills system was retired in favor of graph experience memory, which advises rather than replaces planning)
+2. **Self-Reflection** — LLM critiques its own plan: checks for missing snapshots, bad ordering, unrealistic assumptions, generic placeholders, wrong browser mode, and blind first-result selection. Revises the plan if issues found
+3. **Execute loop** — Code iterates through the plan, calling tools directly via `ctx.executor()`:
    - **Smart selection** — Grabs fresh rendered page text (`innerText`) and asks the LLM to pick the most relevant content item, not just the first result
    - **Dynamic param resolution** — Extracts real data (event names, dates, URLs) from the rendered page text when creating tasks or saving memory
    - **DOM-first browser** — Tries DOM interactions first (fast, cheap). Automatically escalates to visual mode (vision model + pixel coordinates) only when DOM fails
-5. **Verify** — After each step, checks success; on failure, LLM generates an adjusted step
-6. **Summarize** — LLM synthesizes outcomes into a conversational response (streamed)
-7. **Skill Save** — If execution was successful (>60% step success rate, 3+ steps), saves the plan as a reusable skill. Next similar request loads the skill instead of planning from scratch
+4. **Verify** — After each step, checks success; on failure, LLM generates an adjusted step
+5. **Summarize** — LLM synthesizes outcomes into a conversational response (streamed)
+6. **Record** — Outcomes become graph `:Experience` nodes judged by the user's actual reaction (👍/👎, steering, denials — code-detected). Similar future work gets advisory "approach notes"; experience never expands authority
 
 **Dual-mode browser:**
 - **DOM mode** (default) — Walks the DOM, labels interactive elements with indices (`[1: button]`, `[2: input]`). Uses `innerText` for reading SPA content. Fast and deterministic.
@@ -337,7 +339,6 @@ The `plan` pipeline handles complex multi-step tasks that require browser intera
 
 **Example:** "Search Eventbrite for tech events near Huntington Station NY, then add one to my task list":
 ```
-[Skill check] → No match (first run)
 [Plan] → 10 steps generated
 [Reflect] → 4 issues found, plan revised
 Step 1: browser open eventbrite.com
@@ -349,27 +350,19 @@ Step 6: [Smart Selection] → picks "Long Island Hiring Event" (most relevant)
 Step 7: browser click → navigate to event
 Step 8: browser text_content → read event details
 Step 9: task_add → "Long Island Hiring Event" due 2026-04-13
-[Skill saved] → go-to-eventbrite-com-and-search-for-tech-events-ne (success_count: 1)
-
-Second similar request:
-[Skill match] → score 19, using saved plan (skips LLM plan generation + reflection)
-[Skill success] → success_count: 2
+[Experience] → recorded (satisfaction pending user reaction)
 ```
 
 **Foreman handoffs:** Each specialist receives a structured briefing — its specific task, the overall goal, what prior steps accomplished (status + artifact file paths), and available artifacts (URLs, file paths). Full step results are written to disk as `.plan-artifacts/step-N.txt` — specialists can `read_file` to access complete content without prompt bloat. No extra model calls — handoff construction is pure code.
 
 **Context isolation:** All pipeline dispatches (plan, research, exec, etc.) run with fresh context (no parent history) to prevent prior session topics from biasing results. Progressive workspace disclosure (~300 bytes instead of 4-6KB) maximizes the context budget for tool results.
 
-### Self-Improving Skills
+### Experience Memory & Lessons (what replaced skills)
 
-After a successful plan execution, the bot saves the steps as a reusable skill in `workspace/skills/*.md`. Each skill has:
-- YAML frontmatter (name, description, success count, last used)
-- Ordered step list with tool, params, and purpose
-- Learned notes from execution (e.g., "Use text_content for SPAs", "Smart selection needed")
+The skills system (saved step recipes replayed on match) was retired 2026-08-10 — replayed recipes quietly became an authority surface. Its successors keep the learning, not the power:
 
-**Progressive disclosure** (3 tiers): list shows name + description only → full load includes steps and notes → individual referenced files on demand. This saves tokens for local models with small context windows.
-
-**Matching:** Keyword overlap scoring against skill names and descriptions, with bonus points for high success counts. Threshold prevents weak matches from firing.
+- **Experience memory** — `:Experience` nodes in the same FalkorDB graph as facts: task shape → approach → outcome → **user satisfaction**. Signals are code-detected only (Discord 👍/👎 reactions, confirm denials, mid-turn steering, re-asks) — a model's self-assessment never creates an experience. Similar future work receives advisory "approach notes"; the invariant "experience informs execution, never expands authority" is pinned by tests (experience modules cannot import from `security/`).
+- **Lessons** — negative procedural memory: approach-level boundaries harvested from observed failures (code detects; the model only phrases), injected only after recurrence (evidence ≥ 2), listed/dropped via `!lessons`.
 
 ### CLI
 

@@ -46,3 +46,40 @@ describe('buildSweepQueries', () => {
     for (const q of qs) expect(q.split(' ').length).toBeLessThanOrEqual(8);
   });
 });
+
+describe('evidence gates — degrade honestly, never fabricate', () => {
+  it('research: zero facets with findings aborts before synthesis', async () => {
+    const { researchPipeline } = await import('../../src/pipeline/definitions/research.js');
+    const gate = researchPipeline.stages.find(s => s.name === 'evidence_gate') as { execute: (ctx: unknown) => void };
+    const ctx: Record<string, unknown> = { params: { _angleResults: [], topic: 'AI news this week' }, answer: '' };
+    gate.execute(ctx);
+    expect(ctx.abort).toBe(true);
+    expect(String(ctx.answer)).toMatch(/won'?t write a report from memory/i);
+  });
+
+  it('research: gate is a no-op when findings exist', async () => {
+    const { researchPipeline } = await import('../../src/pipeline/definitions/research.js');
+    const gate = researchPipeline.stages.find(s => s.name === 'evidence_gate') as { execute: (ctx: unknown) => void };
+    const ctx: Record<string, unknown> = { params: { _angleResults: [{ angle: 'a', findings: 'real', sources: ['u'] }], topic: 't' }, answer: '' };
+    gate.execute(ctx);
+    expect(ctx.abort).toBeUndefined();
+  });
+
+  it('web_search: zero urls aborts with the provider message quoted', async () => {
+    const { webSearchPipeline } = await import('../../src/pipeline/definitions/web-search.js');
+    const gate = webSearchPipeline.stages.find(s => s.name === 'evidence_gate') as { execute: (ctx: unknown) => void };
+    const ctx: Record<string, unknown> = { params: { _urls: [] }, stageResults: { search: 'No results found for "x"' }, answer: '' };
+    gate.execute(ctx);
+    expect(ctx.abort).toBe(true);
+    expect(String(ctx.answer)).toContain('No results found');
+    expect(String(ctx.answer)).toMatch(/won'?t answer .* from memory/i);
+  });
+
+  it('web_search: gate is a no-op when urls exist', async () => {
+    const { webSearchPipeline } = await import('../../src/pipeline/definitions/web-search.js');
+    const gate = webSearchPipeline.stages.find(s => s.name === 'evidence_gate') as { execute: (ctx: unknown) => void };
+    const ctx: Record<string, unknown> = { params: { _urls: ['https://a'] }, stageResults: { search: 'ok' }, answer: '' };
+    gate.execute(ctx);
+    expect(ctx.abort).toBeUndefined();
+  });
+});
