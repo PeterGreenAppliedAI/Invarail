@@ -5,6 +5,8 @@ import type {
   RouterConfigSchema,
   RouterCategorySchema,
   SpecialistConfigSchema,
+  LocalIndexConfigSchema,
+  IndexSeedSchema,
   ChannelConfigSchema,
   ChannelSecuritySchema,
   AgentsConfigSchema,
@@ -42,6 +44,8 @@ export type OllamaConfig = z.infer<typeof OllamaConfigSchema>;
 export type RouterConfig = z.infer<typeof RouterConfigSchema>;
 export type RouterCategory = z.infer<typeof RouterCategorySchema>;
 export type SpecialistConfig = z.infer<typeof SpecialistConfigSchema>;
+export type LocalIndexConfig = z.infer<typeof LocalIndexConfigSchema>;
+export type IndexSeed = z.infer<typeof IndexSeedSchema>;
 export type ChannelConfig = z.infer<typeof ChannelConfigSchema>;
 export type ChannelSecurity = z.infer<typeof ChannelSecuritySchema>;
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
