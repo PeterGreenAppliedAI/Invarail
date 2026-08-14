@@ -79,6 +79,50 @@ function wantsFreshness(text: string): boolean {
   return /\b(recent|latest|newest|current|today|this year|2026|2025|now|upcoming)\b/i.test(text);
 }
 
+/** Recency-shaped topics get a discovery sweep before decompose: a static-knowledge
+ *  model CANNOT know what happened recently — left to its prior it manufactures
+ *  facets about the archetypal entities it remembers (live failure 2026-08-14: a
+ *  weekly AI-news run asked about Gemma/Llama while missing that week's actual
+ *  releases). Discovery-first: search generically, ground the facets in results. */
+export function isRecencyShaped(text: string): boolean {
+  return wantsFreshness(text) || /\b(news|this week|this month|announce|releases?[sd]?\b)/i.test(text);
+}
+
+const STOPWORDS = new Set(('what are the is was were this that how why which who when whom or and for of in on to a an ' +
+  'have has had do does did been being with from by at as its their they we i you it be will would should could can ' +
+  'may might must about into over under between per each any some more most other than then there here also just only ' +
+  'happened happening please me my our your').split(' '));
+
+/** Condense a question-shaped facet to a keyword query. Long natural-language
+ *  questions over-constrain metasearch (SearXNG returns nothing for them,
+ *  especially with a freshness filter) — the same failure class as the old
+ *  Brave site:-filter finding. Keeps content words, drops function words. */
+export function condenseToKeywords(text: string, maxTerms = 7): string {
+  return text
+    .replace(/[?!.,;:()"']/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOPWORDS.has(w.toLowerCase()))
+    .slice(0, maxTerms)
+    .join(' ');
+}
+
+/** Generic sweep queries for a recency-shaped topic — deliberately broad so the
+ *  RESULTS supply the entity names, not the model's frozen prior. */
+export function buildSweepQueries(topic: string, now: Date): string[] {
+  // Temporal words are redundant in the sweep (the freshness param covers
+  // recency) — drop them, case-aware so proper nouns like "New England" survive.
+  const core = condenseToKeywords(topic, 6)
+    .split(' ')
+    .filter(w => !/^(week|month|year|today)$/i.test(w) && !/^(new|latest|newest)$/.test(w))
+    .slice(0, 5)
+    .join(' ');
+  const monthYear = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  return [
+    `${core} news`,
+    `${core} announcements ${monthYear}`,
+  ];
+}
+
 interface AngleResult { angle: string; findings: string; sources: string[]; }
 
 export interface FlowFacet { angle: string; urls: string[]; }
@@ -144,8 +188,19 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
       const searchResult = await ctx.executor('web_search', searchParams, ctx.toolContext);
       urls = extractUrls(searchResult).slice(0, 3);
       if (urls.length === 0) {
-        console.warn(`[Research] Facet "${label}": no search results (${searchResult.slice(0, 80)})`);
-        return { angle, findings: '', sources: [] };
+        // Question-shaped queries over-constrain metasearch — condense to
+        // keywords and retry ONCE before declaring the facet dry (degrade,
+        // never abort — same philosophy as extraction repair).
+        const condensed = condenseToKeywords(angle);
+        if (condensed && condensed.split(' ').length >= 2 && condensed !== angle) {
+          console.warn(`[Research] Facet "${label}": no results — retrying condensed: "${condensed}"`);
+          const retryResult = await ctx.executor('web_search', { ...searchParams, query: condensed }, ctx.toolContext);
+          urls = extractUrls(retryResult).slice(0, 3);
+        }
+        if (urls.length === 0) {
+          console.warn(`[Research] Facet "${label}": no search results (${searchResult.slice(0, 80)})`);
+          return { angle, findings: '', sources: [] };
+        }
       }
     }
 
@@ -260,8 +315,40 @@ export const researchPipeline: PipelineDefinition = {
       },
     },
 
+    // 1c. Discovery sweep: for recency-shaped topics, search GENERICALLY first
+    // so the decompose model facets over what the search FOUND, not over the
+    // archetypal entities in its frozen training prior (which cannot contain
+    // this week's news by definition). Failure degrades to plain decompose.
+    {
+      name: 'discovery_sweep',
+      progressLabel: '› Scanning for what actually happened…',
+      type: 'code',
+      when: (ctx) => !ctx.params._flowFacets && isRecencyShaped(ctx.params.topic as string),
+      execute: async (ctx) => {
+        const queries = buildSweepQueries(ctx.params.topic as string, new Date());
+        const chunks: string[] = [];
+        for (const query of queries) {
+          try {
+            const result = await ctx.executor('web_search',
+              { query, count: '8', freshness: 'month' }, ctx.toolContext);
+            if (typeof result === 'string' && !result.startsWith('No results') && !result.startsWith('Error')) {
+              chunks.push(result.slice(0, 1400));
+            }
+          } catch (err) {
+            console.warn(`[Research] Discovery sweep "${query}" failed:`, err instanceof Error ? err.message : err);
+          }
+        }
+        if (chunks.length === 0) {
+          console.warn('[Research] Discovery sweep found nothing — decompose falls back to model prior');
+          return;
+        }
+        ctx.params._discoveryDigest = chunks.join('\n---\n');
+        console.log(`[Research] Discovery sweep: ${chunks.length}/${queries.length} queries produced material for grounding`);
+      },
+    },
+
     // 2. Decompose the topic into 4-6 distinct facets (skipped when a flow
-    // already provided them)
+    // already provided them). Grounded in the discovery digest when one exists.
     {
       name: 'decompose',
       progressLabel: '› Planning the research…',
@@ -269,18 +356,26 @@ export const researchPipeline: PipelineDefinition = {
       when: (ctx) => !ctx.params._flowFacets,
       temperature: 0.3,
       maxTokens: 700,
-      buildPrompt: (ctx) => ({
-        system: [
-          'You are a senior research analyst scoping an investigation.',
-          'Break the topic into 4-6 DISTINCT sub-questions/facets that together give comprehensive coverage.',
-          'Each facet should be a different angle (not a paraphrase): e.g. current state, key players/options, performance/benchmarks, costs/tradeoffs, recent developments, outlook.',
-          'If the topic names multiple entities to compare, ensure each gets dedicated coverage.',
-          'Output ONLY a JSON array of facet strings. Each facet should read as a searchable research question.',
-          'Example: ["What are the current AMD options for local inference?", "How does AMD ROCm performance compare to NVIDIA CUDA?", ...]',
-          'Return ONLY the JSON array. /no_think',
-        ].join('\n'),
-        user: `Topic: ${ctx.params.topic}\nCurrent year: ${new Date().getFullYear()}`,
-      }),
+      buildPrompt: (ctx) => {
+        const digest = ctx.params._discoveryDigest as string | undefined;
+        return {
+          system: [
+            'You are a senior research analyst scoping an investigation.',
+            'Break the topic into 4-6 DISTINCT sub-questions/facets that together give comprehensive coverage.',
+            'Each facet should be a different angle (not a paraphrase): e.g. current state, key players/options, performance/benchmarks, costs/tradeoffs, recent developments, outlook.',
+            'If the topic names multiple entities to compare, ensure each gets dedicated coverage.',
+            ...(digest ? [
+              'FRESH SEARCH RESULTS are provided below. Your internal knowledge of "recent" events is stale by definition — build facets around the SPECIFIC names, products, and events that appear in the results, not around entities you remember. A facet naming something from the results beats a generic facet.',
+            ] : []),
+            'Facets should be SHORT keyword-style search queries (3-8 words), not full sentences — long questions return nothing from the search engine.',
+            'Output ONLY a JSON array of facet strings.',
+            'Example: ["AMD local inference options 2026", "ROCm vs CUDA benchmark comparison", ...]',
+            'Return ONLY the JSON array. /no_think',
+          ].join('\n'),
+          user: `Topic: ${ctx.params.topic}\nCurrent year: ${new Date().getFullYear()}`
+            + (digest ? `\n\nFresh search results (ground facets in these):\n${digest}` : ''),
+        };
+      },
     },
 
     // 3. Parse facets (skipped when a flow already provided them)
