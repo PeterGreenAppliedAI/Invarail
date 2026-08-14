@@ -4,6 +4,24 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Zero Evidence In, Confident Report Out — the Fabrication Gate (August 14 2026)
+
+### The incident
+A manually-triggered weekly-news job (via the new `cron_run`) delivered a polished 15k-character "report" — Qwen3-Next, Llama 4.5, Ollama v0.8.2, an arxiv preprint — **entirely fabricated**, with invented version numbers, benchmarks, and URLs. The model even confessed in its own intro ("live search returned no indexed results… extrapolated") and the `revision_pass` then spent 166s polishing the hallucination. Three causes stacked: (1) the job's stored category was `"cron"` (mis-authored at creation) so dispatch fell back to live routing and landed on the thin `web_search` pipeline instead of `research`; (2) SearXNG's upstream engines had flagged the host — DDG CAPTCHA (client-signature-scoped, not IP-wide: a human browser from the same address passes), Brave 429s, Wikidata 403s — after **two days of unspaced eval+research bursts**; (3) neither synthesis stage treated "zero sources fetched" as fatal.
+
+### The fixes (f341974)
+- **Evidence gates**: `research` and `web_search` pipelines abort (`ctx.abort`) before synthesis when zero sources exist, with an honest "search is down — I won't answer from memory" message. Doctrine: **degrade honestly, never fabricate** — the verification layer's principle applied at the front door, because no verifier can rescue a report whose every source is imaginary.
+- **Universal politeness throttle**: the Brave-only throttle generalized to ALL five search providers (per-provider serialized chains, 1.1-1.5s minimum intervals). A self-hosted metasearch spends the HOST's IP reputation with every upstream engine it aggregates — and SearXNG's self-policing points inward (inbound limiter, reactive engine suspensions), not outward: it was designed for human-paced use, and an agent pipeline is an out-of-distribution caller. **The layer with the burst knowledge owns the pacing** — only the caller knows six facet searches are one logical operation.
+- Synthesize prompts hardened: only-from-provided-material, never cite a URL not in the material.
+
+### The lesson (the week's recurring one, again)
+Every layer assumed some other layer held the contract: the pipeline assumed SearXNG paces itself, SearXNG assumes humans pace themselves, engines flag whoever doesn't. Nobody owned outbound politeness, so the bill landed on the IP. Same shape as the dropped `think` param and the "unenforced" format schema: **an interface you assume is policed must be verified or owned.**
+
+### Planned (dial list): three-leg search stack
+(1) **Personal vertical index** — index HIS web, not THE web: 50-200 curated seeds, RSS-first, honest crawler etiquette (named UA, robots.txt, per-domain limits — the big-lab playbook at hobby scale: they never scrape SERPs; they own indexes, buy indexes, or buy content), stored on the existing SQLite EmbeddingStore, `local_search` tried before any web search. (2) Brave API free tier for ad-hoc long-tail. (3) SearXNG re-enters rotation post-cooldown (DDG disabled ~3 days, engines diversified). Ops note: the mis-categorized cron job still needs its `category: research` fix.
+
+---
+
 ## Enum Routes Need an Exit Ramp (August 14 2026)
 
 **The failure:** "Can we trigger a cron to run early?" → routed to the cron pipeline, whose `llm_branch` route offers ONLY action buckets (add/list/remove/edit). An enum-constrained choice with no escape forced the model to pick the least-wrong action (edit); the dispatch context rewrite had already converted the question into a command ("Can we schedule a cron job to execute earlier…?" → imperative); extraction produced the empty-required-id "unknown" signal; and — because pipelines have no reaction step, unlike the ReAct loop — the raw tool error ("Error: id parameter is required") went straight to the user's DM. Four small design gaps stacking into one rude non-answer.
