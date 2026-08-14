@@ -4,6 +4,21 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Personal Vertical Index — Built the Same Day It Was Justified (August 14 2026)
+
+### The decision (evidence-driven, per "run it first")
+The rebuilt research pipeline's live A/B (discovery sweep + gates + healthy search) produced a genuinely good report — real week, 17 sources, verification catching a fabricated Llama-4 claim from a content farm — and STILL missed NVIDIA's entire release week and Qwen's flagship drop while spending a section on a non-story. Diagnosis: sweep-based discovery has a 2-query aperture into SERP-ranked content farms; coverage was probabilistic. Owner verdict: "this isn't a good up-to-date news article" → build leg 1.
+
+### What shipped (a22c541, 68756a2)
+`WebIndexService` (src/webindex/): RSS/Atom-first ingestion (zero-dep parser, conditional GET) over owner-curated seeds; item pages via the real web_fetch (Readability+SSRF) behind honest crawler etiquette — InvarailBot UA, robots.txt, per-domain pacing; content-hash dedup; aggregator seeds follow item links one hop (discovery layer); chunks → EmbeddingStore `source='webindex'` + metadata sidecar (real publication dates); NO LLM anywhere in ingestion; embedding-outage resilient (store-pending + backfill — designed while gpu-node's embeddings route was actually wedged). `local_search` tool: recency-weighted (14-day half-life) doc-collapsed retrieval that tells the model to fall through when thin. Pipelines: research facets try the index before the SERP (≥2 hits skip web search); web_search unions local hits ahead of web results — an outage that the index can cover never even reaches the evidence gate.
+
+### Doctrine notes
+- **vs search-buckets** (the challenge was raised and answered): buckets SUBTRACTED (site: filters constrained live retrieval; worst case silence) — the index ADDS (a retrieval source in front of unconstrained search; worst case irrelevance-then-fallback). No topic→source mapping to rot; we own the whole stack; deletion cost is one config block. Echo-chamber risk named, mitigated by the aggregator hop + permanent web fallback + local-hit-rate logs.
+- **Ship the rail, not the opinions** (owner's rule): repo ships mechanism only — `localIndex` off by default, starter config shows illustrative seed SHAPES. The owner's actual seed list is personalization and lives in his gitignored config.
+- Enhancement queued: JSON-LD/OpenGraph metadata extraction at fetch (real dates/titles for 1-hop follows — needs raw-HTML hook in web_fetch).
+
+---
+
 ## Zero Evidence In, Confident Report Out — the Fabrication Gate (August 14 2026)
 
 ### The incident
