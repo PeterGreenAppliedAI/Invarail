@@ -4,6 +4,25 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Recency Research: the Model Cannot Know What It Doesn't Know (August 14 2026)
+
+### The failure (live, first boot after the eval week)
+The weekly AI-news cron produced a report that led with Qwen's flagship release (correctly — by luck) while missing NVIDIA entirely (Lightning, the nemotrons, NeMo Switchyard — the week's second-biggest story, benchmarked in this very repo on release day) and Meta's muse-glimmer. Root mechanism: `decompose` asks a static-knowledge model to decide what current news to search for. The model facets from its frozen training prior — it literally generated Gemma/Llama queries because those are the archetypal open models it remembers — and phrases facets as long natural-language questions that SearXNG returns nothing for (5 of 8 searches came back empty; same failure class as the removed Brave `site:` buckets). **The report's most instructive sentence**: its own gap analysis explained Llama's absence as "may reflect a quiet week for Meta" — the frozen prior didn't just miss the news, it wrote a plausible wrong explanation for its own blind spot. Second-order gap also observed: a "weekly" report built partly on April-dated evergreen sources (freshness filtered the searches, not the sources' publication dates).
+
+### The fix (08353be): discovery-first, strictly no hardcoded targets
+1. **`discovery_sweep` stage** — recency-shaped topics (`isRecencyShaped`: shape patterns, no entities) get 2 generic keyword sweeps derived from the topic itself (`condenseToKeywords` + "news"/"announcements <clock month year>"); results go to the decompose prompt with the instruction: *your knowledge of "recent" is stale by definition — facet around the names in these results, not the ones you remember.* The model's job shifts from guessing what's new (impossible) to organizing what search found (its strength). Sweep failure degrades to the old path.
+2. **Decompose emits short keyword facets** (3-8 words), not research questions — kills the unsearchable-query problem at birth.
+3. **Dry-facet retry** — empty search → one keyword-condensed retry before the facet dies. Degrade-never-abort, same as extraction repair.
+Doctrine note: no vendor, model name, or domain appears anywhere in the fix — entities are always runtime data. Hardcoding "search NVIDIA" would fix one week and rot forever (see search-buckets teardown; "why are we hardcoding for this?"). Better procedure, not better answers.
+
+### Verification plan
+This week's old-code report is the banked baseline; next week's run is the A/B. Deferred with trigger: source publication-date extraction feeding synthesis (the evergreen-sources gap) — build when a second report leans on stale sources.
+
+### Status
+Live on next boot (shipped alongside the eval-week stack + FalkorDB 4.2.3). 698 tests.
+
+---
+
 ## The Model Eval That Kept Finding Our Bugs Instead (August 11-12 2026)
 
 ### What it was
