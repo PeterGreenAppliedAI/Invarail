@@ -2,17 +2,18 @@ import { Cron } from 'croner';
 import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
 import { CRON_JOB_CATEGORIES as VALID_CATEGORIES } from '../cron/types.js';
+import { resolveCronJob } from '../cron/resolve.js';
 
 export function createCronEditTool(cronService: CronService): InvarailTool {
   return {
     name: 'cron_edit',
     description: `Edit an existing cron job. Update its name, schedule, category, message, or enabled status. Category must be one of: ${VALID_CATEGORIES.join(', ')}.`,
-    parameterDescription: `id (required): Job ID to edit. name (optional): New name. schedule (optional): New cron expression. category (optional): New category (one of: ${VALID_CATEGORIES.join(', ')}). message (optional): New prompt/message. enabled (optional): Enable or disable the job.`,
+    parameterDescription: `id (required): Job ID or (part of) the job name. name (optional): New name. schedule (optional): New cron expression. category (optional): New category (one of: ${VALID_CATEGORIES.join(', ')}). message (optional): New prompt/message. enabled (optional): Enable or disable the job.`,
     example: 'cron_edit[{"id": "abc12345", "schedule": "0 8 * * 1-5", "enabled": "true"}]',
     parameters: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'The job ID to edit' },
+        id: { type: 'string', description: 'Job ID or (part of) the job name' },
         name: { type: 'string', description: 'New job name' },
         schedule: { type: 'string', description: 'New cron expression (e.g., "0 9 * * *")' },
         category: { type: 'string', description: `New specialist category. Must be one of: ${VALID_CATEGORIES.join(', ')}`, enum: [...VALID_CATEGORIES] },
@@ -25,8 +26,11 @@ export function createCronEditTool(cronService: CronService): InvarailTool {
     category: 'config',
 
     async execute(params: Record<string, unknown>): Promise<string> {
-      const id = params.id as string;
-      if (!id) return 'Error: id parameter is required';
+      const query = String(params.id ?? '').trim();
+      if (!query) return 'Error: id parameter is required (a job ID or name)';
+      const resolved = resolveCronJob(cronService.list(true), query);
+      if ('error' in resolved) return resolved.error;
+      const id = resolved.job.id;
 
       const changes: Record<string, unknown> = {};
 
