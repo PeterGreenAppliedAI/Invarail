@@ -8,6 +8,8 @@ import { EmbeddingStore } from '../memory/embeddings.js';
 import { resolveWorkspacePath } from '../agents/scope.js';
 import { createWebSearchTool } from './web-search.js';
 import { createWebFetchTool } from './web-fetch.js';
+import { createLocalSearchTool } from './local-search.js';
+import { WebIndexService } from '../webindex/service.js';
 import { createMemorySearchTool } from './memory-search.js';
 import { createMemoryGetTool } from './memory-get.js';
 import { createMemorySaveTool } from './memory-save.js';
@@ -58,6 +60,7 @@ export interface RegisterToolsOptions {
 
 export interface RegisterToolsResult {
   embeddingStore: EmbeddingStore;
+  webIndex?: WebIndexService;
   /** Present when MCP servers are configured — caller must stop() it on shutdown */
   mcpManager?: import('../mcp/manager.js').McpManager;
 }
@@ -74,7 +77,8 @@ export async function registerAllTools(
 ): Promise<RegisterToolsResult> {
   // Web tools
   registry.register(createWebSearchTool(config.tools?.web?.search));
-  registry.register(createWebFetchTool(config.tools?.web?.fetch));
+  const webFetchTool = createWebFetchTool(config.tools?.web?.fetch);
+  registry.register(webFetchTool);
 
   // Memory tools (with embedding support if client available)
   const workspace = resolveWorkspacePath(config.agents.default, config);
@@ -83,6 +87,27 @@ export async function registerAllTools(
   const embeddingStore = new EmbeddingStore();
 
   registry.register(createMemorySearchTool(workspace, options?.ollamaClient, embeddingStore, options?.factStore, options?.graphMemory));
+
+  // Personal vertical index (leg 1 of the search stack) — config-gated
+  let webIndex: WebIndexService | undefined;
+  if (config.localIndex?.enabled && options?.ollamaClient) {
+    webIndex = new WebIndexService({
+      config: config.localIndex,
+      embeddings: embeddingStore,
+      client: options.ollamaClient,
+      embedModel: 'qwen3-embedding:8b',
+      webFetch: webFetchTool,
+      timezone: config.timezone,
+    });
+    registry.register(createLocalSearchTool({
+      embeddings: embeddingStore,
+      client: options.ollamaClient,
+      embedModel: 'qwen3-embedding:8b',
+      index: webIndex,
+      maxAgeDays: config.localIndex.maxAgeDays,
+    }));
+    console.log(`[Tools] Local web index registered (${config.localIndex.seeds.length} seeds)`);
+  }
   registry.register(createMemoryGetTool(workspace));
   registry.register(createMemorySaveTool(workspace, options?.factStore, options?.graphMemory));
   registry.register(createMemoryForgetTool(workspace, options?.factStore, options?.graphMemory));
@@ -220,5 +245,5 @@ export async function registerAllTools(
     }
   }
 
-  return { embeddingStore, mcpManager };
+  return { webIndex, embeddingStore, mcpManager };
 }

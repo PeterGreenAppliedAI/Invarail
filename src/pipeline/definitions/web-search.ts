@@ -62,10 +62,21 @@ export const webSearchPipeline: PipelineDefinition = {
     {
       name: 'pick_urls',
       type: 'code',
-      execute: (ctx) => {
+      execute: async (ctx) => {
         const searchResult = ctx.stageResults.search as string;
         const urlMatches = searchResult.match(/https?:\/\/[^\s)"\]]+/g) ?? [];
-        ctx.params._urls = [...new Set(urlMatches)].slice(0, 5);
+        // LOCAL-FIRST union: curated-index hits lead (vetted sources, real
+        // dates), web results fill the remainder. Additive, never a boundary —
+        // no local index or no hits → identical behavior to before.
+        let localUrls: string[] = [];
+        try {
+          const local = await ctx.executor('local_search', { query: ctx.params.query, count: 3 }, ctx.toolContext);
+          if (typeof local === 'string' && !local.startsWith('Error') && !local.startsWith('No local')) {
+            localUrls = local.match(/https?:\/\/[^\s)"\]]+/g) ?? [];
+            if (localUrls.length > 0) console.log(`[WebSearch] ${localUrls.length} local-index hit(s) lead the source pool`);
+          }
+        } catch { /* no local index — proceed with web results only */ }
+        ctx.params._urls = [...new Set([...localUrls, ...urlMatches])].slice(0, 5);
         return ctx.params._urls;
       },
     },

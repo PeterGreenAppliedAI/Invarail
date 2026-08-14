@@ -45,6 +45,20 @@
   // Memory works out of the box: without FalkorDB (docker-compose.yml) it
   // falls back to flat files under data/. Graph memory upgrades it in place.
 
+  // Personal web index (optional, off by default): curate YOUR sources — the
+  // agent crawls them politely (RSS-first, robots.txt, named user-agent) into
+  // a local searchable archive that pipelines consult BEFORE web search.
+  // These three seeds are ILLUSTRATIVE shapes, not recommendations — your
+  // index should reflect what *you* need to stay current on.
+  // localIndex: {
+  //   enabled: true,
+  //   seeds: [
+  //     { url: "https://example-vendor.com/blog/rss.xml", kind: "rss", tags: ["vendor"] },
+  //     { url: "https://github.com/some/repo/releases.atom", kind: "rss", tags: ["releases"] },
+  //     { url: "https://news.ycombinator.com/rss", kind: "rss", tags: ["aggregator"], followLinks: true },
+  //   ],
+  // },
+
   session: {
     contextSize: 16384,
   },
