@@ -71,6 +71,7 @@ export class Orchestrator {
   private messageDebouncer = new MessageDebouncer();
   private heartbeatCron?: Cron;
   private embeddingStore?: EmbeddingStore;
+  private webIndex?: import('./webindex/service.js').WebIndexService;
   private mcpManager?: import('./mcp/manager.js').McpManager;
   /** sessionKey → full inbound messages typed while that session's dispatch is
    *  running (full messages so undrained leftovers can replay as normal traffic) */
@@ -221,7 +222,7 @@ export class Orchestrator {
     const taskStore = this.taskStore;
 
     // Register all tools
-    const { embeddingStore, mcpManager } = await registerAllTools(this.toolRegistry, this.config, {
+    const { embeddingStore, mcpManager, webIndex } = await registerAllTools(this.toolRegistry, this.config, {
       cronService: this.cronService,
       channelRegistry: this.channelRegistry,
       ollamaClient: this.client,
@@ -232,6 +233,8 @@ export class Orchestrator {
     });
     this.embeddingStore = embeddingStore;
     this.mcpManager = mcpManager;
+    this.webIndex = webIndex;
+    this.webIndex?.start();
 
     // Set up message handler
     this.channelRegistry.onMessage(async (msg) => {
@@ -304,6 +307,7 @@ export class Orchestrator {
   async stop(): Promise<void> {
     this.heartbeatCron?.stop();
     this.cronService?.stop();
+    this.webIndex?.stop();
     this.embeddingStore?.close();
     await this.mcpManager?.stop();
     await this.channelRegistry.disconnectAll();

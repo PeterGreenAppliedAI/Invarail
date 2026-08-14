@@ -197,6 +197,20 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
     if (presetUrls && presetUrls.length > 0) {
       urls = presetUrls.slice(0, 3);
     } else {
+      // LOCAL-FIRST: the curated index answers before the open web is asked.
+      // Additive, never a boundary (anti-search-buckets doctrine): thin local
+      // results fall straight through to normal web search. local_search is
+      // absent/erroring → identical fallthrough.
+      try {
+        const local = await ctx.executor('local_search', { query: angle, count: 4 }, ctx.toolContext);
+        const localUrls = typeof local === 'string' && !local.startsWith('Error') ? extractUrls(local) : [];
+        if (localUrls.length >= 2) {
+          console.log(`[Research] Facet "${label}": ${localUrls.length} local-index hits — skipping web search`);
+          urls = localUrls.slice(0, 3);
+          return await fetchAndSynthesize(ctx, angle, label, urls);
+        }
+      } catch { /* no local index — fall through */ }
+
       // Plain facet query (no source bucket — it over-constrained queries). Research is
       // recency-biased: default to a 1-year window, tighten to a month when the ask signals "latest".
       const recency = wantsFreshness(angle) || wantsFreshness(ctx.params.topic as string);
@@ -225,6 +239,16 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
       }
     }
 
+    return await fetchAndSynthesize(ctx, angle, label, urls);
+  } catch (err) {
+    console.warn(`[Research] Angle failed "${angle.slice(0, 50)}":`, err instanceof Error ? err.message : err);
+    return { angle, findings: '', sources: [] };
+  }
+}
+
+/** Fetch a facet's chosen urls and synthesize findings — shared by the
+ *  local-index, flow-preset, and web-search paths. */
+async function fetchAndSynthesize(ctx: PipelineContext, angle: string, label: string, urls: string[]): Promise<AngleResult> {
     // Fetch sequentially (small N) to avoid a fetch burst across facets
     const fetched: Array<{ url: string; content: string }> = [];
     for (const url of urls) {
@@ -260,10 +284,6 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
       options: { temperature: 0.3, num_predict: 1600, ...(ctx.contextSize ? { num_ctx: ctx.contextSize } : {}) },
     }));
     return { angle, findings: stripThinking(resp.message?.content ?? ''), sources: valid.map(f => f.url) };
-  } catch (err) {
-    console.warn(`[Research] Angle failed "${angle.slice(0, 50)}":`, err instanceof Error ? err.message : err);
-    return { angle, findings: '', sources: [] };
-  }
 }
 
 export const researchPipeline: PipelineDefinition = {
