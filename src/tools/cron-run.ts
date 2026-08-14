@@ -1,5 +1,6 @@
 import type { InvarailTool } from './types.js';
 import type { CronService } from '../cron/service.js';
+import { resolveCronJob } from '../cron/resolve.js';
 
 export function createCronRunTool(cronService: CronService): InvarailTool {
   return {
@@ -25,18 +26,9 @@ export function createCronRunTool(cronService: CronService): InvarailTool {
       if (!query) return 'Error: job parameter is required (a job ID or name)';
 
       const jobs = cronService.list(true).filter(j => j.type !== 'heartbeat');
-      let match = jobs.find(j => j.id === query);
-      if (!match) {
-        const q = query.toLowerCase();
-        const byName = jobs.filter(j => j.name.toLowerCase().includes(q));
-        if (byName.length === 0) {
-          return `No job matches "${query}". Current jobs:\n${jobs.map(j => `- ${j.name} (${j.id})`).join('\n') || '(none)'}`;
-        }
-        if (byName.length > 1) {
-          return `"${query}" matches ${byName.length} jobs — be more specific:\n${byName.map(j => `- ${j.name} (${j.id})`).join('\n')}`;
-        }
-        match = byName[0];
-      }
+      const resolved = resolveCronJob(jobs, query);
+      if ('error' in resolved) return resolved.error;
+      const match = resolved.job;
 
       // Fire-and-forget: a manual trigger behaves exactly like the clock firing —
       // same execution path (concurrency guard, retries, failure notify), results

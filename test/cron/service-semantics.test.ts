@@ -68,3 +68,39 @@ describe('CronService semantics', () => {
     expect(onTrigger).not.toHaveBeenCalled();
   });
 });
+
+import { resolveCronJob } from '../../src/cron/resolve.js';
+import type { CronJob } from '../../src/cron/types.js';
+
+describe('resolveCronJob', () => {
+  const jobs = [
+    { id: 'abc12345', name: 'Weekly AI Developments', type: 'cron' },
+    { id: 'def67890', name: 'Daily Motivation', type: 'cron' },
+    { id: 'ghi11111', name: 'Weekly Meal Plan', type: 'cron' },
+  ] as CronJob[];
+
+  it('resolves by exact id', () => {
+    const r = resolveCronJob(jobs, 'abc12345');
+    expect('job' in r && r.job.name).toBe('Weekly AI Developments');
+  });
+
+  it('resolves by case-insensitive name substring', () => {
+    const r = resolveCronJob(jobs, 'weekly ai');
+    expect('job' in r && r.job.id).toBe('abc12345');
+  });
+
+  it('resolves by full name', () => {
+    const r = resolveCronJob(jobs, 'Weekly AI Developments');
+    expect('job' in r && r.job.id).toBe('abc12345');
+  });
+
+  it('returns actionable error listing jobs on no match', () => {
+    const r = resolveCronJob(jobs, 'nonexistent');
+    expect('error' in r && r.error).toContain('Weekly AI Developments (abc12345)');
+  });
+
+  it('returns ambiguity error when multiple names match', () => {
+    const r = resolveCronJob(jobs, 'weekly');
+    expect('error' in r && r.error).toContain('matches 2 jobs');
+  });
+});
