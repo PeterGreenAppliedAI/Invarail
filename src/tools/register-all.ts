@@ -27,6 +27,7 @@ import { createCronListTool } from './cron-list.js';
 import { createCronRemoveTool } from './cron-remove.js';
 import { createSendMessageTool } from './send-message.js';
 import { createCronEditTool } from './cron-edit.js';
+import { createCronRunTool } from './cron-run.js';
 import { createHeartbeatAddTool } from './heartbeat-add.js';
 import { createHeartbeatListTool } from './heartbeat-list.js';
 import { createHeartbeatRemoveTool } from './heartbeat-remove.js';
@@ -137,6 +138,7 @@ export async function registerAllTools(
     registry.register(createCronListTool(options.cronService));
     registry.register(createCronRemoveTool(options.cronService));
     registry.register(createCronEditTool(options.cronService));
+    registry.register(createCronRunTool(options.cronService));
 
     // Heartbeat tools (require heartbeat config)
     if (options.heartbeatConfig) {
