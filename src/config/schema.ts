@@ -449,6 +449,34 @@ export const FactInputSchema = z.object({
   importance: z.number().min(1).max(5).default(2),
 });
 
+/** Personal vertical index — leg 1 of the search stack (see DECISIONS "the
+ *  fabrication gate"): curate what we FETCH, never constrain what we SEARCH.
+ *  RSS-first ingestion over owner-curated seeds; local_search is tried before
+ *  any web search; web search remains the unconstrained fallback. */
+export const IndexSeedSchema = z.object({
+  url: z.string(),
+  /** 'rss' = feed (items + 1-hop to item pages); 'page' = fetch the page itself */
+  kind: z.enum(['rss', 'page']).default('rss'),
+  /** Optional tags for retrieval filtering/weighting (e.g. "papers", "releases") */
+  tags: z.array(z.string()).default([]),
+  /** For aggregator feeds (HN, reddit): follow each item's OUTBOUND link and
+   *  index the target page (bounded per cycle) — the discovery layer. */
+  followLinks: z.boolean().default(false),
+});
+
+export const LocalIndexConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Refresh schedule (5-field cron, local tz). Default: every 3 hours. */
+  refreshCron: z.string().default('0 */3 * * *'),
+  seeds: z.array(IndexSeedSchema).default([]),
+  /** Per-domain minimum ms between fetches (politeness) */
+  perDomainIntervalMs: z.number().default(1000),
+  /** Max item pages fetched per feed per cycle (bounds 1-hop follows) */
+  maxPagesPerFeedPerCycle: z.number().default(5),
+  /** Days after which unrefreshed content stops surfacing in local_search */
+  maxAgeDays: z.number().default(90),
+});
+
 export const InvarailConfigSchema = z.object({
   /** Owner user ID — the single person who can access owner-only tools (gmail, calendar, etc.). Checked in code, not by the model. */
   ownerId: z.string().optional(),
@@ -469,6 +497,7 @@ export const InvarailConfigSchema = z.object({
   channels: z.record(z.string(), ChannelConfigSchema).default({}),
   agents: AgentsConfigSchema.default({}),
   memory: MemoryConfigSchema.default({}),
+  localIndex: LocalIndexConfigSchema.default({}),
   verification: VerificationConfigSchema.default({}),
   cron: CronConfigSchema.default({}),
   session: SessionConfigSchema.default({}),
