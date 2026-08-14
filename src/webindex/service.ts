@@ -82,6 +82,12 @@ export class WebIndexService {
       void this.refresh().catch(err => console.warn('[WebIndex] Refresh failed:', err instanceof Error ? err.message : err));
     });
     console.log(`[WebIndex] Scheduled (${this.deps.config.refreshCron}) — ${this.deps.config.seeds.length} seed(s), next: ${this.cron.nextRun()?.toISOString() ?? '?'}`);
+    // First boot (or wiped DB): don't make the owner wait for the next cron
+    // boundary to have an index at all — populate now, in the background.
+    if (this.stats().docs === 0) {
+      console.log('[WebIndex] Empty index — running initial refresh now');
+      void this.refresh().catch(err => console.warn('[WebIndex] Initial refresh failed:', err instanceof Error ? err.message : err));
+    }
   }
 
   stop(): void { this.cron?.stop(); this.db.close(); }
