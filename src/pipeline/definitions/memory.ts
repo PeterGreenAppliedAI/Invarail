@@ -4,7 +4,8 @@ const MEMORY_CLASSIFY_PROMPT = `You are a memory intent classifier. Given the us
 
 - "save" — the user wants to STORE new information (e.g., "remember that I like dark mode", "save this", "note that the meeting is Thursday")
 - "recall" — the user wants to RETRIEVE or ASK about stored information (e.g., "what do you know about me", "do you remember my favorite color", "what did I say about the project")
-- "forget" — the user wants to REMOVE or CORRECT wrong information (e.g., "forget that I'm taking a course", "that's wrong, remove it", "delete the fact about my job", "I'm not a student, fix that")`;
+- "forget" — the user wants to REMOVE or CORRECT wrong information (e.g., "forget that I'm taking a course", "that's wrong, remove it", "delete the fact about my job", "I'm not a student, fix that")
+- "question" — the user is asking HOW memory works or what it CAN do — about the system itself, not about stored content (e.g., "how does your memory work?", "can you forget things automatically?", "where do my facts live?"). Content questions ("what do you know about X") are "recall"; capability questions are "question".`;
 
 export const memoryPipeline: PipelineDefinition = {
   name: 'memory',
@@ -13,9 +14,29 @@ export const memoryPipeline: PipelineDefinition = {
       name: 'route',
       type: 'llm_branch',
       prompt: MEMORY_CLASSIFY_PROMPT,
-      options: ['save', 'recall', 'forget'],
+      options: ['save', 'recall', 'forget', 'question'],
       fallback: 'recall',
       branches: {
+        // --- QUESTION --- (the enum exit ramp: capability questions get an
+        // honest answer, never a forced save/recall/forget action)
+        question: [
+          {
+            name: 'answer',
+            type: 'llm',
+            stream: true,
+            temperature: 0.3,
+            maxTokens: 1024,
+            buildPrompt: (ctx) => ({
+              system: [
+                'Answer the user\'s question about how the memory system works. Be honest and concrete — do not describe a generic AI memory system.',
+                'THE TRUTH: facts live in a FalkorDB graph (entities, tags, provenance links). Relevant facts are auto-injected into context via vector search + entity traversal. A background heartbeat (~2h) reviews conversations and extracts/dedupes/contradiction-checks facts automatically — nothing is saved in real time mid-conversation. Explicit "remember X" saves immediately; "forget X" (or !forget) removes from both stores and records the removal so it is not re-extracted. Facts carry importance tiers (5=critical/health, 4=identity, 3=preference/90d, 2=context/30d, 1=ephemeral/7d) — top tiers never expire.',
+                'NOT SUPPORTED: editing a fact in place (forget + re-save instead), and there is no real-time save indicator — never claim something was "saved just now" by the heartbeat.',
+                'Answer the question. Do not perform any memory action. Do not ask "anything else?".',
+              ].join('\n'),
+              user: ctx.userMessage,
+            }),
+          },
+        ],
         // --- SAVE ---
         save: [
           {

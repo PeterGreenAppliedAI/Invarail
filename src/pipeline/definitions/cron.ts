@@ -6,7 +6,8 @@ const CRON_CLASSIFY_PROMPT = `You are a scheduling intent classifier. Given the 
 - "add" — the user wants to CREATE or SCHEDULE a new recurring job (e.g., "schedule a daily search", "run this every Friday", "set up a weekly task")
 - "list" — the user wants to VIEW current scheduled jobs or is asking a question about them (e.g., "what's scheduled", "show my cron jobs", "any recurring tasks?")
 - "remove" — the user wants to DELETE or CANCEL a scheduled job (e.g., "remove the daily search", "cancel that cron job", "stop the weekly task")
-- "edit" — the user wants to CHANGE an existing job's schedule, message, or settings (e.g., "change it to run at 10am", "update the search query", "disable that job")`;
+- "edit" — the user wants to CHANGE an existing job's schedule, message, or settings (e.g., "change it to run at 10am", "update the search query", "disable that job")
+- "question" — the user is asking whether/how something CAN be done, or about scheduling capabilities — NOT requesting an action (e.g., "can we trigger a cron early?", "can jobs run twice a day?", "how do reminders work?"). A question must get an answer, never an action.`;
 
 export const cronPipeline: PipelineDefinition = {
   name: 'cron',
@@ -15,9 +16,40 @@ export const cronPipeline: PipelineDefinition = {
       name: 'route',
       type: 'llm_branch',
       prompt: CRON_CLASSIFY_PROMPT,
-      options: ['add', 'list', 'remove', 'edit'],
+      options: ['add', 'list', 'remove', 'edit', 'question'],
       fallback: 'list',
       branches: {
+        // --- QUESTION ---
+        // The exit ramp: an enum-constrained route with only action buckets
+        // coerces questions into wrong actions (live failure 2026-08-14:
+        // "Can we trigger a cron early?" → edit → raw "Error: id parameter is
+        // required" to the user's DM). Same lesson as the engine's repair
+        // prompt: constrained choices need a no-action exit.
+        question: [
+          {
+            name: 'gather_jobs',
+            type: 'tool',
+            tool: 'cron_list',
+            resolveParams: () => ({}),
+          },
+          {
+            name: 'answer',
+            type: 'llm',
+            stream: true,
+            temperature: 0.3,
+            maxTokens: 1024,
+            buildPrompt: (ctx) => ({
+              system: [
+                'Answer the user\'s question about scheduling honestly and concisely.',
+                'CAPABILITIES (the truth — do not invent others): recurring jobs on 5-field cron expressions (evaluated in local time), one-shot future reminders (run once then auto-disable), jobs can be added / listed / edited (schedule, message, category, enable/disable) / removed. Heartbeat tasks run together on a shared periodic schedule.',
+                'NOT SUPPORTED: triggering a job to run immediately ("run it now") — there is no run-now. If asked, say so plainly and offer the real workarounds: (1) ask for the job\'s underlying action directly right now (e.g. "research this week\'s AI news"), or (2) temporarily edit the job\'s schedule.',
+                'The current job list is provided for reference — cite real names/schedules when relevant.',
+                'Answer the question. Do not perform any action. Do not ask "anything else?".',
+              ].join('\n'),
+              user: `Question: "${ctx.userMessage}"\n\nCurrent jobs:\n${ctx.stageResults.gather_jobs as string}`,
+            }),
+          },
+        ],
         // --- ADD ---
         add: [
           {
@@ -154,15 +186,30 @@ export const cronPipeline: PipelineDefinition = {
             ],
           },
           {
+            name: 'gather_for_remove',
+            type: 'tool',
+            tool: 'cron_list',
+            when: (ctx) => !ctx.params.id,
+            resolveParams: () => ({}),
+          },
+          {
             name: 'remove',
             type: 'tool',
             tool: 'cron_remove',
+            when: (ctx) => !!ctx.params.id,
             resolveParams: (ctx) => ({ id: ctx.params.id }),
           },
           {
             name: 'confirm_remove',
             type: 'code',
             execute: (ctx) => {
+              // Empty required id is the extractor's "unknown" signal — in a
+              // pipeline nothing downstream reacts, so react HERE: ask, never
+              // forward a raw parameter error to the user.
+              if (!ctx.params.id) {
+                ctx.answer = `Which job should I remove? Here's the current list:\n${ctx.stageResults.gather_for_remove as string}`;
+                return;
+              }
               ctx.answer = ctx.stageResults.remove as string;
             },
           },
@@ -193,9 +240,17 @@ export const cronPipeline: PipelineDefinition = {
             ],
           },
           {
+            name: 'gather_for_edit',
+            type: 'tool',
+            tool: 'cron_list',
+            when: (ctx) => !ctx.params.id,
+            resolveParams: () => ({}),
+          },
+          {
             name: 'edit',
             type: 'tool',
             tool: 'cron_edit',
+            when: (ctx) => !!ctx.params.id,
             resolveParams: (ctx) => {
               const p: Record<string, unknown> = { id: ctx.params.id };
               for (const key of ['name', 'schedule', 'category', 'message', 'enabled']) {
@@ -210,6 +265,12 @@ export const cronPipeline: PipelineDefinition = {
             name: 'confirm_edit',
             type: 'code',
             execute: (ctx) => {
+              // Empty required id = extractor's "unknown" — ask with the list,
+              // never forward "Error: id parameter is required" to a DM.
+              if (!ctx.params.id) {
+                ctx.answer = `Which job do you want to change? Here's the current list:\n${ctx.stageResults.gather_for_edit as string}`;
+                return;
+              }
               ctx.answer = ctx.stageResults.edit as string;
             },
           },
