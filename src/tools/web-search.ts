@@ -103,21 +103,33 @@ function formatResults(results: SearchResult[], query: string): string {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-// Brave's free tier allows ~1 request/second. The research pipeline fans out
-// several facets at once, so without spacing every concurrent call 429s. Serialize
-// Brave requests through a single promise chain with a minimum interval; concurrent
-// callers queue instead of bursting.
-const BRAVE_MIN_INTERVAL_MS = 1100;
-let braveChain: Promise<void> = Promise.resolve();
-let braveLastAt = 0;
+// Politeness throttle — EVERY provider, not just Brave. The research pipeline
+// fans out facets concurrently; unspaced bursts get the caller rate-limited
+// (Brave 429s on its free tier) or the host IP flagged upstream (2026-08-14:
+// two days of eval+research traffic through SearXNG earned a DuckDuckGo
+// CAPTCHA flag and Brave/Wikidata suspensions on the SearXNG box — a
+// self-hosted metasearch spends the HOST's reputation with every engine it
+// aggregates). Serialize per provider through a promise chain with a minimum
+// interval; concurrent callers queue instead of bursting.
+const PROVIDER_MIN_INTERVAL_MS: Record<string, number> = {
+  brave: 1100,     // free tier ~1 rps
+  searxng: 1500,   // each query fans out to several upstream engines from one IP
+  perplexity: 1100,
+  grok: 1100,
+  tavily: 1100,
+};
+const throttleChains = new Map<string, { chain: Promise<void>; lastAt: number }>();
 
-function braveThrottle(): Promise<void> {
-  const run = braveChain.then(async () => {
-    const wait = BRAVE_MIN_INTERVAL_MS - (Date.now() - braveLastAt);
+function providerThrottle(provider: string): Promise<void> {
+  const state = throttleChains.get(provider) ?? { chain: Promise.resolve(), lastAt: 0 };
+  const interval = PROVIDER_MIN_INTERVAL_MS[provider] ?? 1100;
+  const run = state.chain.then(async () => {
+    const wait = interval - (Date.now() - state.lastAt);
     if (wait > 0) await sleep(wait);
-    braveLastAt = Date.now();
+    state.lastAt = Date.now();
   });
-  braveChain = run.catch(() => {});
+  state.chain = run.catch(() => {});
+  throttleChains.set(provider, state);
   return run;
 }
 
@@ -138,7 +150,7 @@ async function searchBrave(
 
   const MAX_ATTEMPTS = 3;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    await braveThrottle();
+    await providerThrottle('brave');
     const res = await fetch(url, {
       headers: { 'X-Subscription-Token': apiKey, 'Accept': 'application/json' },
       signal: AbortSignal.timeout(15_000),
@@ -174,6 +186,7 @@ async function searchPerplexity(
   count: number,
   apiKey: string,
 ): Promise<SearchResult[]> {
+  await providerThrottle('perplexity');
   // Detect direct vs OpenRouter by key prefix
   const isOpenRouter = apiKey.toLowerCase().startsWith('sk-or-');
   const baseUrl = isOpenRouter
@@ -216,6 +229,7 @@ async function searchGrok(
   count: number,
   apiKey: string,
 ): Promise<SearchResult[]> {
+  await providerThrottle('grok');
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -250,6 +264,7 @@ async function searchTavily(
   count: number,
   apiKey: string,
 ): Promise<SearchResult[]> {
+  await providerThrottle('tavily');
   const res = await fetch('https://api.tavily.com/search', {
     method: 'POST',
     headers: {
@@ -285,6 +300,7 @@ async function searchSearxng(
   freshness: string | undefined,
   baseUrl: string,
 ): Promise<SearchResult[]> {
+  await providerThrottle('searxng');
   const params = new URLSearchParams({ q: query, format: 'json', language: 'en', safesearch: '0' });
   // SearXNG time_range only accepts day/month/year (NO week — per the search API docs).
   // Map our freshness vocabulary onto valid values; skip anything unrecognized.

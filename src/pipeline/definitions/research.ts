@@ -419,6 +419,26 @@ export const researchPipeline: PipelineDefinition = {
       },
     },
 
+    // 4b. EVIDENCE GATE: zero facets with findings → no report, full stop.
+    // Without this, synthesis writes the entire "report" from the model's
+    // frozen prior — fabricated versions, benchmarks, and URLs wearing a
+    // Sources section (live failure 2026-08-14 during a SearXNG upstream
+    // outage: the model even confessed "live search returned no indexed
+    // results" and then invented Llama 4.5). Degrade honestly, NEVER fabricate.
+    {
+      name: 'evidence_gate',
+      type: 'code',
+      execute: (ctx) => {
+        const findings = ctx.params._angleResults as AngleResult[];
+        if (findings.length > 0) return;
+        ctx.abort = true;
+        ctx.answer = `I couldn't produce the research report on "${ctx.params.topic}" — every web search came back empty, so there is no source material to work from. `
+          + 'This usually means the search provider is down or rate-limited (check SearXNG engine health). '
+          + 'I won\'t write a report from memory: for a current-events topic that guarantees stale or invented content. Try again once search is healthy.';
+        console.warn('[Research] EVIDENCE GATE: 0 facets with findings — aborting before synthesis (no report from prior)');
+      },
+    },
+
     // 5. Gap check → supplementary queries
     {
       name: 'gap_check',

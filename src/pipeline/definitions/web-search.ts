@@ -69,6 +69,24 @@ export const webSearchPipeline: PipelineDefinition = {
         return ctx.params._urls;
       },
     },
+    // EVIDENCE GATE: no URLs from search → no answer synthesis, full stop.
+    // Without this, synthesize writes from the model's frozen prior (live
+    // failure 2026-08-14: a search-provider outage produced a 15k-char
+    // fabricated "report" with invented version numbers and URLs, which
+    // revision_pass then spent 166s polishing). Degrade honestly.
+    {
+      name: 'evidence_gate',
+      type: 'code',
+      execute: (ctx) => {
+        const urls = ctx.params._urls as string[];
+        if (urls.length > 0) return;
+        const searchResult = (ctx.stageResults.search as string) ?? '';
+        ctx.abort = true;
+        ctx.answer = `Web search returned no results for this (provider said: "${searchResult.slice(0, 120)}"). `
+          + 'The search provider may be down or rate-limited. I won\'t answer a current-information question from memory — try again shortly.';
+        console.warn('[WebSearch] EVIDENCE GATE: 0 urls from search — aborting before synthesis');
+      },
+    },
     {
       name: 'fetch_pages',
       progressLabel: '› Reading the top results…',
@@ -107,6 +125,7 @@ export const webSearchPipeline: PipelineDefinition = {
         return {
           system: [
             'You are a research assistant. Synthesize information from search results and fetched pages into a clear, comprehensive answer.',
+            'Use ONLY the provided search results and page content. If they are thin or missing on some aspect, SAY SO — never supplement from memory, never cite a URL that is not in the provided material.',
             'Always cite sources with URLs. Be factual and concise.',
             'If the fetched pages add useful detail beyond the search snippets, incorporate it.',
             'Provide ANALYSIS and INSIGHT, not just a summary of what each source said.',
