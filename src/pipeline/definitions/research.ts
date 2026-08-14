@@ -445,14 +445,20 @@ export const researchPipeline: PipelineDefinition = {
       type: 'llm',
       temperature: 0.3,
       maxTokens: 400,
-      buildPrompt: (ctx) => ({
-        system: [
-          'You review research coverage. Given facet findings, identify what is MISSING, thin, or unverified for a thorough report on the topic.',
-          'Output ONLY a JSON array of 0-2 additional search queries that would fill the biggest gaps. If coverage is already strong, output [].',
-          'Return ONLY the JSON array. /no_think',
-        ].join('\n'),
-        user: `Topic: ${ctx.params.topic}\n\nFindings so far:\n${(ctx.params._angleResults as AngleResult[]).map(r => `### ${r.angle}\n${r.findings.slice(0, 600)}`).join('\n\n')}`,
-      }),
+      buildPrompt: (ctx) => {
+        const digest = ctx.params._discoveryDigest as string | undefined;
+        return {
+          system: [
+            'You review research coverage. Given facet findings, identify what is MISSING, thin, or unverified for a thorough report on the topic.',
+            'A gap must be grounded in the TOPIC or the provided material — an aspect that was searched but came back thin, or a thread the findings raise and drop.',
+            'CRITICAL: the absence of an entity you remember (a company, model, or product from your training data) is NOT a gap. Your knowledge of the current landscape is stale by definition — entities you expect may no longer be relevant, and their absence from fresh results is evidence of that, not a hole to fill. Never nominate a query for an entity that neither the findings nor the fresh results mention.',
+            'Output ONLY a JSON array of 0-2 additional short keyword search queries (3-8 words) that would fill the biggest grounded gaps. If coverage is already strong, output [].',
+            'Return ONLY the JSON array. /no_think',
+          ].join('\n'),
+          user: `Topic: ${ctx.params.topic}\n\nFindings so far:\n${(ctx.params._angleResults as AngleResult[]).map(r => `### ${r.angle}\n${r.findings.slice(0, 600)}`).join('\n\n')}`
+            + (digest ? `\n\nFresh search results from the discovery sweep (what the world currently mentions):\n${digest.slice(0, 1200)}` : ''),
+        };
+      },
     },
     {
       name: 'supplementary',
