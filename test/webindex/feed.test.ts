@@ -54,3 +54,33 @@ describe('chunkText', () => {
     expect(chunkText('hello world', 1000)).toEqual(['hello world']);
   });
 });
+
+import { extractPublishedDate } from '../../src/webindex/page-date.js';
+
+describe('extractPublishedDate', () => {
+  it('reads article:published_time meta', () => {
+    const html = `<html><head><meta property="article:published_time" content="2026-08-10T12:00:00Z"></head><body></body></html>`;
+    expect(extractPublishedDate(html)).toBe('2026-08-10T12:00:00.000Z');
+  });
+
+  it('reads JSON-LD datePublished', () => {
+    const html = `<head><script type="application/ld+json">{"@type":"Article","datePublished":"2026-07-01","author":"x"}</script></head>`;
+    expect(extractPublishedDate(html)).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('falls back to time datetime attribute', () => {
+    const html = `<body><time datetime="2026-06-15T09:30:00Z">June 15</time></body>`;
+    expect(extractPublishedDate(html)).toBe('2026-06-15T09:30:00.000Z');
+  });
+
+  it('prefers meta over time tag', () => {
+    const html = `<head><meta property="article:published_time" content="2026-08-01"></head><body><time datetime="2020-01-01"></time></body>`;
+    expect(extractPublishedDate(html)).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('rejects garbage and far-future dates', () => {
+    expect(extractPublishedDate(`<meta property="article:published_time" content="not-a-date">`)).toBeNull();
+    expect(extractPublishedDate(`<meta property="article:published_time" content="2099-01-01">`)).toBeNull();
+    expect(extractPublishedDate(`<p>no dates here</p>`)).toBeNull();
+  });
+});

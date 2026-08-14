@@ -96,7 +96,6 @@ export async function registerAllTools(
       embeddings: embeddingStore,
       client: options.ollamaClient,
       embedModel: 'qwen3-embedding:8b',
-      webFetch: webFetchTool,
       timezone: config.timezone,
     });
     registry.register(createLocalSearchTool({
