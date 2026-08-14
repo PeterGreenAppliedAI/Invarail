@@ -31,7 +31,7 @@ import { parseFeed, type FeedItem } from './feed.js';
 const USER_AGENT = 'InvarailBot/1.0 (+https://github.com/PeterGreenAppliedAI/Invarail)';
 const SOURCE = 'webindex';
 const CHUNK_CHARS = 1400;
-const MAX_CHUNKS_PER_DOC = 8;
+const MAX_CHUNKS_PER_DOC = 6;
 
 interface WebIndexDeps {
   config: LocalIndexConfig;
@@ -175,11 +175,14 @@ export class WebIndexService {
     const chunks = chunkText(text, CHUNK_CHARS).slice(0, MAX_CHUNKS_PER_DOC);
     try {
       this.deps.embeddings.deleteBySourceFile(SOURCE, url);
+      // ONE batched embed call per doc — not one per chunk. Unbatched, the
+      // first crawl fired hundreds of rapid calls at the embeddings node
+      // (the same node that wedged on unpaced pending requests this morning).
+      const vectors = await this.deps.client.embed(chunks.map(c => `${title}\n\n${c}`), this.deps.embedModel);
       for (let i = 0; i < chunks.length; i++) {
-        const [embedding] = await this.deps.client.embed(`${title}\n\n${chunks[i]}`, this.deps.embedModel);
         this.deps.embeddings.add({
           id: `webindex:${createHash('sha256').update(url + i).digest('hex').slice(0, 20)}`,
-          text: chunks[i], file: url, section: `chunk-${i}`, embedding,
+          text: chunks[i], file: url, section: `chunk-${i}`, embedding: vectors[i],
           savedAt: new Date().toISOString(), source: SOURCE,
         });
       }
@@ -197,6 +200,9 @@ export class WebIndexService {
     let done = 0;
     for (const d of pending) {
       if (await this.embedDoc(d.url, d.title, d.text)) done++;
+      // Backfill has no fetch-politeness gaps between docs — space it out so
+      // recovery from an outage doesn't itself hammer the embeddings node.
+      await new Promise(r => setTimeout(r, 300));
     }
     return done;
   }
