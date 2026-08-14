@@ -9,6 +9,23 @@ import type {
   OllamaEmbedResponse,
 } from './types.js';
 
+// Client-side pacing for embedding calls: the gateway now rate-limits
+// /api/embed inbound, so we serialize all embed requests process-wide and
+// space them out instead of relying on 429-backoff after the fact.
+const EMBED_MIN_INTERVAL_MS = 250;
+let embedChain: Promise<void> = Promise.resolve();
+let lastEmbedAt = 0;
+
+function embedThrottle(): Promise<void> {
+  const next = embedChain.then(async () => {
+    const wait = lastEmbedAt + EMBED_MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    lastEmbedAt = Date.now();
+  });
+  embedChain = next.catch(() => {});
+  return next;
+}
+
 export class OllamaClient {
   constructor(
     private readonly baseUrl: string,
@@ -130,6 +147,7 @@ export class OllamaClient {
 
   async embed(input: string | string[], model = 'qwen3-embedding:8b'): Promise<number[][]> {
     // Try /api/embed first (standard Ollama), fall back to /api/embeddings (gateway compat)
+    await embedThrottle();
     try {
       const body: OllamaEmbedParams = { model, input, keep_alive: this.keepAlive };
       const res = await this.post<OllamaEmbedResponse>('/api/embed', body);
@@ -139,6 +157,7 @@ export class OllamaClient {
       const texts = Array.isArray(input) ? input : [input];
       const results: number[][] = [];
       for (const text of texts) {
+        await embedThrottle();
         const res = await this.post<{ embedding: number[] }>('/api/embeddings', { model, prompt: text });
         results.push(res.embedding);
       }
