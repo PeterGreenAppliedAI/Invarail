@@ -367,3 +367,44 @@ describe('July 31 publishing artifacts (URL-in-sentence splices)', () => {
       .toContain('According to docs.octomil.com [6]');
   });
 });
+
+import { escalationPriority } from '../../src/pipeline/verification.js';
+
+describe('model-nominated external checks (absence claims)', () => {
+  const phantom: Claim = { claim_id: 'e1', claim: 'Meta Muse Glimmer was never released and no weights exist.', claim_type: 'existence', time_sensitive: true, entities: ['Meta', 'Muse Glimmer'], requires_verification: true, external_check: true };
+  const nominated: Claim = { claim_id: 'e2', claim: 'The RTX 5090 has 32GB VRAM.', claim_type: 'product_spec', time_sensitive: false, entities: ['NVIDIA'], requires_verification: true, external_check: true, external_reason: 'single source' };
+  const routine: Claim = { claim_id: 'e3', claim: 'The RTX 5090 has 32GB VRAM.', claim_type: 'product_spec', time_sensitive: false, entities: ['NVIDIA'], requires_verification: true };
+  const heuristic: Claim = { claim_id: 'e4', claim: 'NVIDIA acquired Groq in 2024.', claim_type: 'corporate_event', time_sensitive: true, entities: ['NVIDIA', 'Groq'], requires_verification: true };
+
+  it('escalates existence claims and model-nominated claims; routine specs stay heuristic-gated', () => {
+    expect(shouldEscalate(phantom)).toBe(true);
+    expect(shouldEscalate(nominated)).toBe(true);   // model nomination overrides the type heuristic
+    expect(shouldEscalate(routine)).toBe(false);    // not nominated, not an escalate type
+  });
+
+  it('orders the capped budget: existence first, then nominated, then heuristic', () => {
+    expect(escalationPriority(phantom)).toBeLessThan(escalationPriority(nominated));
+    expect(escalationPriority(nominated)).toBeLessThan(escalationPriority(heuristic));
+  });
+
+  it('parseClaims auto-flags existence claims for external check', () => {
+    const raw = JSON.stringify([{ claim: 'Muse Glimmer does not exist as a released model.', claim_type: 'existence', entities: ['Meta'] }]);
+    const [c] = parseClaims(raw, 5);
+    expect(c.claim_type).toBe('existence');
+    expect(c.external_check).toBe(true);
+  });
+
+  it('tier1Query drops absence-framing words so the search finds the thing, not the doubt', () => {
+    const q = tier1Query(phantom);
+    expect(q).toContain('muse');
+    expect(q).not.toContain('phantom');
+    expect(q).not.toContain('exist');
+  });
+
+  it('applyTier1 CONTRADICTED on an absence claim escalates to correction', () => {
+    const v: VerificationResult = { claim_id: 'e1', claim: phantom.claim, verdict: 'UNSUPPORTED', supported_elements: [], unsupported_elements: [], reason: '', recommended_action: 'qualify' };
+    const out = applyTier1(v, { status: 'CONTRADICTED', source_url: 'https://ai.meta.com/blog/muse-glimmer', evidence: 'Today we are releasing Muse Glimmer.' });
+    expect(out.verdict).toBe('CONTRADICTED');
+    expect(out.recommended_action).toBe('correct');
+  });
+});
