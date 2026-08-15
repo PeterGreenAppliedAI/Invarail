@@ -4,6 +4,29 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Absence Claims Get Tendrils — Model Nominates, Code Budgets (August 15 2026)
+
+### The failure that drove it
+First fully-local-first research run (8/8 facets from the index, zero external searches) confidently declared Muse Glimmer "a phantom... a hallucinated benchmark entry" — the model Peter had benchmarked three days earlier. Chain: Meta has no RSS → page seed captured only the blog index → the facet's 4 local hits were adjacent material → the ≥2-hit gate skipped web search → synthesis honestly reported absence but escalated "absent from MY sources" into "does not exist" → Tier-1 never checked it (candidates were picked by a code-side topic heuristic with no concept of arguing-from-silence).
+
+### The fix (Peter's framing: "the model should be able to decide when it needs to verify and extend its tendrils into the web")
+Split as: **model decides WHAT, code decides HOW MUCH** — same shape as the autonomy ladder. Claim extraction gained `external_check` + reason and an `existence` claim type (auto-flagged: absence claims are structurally unsettleable from cached pages). Escalation ordering spends the unchanged `maxCrossChecks` budget on existence/nominated claims first. Tier-1 judge learned "absence is refuted by presence." Queries drop absence-framing words (searching "muse glimmer phantom" finds skeptics; "muse glimmer release" finds the launch post). Synthesis gets a provenance notice when facets came from the personal crawl: silence in a ~20-feed index is a coverage gap, not nonexistence.
+
+### Validated same day
+Next run drafted the same absence claim → extractor flagged it → Tier-1 found ABC News (Zuckerberg manifesto, Muse Glimmer open-source + Muse Spark 1.2 closed flagship) → CONTRADICTED → correction spliced with quoted evidence → published Contradictions section read "This is a coverage gap in the personal crawl, not evidence the model doesn't exist." The blind spot became load-bearing feedback in one iteration.
+
+### Related hardening (same two days)
+- **Code owns the Sources section** — synthesis minted near-miss URLs transcribing the handed list (`ollama.co` for ollama.com, two runs straight); parse_final now regenerates `## Sources` from `_allSources`. Same doctrine as document styling: models never author publish-path structure.
+- **Cron runs inherit owner identity** — every fire (scheduled or cron_run) dispatched as "Untrusted user undefined"; the untrusted layer stripped code_session and killed research charts. Jobs are owner-authored (cron_add is the code gate) so runs carry `senderId: ownerId`; cronMode write-stripping unchanged on top. Identity and autonomy bounds are separate axes.
+- **cron_edit/cron_remove accept names** — the extractor passed "Weekly AI Developments" into an id-only lookup; shared `resolveCronJob` (exact id → case-insensitive substring, ambiguity errors listing jobs) across run/edit/remove. Users and extraction models say names; ids are plumbing.
+- **WebIndex first-crawl hardening** — 4 guessed RSS URLs were 404s (anthropic/meta/mistral/qwen publish NO feeds — curl-verify before seeding; page-kind seeds instead); client-side embed throttle in OllamaClient (250ms serialized chain, process-wide — the gateway added inbound 429s); boot-resume of interrupted cycles; backfill drains fully; publish-date sniffing at ingest (page-date.ts) with the crawler raw-fetching + Readability instead of routing through web_fetch (the tool discards head metadata; undated docs rank neutral, never fresh); Reddit seed dropped (robots.txt disallows post pages — headline-only signal isn't worth non-consensual requests).
+- **Vendor-neutral cron prompts** — the job's hardcoded model list ("Ollama, Qwen, Gemma, Llama") was why reports kept resurrecting Llama and never asked about NVIDIA. Same principle as the index: seeds decide coverage, prompts don't hardcode entities.
+
+### Qwen3.8-27B eval addendum (run-2026-08-15T14-14-30, published)
+The think archetype FLIPPED within one family/size/quant in one release: qwen3.6@on 82% (harmful) → qwen3.8@on 100%/0 flips (mildly load-bearing; off = 97%, code 89%). Refutes the r/LocalLLaMA rebadge claim; strongest evidence yet that archetype membership is per-model AND per-generation — never carry a think policy across a version bump unmeasured. Nemotron-3.5-lightning control: off-row reproduced (98%), on-row confirmed unstable (89%, code 56% at 9,771 ctok). Open question queued: does Ollama's `think` toggle engage Nemotron's native "detailed thinking on" system-prompt convention, or are its think=on rows a serving artifact?
+
+---
+
 ## The Personal Vertical Index — Built the Same Day It Was Justified (August 14 2026)
 
 ### The decision (evidence-driven, per "run it first")
