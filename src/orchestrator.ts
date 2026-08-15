@@ -167,6 +167,13 @@ export class Orchestrator {
             sourceContext: {
               channel: job.delivery.channel,
               channelId: job.delivery.target ?? '',
+              // Cron jobs are owner-authored (cron_add is the code gate), so a run —
+              // scheduled or manually triggered — inherits the owner's identity.
+              // Without this every fire dispatched as "Untrusted user undefined" and
+              // the untrusted layer stripped tools the job legitimately needs
+              // (research charts lost code_session). cronMode's write-tool stripping
+              // still applies on top — identity and autonomy bounds stay separate.
+              senderId: this.config.ownerId,
             },
           });
 

@@ -585,7 +585,25 @@ export const researchPipeline: PipelineDefinition = {
         if (chartBlock) {
           try { const arr = JSON.parse(chartBlock[1].trim()); if (Array.isArray(arr)) charts = arr.filter(c => c?.name); } catch { /* no charts */ }
         }
-        const reportMarkdown = raw.replace(/```charts[\s\S]*?```/g, '').trim();
+        let reportMarkdown = raw.replace(/```charts[\s\S]*?```/g, '').trim();
+        // Code owns the Sources section. The model was GIVEN the numbered URL list,
+        // but it occasionally mints near-miss URLs when transcribing it (ollama.co
+        // for ollama.com, two runs straight). Body [n] citations refer to the list
+        // we handed the model, so regenerating Sources from that same list is
+        // always numbering-correct — and an invented URL can never publish.
+        const allSources = ctx.params._allSources as string[] | undefined;
+        if (allSources && allSources.length > 0) {
+          const generated = `## Sources\n\n${allSources.map((u, i) => `${i + 1}. ${u}`).join('\n')}`;
+          const srcIdx = reportMarkdown.search(/^## Sources\s*$/m);
+          if (srcIdx !== -1) {
+            const after = reportMarkdown.slice(srcIdx);
+            const nextSection = after.slice(10).search(/^## /m);
+            const end = nextSection === -1 ? reportMarkdown.length : srcIdx + 10 + nextSection;
+            reportMarkdown = `${reportMarkdown.slice(0, srcIdx)}${generated}\n\n${reportMarkdown.slice(end)}`.trim();
+          } else {
+            reportMarkdown = `${reportMarkdown}\n\n${generated}`;
+          }
+        }
         ctx.params._reportMarkdown = reportMarkdown;
         ctx.params._charts = charts;
         // Fail loud: never emit a blank PDF
