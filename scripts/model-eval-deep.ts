@@ -567,15 +567,20 @@ async function analysisTasks(client: OllamaClient, model: string): Promise<TaskR
     L6_PROMPT,
     reply => {
       const recLine = reply.split('\n').reverse().find(l => /RECOMMENDATION:/i.test(l)) ?? '';
+      const disqualifies = /sso/i.test(reply) && /(disqualif|does not meet|doesn'?t meet|fails|lacks|no sso|excluded|non-?compliant|cannot|rule[sd] out)/i.test(reply);
       return [
         { name: 'recommends B', pass: /RECOMMENDATION:\s*B\b/i.test(recLine) || /RECOMMENDATION:.*ProjectHub/i.test(recLine) },
         { name: 'TCO A = $21,600', pass: /21[,.]?600/.test(reply) },
         { name: 'TCO B = $19,500', pass: /19[,.]?500/.test(reply) },
-        { name: 'TCO C = $12,600', pass: /12[,.]?600/.test(reply) },
-        { name: 'disqualifies C over SSO', pass: /sso/i.test(reply) && /(disqualif|does not meet|doesn'?t meet|fails|lacks|no sso|excluded|non-?compliant|cannot|rule[sd] out)/i.test(reply) },
+        // Amnesty clause: declining to price an already-disqualified vendor is
+        // CORRECT analyst behavior, not a miss — the original figure-only check
+        // punished three top models for applying the hard requirement first
+        // (evaluator specification defect, caught by reading raw outputs).
+        { name: 'TCO C priced or explicitly disqualified first', pass: /12[,.]?600/.test(reply) || disqualifies },
+        { name: 'disqualifies C over SSO', pass: disqualifies },
       ];
     },
-    ['recommends B', 'TCO A = $21,600', 'TCO B = $19,500', 'TCO C = $12,600', 'disqualifies C over SSO']));
+    ['recommends B', 'TCO A = $21,600', 'TCO B = $19,500', 'TCO C priced or explicitly disqualified first', 'disqualifies C over SSO']));
 
   results.push(await promptTask(client, model, 'L7-policy-compliance', 'analysis',
     'You are an expense-compliance reviewer. Apply every applicable policy rule to each item; some items require composing two rules.',
