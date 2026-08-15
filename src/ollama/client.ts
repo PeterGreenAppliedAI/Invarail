@@ -37,12 +37,13 @@ export class OllamaClient {
   ) {}
 
   async chat(params: Omit<OllamaChatParams, 'stream' | 'keep_alive'>): Promise<OllamaChatResponse> {
+    const { abortSignal, ...rest } = params;
     const body: OllamaChatParams = {
-      ...params,
+      ...rest,
       stream: false,
       keep_alive: this.keepAlive,
     };
-    return this.post<OllamaChatResponse>('/api/chat', body);
+    return this.post<OllamaChatResponse>('/api/chat', body, undefined, abortSignal);
   }
 
   /**
@@ -183,7 +184,7 @@ export class OllamaClient {
     }
   }
 
-  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<T> {
+  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, abortSignal?: AbortSignal): Promise<T> {
     const jsonBody = JSON.stringify(body);
     const MAX_ATTEMPTS = 4;
     let lastErr: unknown;
@@ -198,9 +199,12 @@ export class OllamaClient {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: jsonBody,
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: abortSignal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), abortSignal]) : AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
+        if (abortSignal?.aborted) {
+          throw ollamaInferenceError(`Request to ${path} aborted by caller`);
+        }
         if (err instanceof DOMException && err.name === 'TimeoutError') {
           throw ollamaInferenceError(`Request to ${path} timed out after ${timeoutMs}ms`);
         }

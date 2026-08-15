@@ -204,6 +204,29 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
+/** SLO-bounded chat that ACTUALLY CANCELS the request on timeout. A label-only
+ *  race leaves a zombie generation holding the GPU for the client-timeout
+ *  remainder, poisoning every subsequent task (observed: L2 passed twice at
+ *  ~250s standalone, then timed out at 420s queued behind L1's zombie). */
+async function chatWithSlo(
+  client: OllamaClient,
+  params: Parameters<OllamaClient['chat']>[0],
+  timeoutMs: number,
+  label: string,
+): ReturnType<OllamaClient['chat']> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  timer.unref();
+  try {
+    return await client.chat({ ...params, abortSignal: ctrl.signal });
+  } catch (err) {
+    if (ctrl.signal.aborted) throw new Error(`TIMEOUT after ${timeoutMs / 1000}s: ${label}`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function finish(id: string, dimension: Dimension, checks: CheckResult[], start: number, raw: string, error?: string): TaskResult {
   const score = checks.length ? checks.filter(c => c.pass).length / checks.length : 0;
   const bucket = error ? classifyError(error) : undefined;
@@ -229,11 +252,11 @@ async function promptTask(
   return withOutageRetry(async () => {
     const start = Date.now();
     try {
-      const response = await withTimeout(client.chat({
+      const response = await chatWithSlo(client, {
         model,
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         options: { temperature: 0.2, num_predict: TASK_TOKENS },
-      }), timeoutMs, `${model} ${id}`);
+      }, timeoutMs, `${model} ${id}`);
       const reply = clean(response.message?.content ?? '');
       return finish(id, dimension, check(reply), start, reply);
     } catch (err) {
@@ -463,11 +486,11 @@ async function codeTask(client: OllamaClient, model: string, def: CodeTaskDef): 
     const start = Date.now();
     const checkNames = ['runs without error', 'basic tests pass', 'edge-case tests pass'];
     try {
-      const response = await withTimeout(client.chat({
+      const response = await chatWithSlo(client, {
         model,
         messages: [{ role: 'system', content: CODE_SYSTEM }, { role: 'user', content: def.prompt }],
         options: { temperature: 0.2, num_predict: TASK_TOKENS },
-      }), CODE_TIMEOUT, `${model} ${def.id}`);
+      }, CODE_TIMEOUT, `${model} ${def.id}`);
       const code = extractCode(clean(response.message?.content ?? ''));
       const run = runInSandbox(code, def.testBlock);
       const checks: CheckResult[] = [
