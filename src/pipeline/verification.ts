@@ -30,6 +30,7 @@ export const VERIFIABLE_TYPES = new Set([
   'corporate_event',
   'product_spec',
   'benchmark',
+  'existence',   // "X exists / was released / does NOT exist" — absence claims are falsifiable too
 ]);
 
 /** JSON schema for grammar-constrained claim extraction (Ollama format / vLLM guided_json). */
@@ -45,6 +46,8 @@ export const CLAIMS_JSON_SCHEMA: Record<string, unknown> = {
       entities: { type: 'array', items: { type: 'string' } },
       date_scope: { type: 'string' },
       requires_verification: { type: 'boolean' },
+      external_check: { type: 'boolean' },
+      external_reason: { type: 'string' },
       citation: { type: 'number' },
     },
     required: ['claim', 'claim_type'],
@@ -59,6 +62,11 @@ export interface Claim {
   entities: string[];
   date_scope?: string;
   requires_verification: boolean;
+  /** Model-nominated: this claim needs an INDEPENDENT web check (absence-of-evidence,
+   *  single-source, or otherwise unsettleable from the cached pages). The model decides
+   *  WHAT to verify externally; code decides how much budget it gets (maxCrossChecks). */
+  external_check?: boolean;
+  external_reason?: string;
   /** The [n] citation index carried by the sentence; maps to a source URL. */
   citation?: number;
 }
@@ -121,12 +129,14 @@ export function extractClaimsPrompt(reportMarkdown: string, maxClaims: number): 
     system: [
       'You extract ATOMIC, checkable factual claims from a research report so each can be verified against its source.',
       'Split compound sentences: a sentence with two facts becomes two claims (a source may support one half but not the other).',
-      'Only extract claims that are stated as fact AND verifiable: financial figures, market-share, corporate events (acquisitions/IPOs/launches), product specs, benchmarks.',
+      'Only extract claims that are stated as fact AND verifiable: financial figures, market-share, corporate events (acquisitions/IPOs/launches), product specs, benchmarks, existence claims.',
       'PRIORITY: ALWAYS include every corporate event (acquisition, merger, IPO/public offering, major product launch, partnership — with its date, dollar amount, and the EXACT verb used e.g. "acquired" vs "licensed") and every market-share figure BEFORE any routine product price or spec. These named-deal/date/share claims are the highest stakes — never omit one to make room for a price.',
+      'EXISTENCE claims: if the report asserts something does NOT exist, was never released, is "a phantom", or that "no source mentions X" — extract that as claim_type "existence". Absence-of-evidence claims are the easiest to get wrong: the report\'s sources may simply have a blind spot.',
       'Do NOT extract opinions, analysis, predictions/forecasts, or general technical explanations.',
+      'Set "external_check": true on any claim the report\'s own sources CANNOT settle — every existence/absence claim, claims resting on a single source, or claims that surprised you. Give a short "external_reason". These get one independent web search each; flag the ones where an outside look would change your confidence most.',
       'For each claim capture the inline citation number it carries, e.g. a sentence ending in "[3]" → "citation": 3. If none, omit citation.',
       `Return ONLY a JSON array (max ${maxClaims} claims, corporate events and market-share first, then highest-impact specs/figures):`,
-      '{"claim_id":"claim-001","claim":"<one factual statement>","claim_type":"financial|market_share|corporate_event|product_spec|benchmark","time_sensitive":true,"entities":["NVIDIA"],"date_scope":"2025","requires_verification":true,"citation":3}',
+      '{"claim_id":"claim-001","claim":"<one factual statement>","claim_type":"financial|market_share|corporate_event|product_spec|benchmark|existence","time_sensitive":true,"entities":["NVIDIA"],"date_scope":"2025","requires_verification":true,"external_check":false,"external_reason":"","citation":3}',
       'Return ONLY the JSON array, no prose. /no_think',
     ].join('\n'),
     user: `Report:\n\n${reportMarkdown}`,
@@ -151,6 +161,10 @@ export function parseClaims(raw: string, maxClaims: number): Claim[] {
       entities: Array.isArray(o.entities) ? o.entities.filter((e): e is string => typeof e === 'string') : [],
       date_scope: typeof o.date_scope === 'string' ? o.date_scope : undefined,
       requires_verification: o.requires_verification !== false,
+      // Existence claims always get the external check — arguing from silence is
+      // exactly the claim shape the cached sources structurally cannot settle.
+      external_check: o.external_check === true || claim_type === 'existence',
+      external_reason: typeof o.external_reason === 'string' && o.external_reason.trim() ? o.external_reason.trim() : undefined,
       citation: typeof o.citation === 'number' ? o.citation : undefined,
     });
     if (claims.length >= maxClaims) break;
@@ -278,10 +292,21 @@ export function needsCorrection(v: VerificationResult): boolean {
  * cross-check budget and return junk (stock-ticker pages). Corporate events are exactly the
  * Groq-acquisition / Cerebras-IPO class we want to catch.
  */
-const ESCALATE_TYPES = new Set(['corporate_event', 'market_share']);
+const ESCALATE_TYPES = new Set(['corporate_event', 'market_share', 'existence']);
 
+/** Escalate on the model's own nomination (external_check) OR the type heuristic (the floor).
+ *  Entities are still required — the independent query is built from them. */
 export function shouldEscalate(claim: Claim): boolean {
-  return ESCALATE_TYPES.has(claim.claim_type) && claim.entities.length > 0;
+  return (claim.external_check || ESCALATE_TYPES.has(claim.claim_type)) && claim.entities.length > 0;
+}
+
+/** Order escalation candidates: model-nominated first (it knows where it argued from
+ *  silence), existence claims next, then the type heuristic — so the maxCrossChecks cap
+ *  spends its budget where an outside look changes confidence most. */
+export function escalationPriority(claim: Claim): number {
+  if (claim.claim_type === 'existence') return 0;
+  if (claim.external_check) return 1;
+  return 2;
 }
 
 /**
@@ -291,9 +316,14 @@ export function shouldEscalate(claim: Claim): boolean {
  */
 const MAGNITUDE = new Set(['billion', 'million', 'trillion', 'thousand', 'percent']);
 
+// Absence-framing words would make the search find echoes of the doubt instead of
+// the thing itself — "meta muse glimmer phantom" finds skeptics, "meta muse glimmer
+// release" finds the launch post.
+const ABSENCE_FRAMING = new Set(['phantom', 'nonexistent', 'hallucinated', 'absent', 'missing', 'unreleased', 'exist', 'exists', 'existence', 'source', 'sources', 'mention', 'mentions']);
+
 export function tier1Query(claim: Claim): string {
   const terms = [...claimTokens(claim.claim)]
-    .filter(t => !/[\d$%]/.test(t) && !MAGNITUDE.has(t))
+    .filter(t => !/[\d$%]/.test(t) && !MAGNITUDE.has(t) && !ABSENCE_FRAMING.has(t))
     .slice(0, 5);
   const entities = claim.entities.map(e => e.toLowerCase());
   return [...new Set([...entities, ...terms])].join(' ').trim();
@@ -305,9 +335,10 @@ export function tier1JudgePrompt(claim: Claim, sources: Array<{ url: string; tex
     system: [
       'You are independently fact-checking ONE claim against freshly-retrieved sources.',
       'Focus on the SPECIFIC falsifiable detail in the claim — a date, a dollar figure, a percentage, or a characterization (e.g. "acquisition" vs "license").',
+      'For claims asserting something does NOT exist or was NOT released: a source demonstrating the thing exists, shipped, or was announced CONTRADICTS the claim. Absence claims are refuted by presence.',
       'Status:',
       '- CONFIRMED: a source states the same specific detail as the claim.',
-      '- CONTRADICTED: a source states a DIFFERENT specific detail (e.g. a different date or that it was a license, not an acquisition). Quote it.',
+      '- CONTRADICTED: a source states a DIFFERENT specific detail (e.g. a different date, that it was a license not an acquisition, or that a "nonexistent" thing in fact exists). Quote it.',
       '- SILENT: the sources do not address the specific detail.',
       'Be conservative: only CONTRADICTED when a source clearly states a conflicting fact. Judge ONLY from the sources.',
       'Return ONLY this JSON: {"status":"CONFIRMED|CONTRADICTED|SILENT","source_url":"<url or empty>","evidence":"<exact conflicting/confirming sentence or empty>","reason":"<one sentence>"}',

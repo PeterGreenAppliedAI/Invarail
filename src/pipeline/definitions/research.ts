@@ -8,7 +8,7 @@ import type { VerificationConfig } from '../../config/types.js';
 import {
   type Claim, type VerificationResult,
   extractClaimsPrompt, parseClaims, CLAIMS_JSON_SCHEMA, pickRelevantSources, entailmentPrompt, parseVerdict,
-  shouldEscalate, tier1Query, tier1JudgePrompt, parseTier1, applyTier1,
+  shouldEscalate, escalationPriority, tier1Query, tier1JudgePrompt, parseTier1, applyTier1,
   buildPatchSet, locateClaimSentence, sentenceCorrectionPrompt, verificationSection, needsCorrection, stripStrikethrough, guardRewrite,
 } from '../verification.js';
 
@@ -207,6 +207,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
         if (localUrls.length >= 2) {
           console.log(`[Research] Facet "${label}": ${localUrls.length} local-index hits — skipping web search`);
           urls = localUrls.slice(0, 3);
+          ctx.params._localSourced = true;
           return await fetchAndSynthesize(ctx, angle, label, urls);
         }
       } catch { /* no local index — fall through */ }
@@ -561,7 +562,12 @@ export const researchPipeline: PipelineDefinition = {
             '```',
             'Only propose charts you have real numeric data for. If none, omit the charts block entirely.',
             '',
-            'Rules: never fabricate data or sources. Use only the findings provided. Be specific (numbers, dates, names). /no_think',
+            'Rules: never fabricate data or sources. Use only the findings provided. Be specific (numbers, dates, names).',
+            ...(ctx.params._localSourced ? [
+              '',
+              'SOURCE PROVENANCE: some or all facets were gathered from a small PERSONAL CRAWLED INDEX (a couple dozen curated feeds), not an open web search. Its coverage is intentionally narrow. Therefore: absence of a topic, product, or release from these sources is WEAK evidence — it usually means "not in our crawl", not "does not exist". Never conclude that something is nonexistent, unreleased, or "a phantom" from source silence alone; write "not covered by the gathered sources" and treat it as a coverage gap in Contradictions & Gaps. Existence denials require positive evidence, not absence.',
+            ] : []),
+            '/no_think',
           ].join('\n'),
           user: `Topic: ${ctx.params.topic}\nToday: ${new Date().toISOString().split('T')[0]}\n\nNumbered sources:\n${sources.map((u, i) => `[${i + 1}] ${u}`).join('\n')}\n\nFacet findings:\n${findings}`,
         };
@@ -696,7 +702,12 @@ export const researchPipeline: PipelineDefinition = {
         const model = vcfg?.judgeModel || ctx.model;
         const byId = new Map((ctx.params._claims as Claim[]).map(c => [c.claim_id, c]));
         const results = ctx.params._verifications as VerificationResult[];
-        const escalate = results.filter(v => { const c = byId.get(v.claim_id); return c && shouldEscalate(c); }).slice(0, cap);
+        // Model-nominated claims (external_check — the model knows where it argued from
+        // silence) and existence claims outrank the type heuristic for the capped budget.
+        const escalate = results
+          .filter(v => { const c = byId.get(v.claim_id); return c && shouldEscalate(c); })
+          .sort((a, b) => escalationPriority(byId.get(a.claim_id)!) - escalationPriority(byId.get(b.claim_id)!))
+          .slice(0, cap);
         if (escalate.length === 0) { console.log('[Verify] Tier-1: no high-impact claims to cross-check'); return; }
         let contradicted = 0;
         const updated = await mapLimit(escalate, 2, async (v): Promise<VerificationResult> => {
