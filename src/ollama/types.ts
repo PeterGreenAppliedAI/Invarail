@@ -54,6 +54,11 @@ export interface OllamaChatParams {
   };
   keep_alive?: string;
   stream?: boolean;
+  /** Caller-side cancellation. NOT serialized into the request body — extracted
+   *  before send and combined with the request timeout. Lets callers with their
+   *  own SLOs (eval harnesses, pipelines) actually release the GPU on timeout
+   *  instead of leaving a zombie generation poisoning subsequent requests. */
+  abortSignal?: AbortSignal;
 }
 
 export interface OllamaChatResponse {

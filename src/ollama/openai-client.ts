@@ -137,7 +137,7 @@ export class OpenAICompatClient {
   }
 
   async chat(params: Omit<OllamaChatParams, 'stream' | 'keep_alive'>): Promise<OllamaChatResponse> {
-    const data = await this.post<any>('/v1/chat/completions', this.toRequestBody(params, false));
+    const data = await this.post<any>('/v1/chat/completions', this.toRequestBody(params, false), undefined, params.abortSignal);
     const choice = data.choices?.[0] ?? {};
     const msg = choice.message ?? {};
     // Empty content with finish_reason "length" means reasoning blew the token budget — surface it
@@ -286,7 +286,7 @@ export class OpenAICompatClient {
     return h;
   }
 
-  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<T> {
+  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, abortSignal?: AbortSignal): Promise<T> {
     const jsonBody = JSON.stringify(body);
     let lastErr: unknown;
     const MAX_ATTEMPTS = 4;
@@ -297,9 +297,12 @@ export class OpenAICompatClient {
           method: 'POST',
           headers: this.headers(),
           body: jsonBody,
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: abortSignal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), abortSignal]) : AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
+        if (abortSignal?.aborted) {
+          throw ollamaInferenceError(`Request to ${path} aborted by caller`);
+        }
         if (err instanceof DOMException && err.name === 'TimeoutError') {
           throw ollamaInferenceError(`Request to ${path} timed out after ${timeoutMs}ms`);
         }
