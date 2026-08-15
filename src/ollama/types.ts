@@ -47,6 +47,7 @@ export interface OllamaChatParams {
   options?: {
     temperature?: number;
     num_predict?: number;
+    num_ctx?: number;
     stop?: string[];
     top_k?: number;
     top_p?: number;
@@ -79,6 +80,7 @@ export interface OllamaGenerateParams {
   options?: {
     temperature?: number;
     num_predict?: number;
+    num_ctx?: number;
     stop?: string[];
     top_k?: number;
     top_p?: number;
