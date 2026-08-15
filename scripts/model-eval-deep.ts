@@ -128,7 +128,9 @@ mkdirSync(RUN_DIR, { recursive: true });
 type FailureBucket = 'MODEL_FAILURE' | 'TIMEOUT' | 'SERVING_INCOMPATIBLE' | 'PROVIDER_OUTAGE';
 
 function classifyError(msg: string): FailureBucket {
-  if (/^TIMEOUT after/.test(msg)) return 'TIMEOUT';
+  // Both our SLO race ("TIMEOUT after Ns") and the HTTP client's own request
+  // timeout ("timed out after Nms") are timeouts — never MODEL_FAILURE.
+  if (/^TIMEOUT after/.test(msg) || /timed out after \d+ms/i.test(msg)) return 'TIMEOUT';
   if (/503|all_providers_unavailable|ECONNREFUSED|EHOSTUNREACH|fetch failed|socket hang up/i.test(msg)) return 'PROVIDER_OUTAGE';
   if (/400 Bad Request/.test(msg)) return 'SERVING_INCOMPATIBLE';
   return 'MODEL_FAILURE';

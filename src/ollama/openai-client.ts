@@ -29,6 +29,10 @@ import type {
  */
 const REASONING_HEADROOM_TOKENS = 4096;
 
+// Env-overridable for callers that legitimately wait longer than production
+// dispatch ever should (eval harnesses with reasoning-sized budgets).
+const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
+
 export class OpenAICompatClient {
   constructor(
     private readonly baseUrl: string,
@@ -282,7 +286,7 @@ export class OpenAICompatClient {
     return h;
   }
 
-  private async post<T>(path: string, body: unknown, timeoutMs = 300_000): Promise<T> {
+  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<T> {
     const jsonBody = JSON.stringify(body);
     let lastErr: unknown;
     const MAX_ATTEMPTS = 4;

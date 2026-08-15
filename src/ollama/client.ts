@@ -12,6 +12,10 @@ import type {
 // Client-side pacing for embedding calls: the gateway now rate-limits
 // /api/embed inbound, so we serialize all embed requests process-wide and
 // space them out instead of relying on 429-backoff after the fact.
+// Env-overridable for callers that legitimately wait longer than production
+// dispatch ever should (eval harnesses with reasoning-sized budgets).
+const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
+
 const EMBED_MIN_INTERVAL_MS = 250;
 let embedChain: Promise<void> = Promise.resolve();
 let lastEmbedAt = 0;
@@ -179,7 +183,7 @@ export class OllamaClient {
     }
   }
 
-  private async post<T>(path: string, body: unknown, timeoutMs = 300_000): Promise<T> {
+  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<T> {
     const jsonBody = JSON.stringify(body);
     const MAX_ATTEMPTS = 4;
     let lastErr: unknown;
