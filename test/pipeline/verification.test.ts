@@ -408,3 +408,16 @@ describe('model-nominated external checks (absence claims)', () => {
     expect(out.recommended_action).toBe('correct');
   });
 });
+
+describe('locateClaimSentence compound tokens (llama.cpp class)', () => {
+  it('never splits at a dot inside a compound token', () => {
+    const md = 'The local stack matured this week. The llama.cpp and Z.ai releases shipped with vLLM support for all platforms. Downloads rose sharply.';
+    const hit = locateClaimSentence(md, 'llama.cpp and Z.ai releases shipped with vLLM support');
+    expect(hit).not.toBeNull();
+    expect(hit!.sentence).toContain('llama.cpp');
+    expect(hit!.sentence).toContain('Z.ai');
+    // the located sentence must be the FULL sentence, not a fragment cut at "llama."
+    expect(hit!.sentence.trim().startsWith('The llama.cpp')).toBe(true);
+    expect(hit!.sentence).toContain('all platforms.');
+  });
+});
