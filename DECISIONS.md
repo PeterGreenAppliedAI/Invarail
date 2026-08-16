@@ -4,6 +4,26 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Six Attempts to a 14-Minute Report — Stripping the Last Accommodations (August 16 2026, afternoon)
+
+### The saga (each failure closed a class)
+The weekly research cron took six attempts across the day; every death was a distinct, permanently-fixed defect:
+1. **One-facet report** → pipeline llm stages never forwarded `think`; decompose starved. Fixed: per-stage think control (LlmStage.think, caps-gated in the executor), decompose/gap_check pinned think:false.
+2. **4/6 facets starved** → reasoning headroom 4096 too thin for qwen3.8 synthesis. Fixed: 16384, none when think:false (honest budgets).
+3. **final_synthesis dead at exactly 300s** → the client's default timeout; .env said 600s. Which exposed:
+4. **THE .env LAZINESS BUG**: loadConfig() parses .env at RUNTIME, but every env-tunable was a module-scope const captured at import evaluation — production silently ran defaults for every knob added since Thursday; only tmux-exported eval runs ever saw overrides. Fixed: all tunables are call-time function reads (also makes future self-tuning hot-applicable).
+5. **46-minute facet phase** → `serializeSynthesis`, the ds4-era accommodation (three concurrent 284B generations self-contending), silently single-filing "3 concurrent" facets on a backend that batches natively. Removed. Facet phase: 46min → **111s** (with think-off facets).
+6. **Cannot-reach mid-synthesis + all-day connection blips + this morning's NVIDIA Sync failure** → NOT SGLang (container Up 4h through everything): **Spark-2's network link is flapping** (Peter's own SSH session reset mid-diagnosis — the smoking gun). Hardware follow-up: cable/port/NIC-power/IP-conflict on the 10.0.0.x side. The software stack SURVIVED a flapping link well enough to deliver 5/6 facets — every retry layer got a live stress test.
+Plus en route: `Connection: close` on the OpenAI path (stale keep-alive pool races), error CAUSES logged on connection retries (no more blind forensics), embed pacing matched to the gateway's measured 100/min cap, embed timeout 45s (> gateway queue bound 30s), shutdown aborts ALL in-flight inference (orphan-wedge class dead; verified via TIME_WAIT sockets after Ctrl-C).
+
+### Attempt 6, the payoff
+**13m49s end to end**: sweep 2.3s · decompose 3.0s · 6/6 facets 111.6s (concurrent, think-free) · final_synthesis 192.4s (think-on, the blind-A/B winner mode) · 16 claims verified, 2 Tier-1 contradictions caught, 4 corrections spliced · charted PDF delivered. Best report quality of any run — think-off facets INCREASED depth (architecture specifics + practitioner implications). Cold read found two verification defects, both fixed same hour: corrections splicing mid-word into compound tokens (llama.cpp, Z.ai — letter-dot-letter now masked like URLs/decimals, regression-tested) and a Tier-1 over-correction (a range claim "contradicted" by one instance — judge now prefers SILENT on range/set claims).
+
+### The design commitment (Peter): CONFIG, NOT CODE
+Today's meta-lesson, stated twice and proven twice: the deepseek era left invisible model-shaped accommodations in code (headroom, serializer, noThink judges, budgets); the swap surfaced them as failures one by one. AND the serializer removal is itself now an SGLang-shaped hardcode — 3-concurrent facets would self-contend on an Ollama-served synthesis model. **Concurrency is a backend property.** Committed direction (Phase 1, next session): a config surface for ALL model-shaped tuning — per-backend maxConcurrency, modelCaps overlay, per-pipeline stage tuning (think/budgets), inference timeouts/pacing — in a machine-writable overlay file separate from the human config, clamped by code, with Phase 2 being evidence-driven self-tuning proposals (code detects failure signatures from logs → model proposes → owner confirms via the pending-action ledger — the lessons doctrine applied to configuration). Also queued: research-smoke.ts (2-facet minimal pipeline run, ~4 min) — the iteration-latency fix; "over an hour between tests feels bad, man."
+
+---
+
 ## The SGLang Cutover — One Model, One Box, Real Concurrency (August 16 2026)
 
 ### Sequence (each step evidence-driven)
