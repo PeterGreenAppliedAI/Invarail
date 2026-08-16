@@ -585,11 +585,21 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     } catch { /* remote-bridge not available */ }
   }
 
-  // 4b. User priming — await the parallel memory promise started earlier
+  // 4b. User priming — await the parallel memory promise started earlier.
+  // BOUNDED: priming is an enhancement, never a dependency — a wedged embedding
+  // upstream must degrade to "slightly forgetful", not "bot frozen" (2026-08-16:
+  // orphaned embeds from a killed process wedged the box; every new dispatch
+  // queued behind them for the full request timeout).
   const memoryStart = Date.now();
   let userPriming = '';
   try {
-    userPriming = await memoryPromise;
+    userPriming = await Promise.race([
+      memoryPromise,
+      new Promise<string>(resolve => setTimeout(() => resolve(''), 8_000).unref()),
+    ]);
+    if (userPriming === '' && Date.now() - memoryStart >= 8_000) {
+      console.warn('[Dispatch] Memory priming timed out (8s) — proceeding without memories');
+    }
   } catch {
     // Non-critical — continue without priming
   }
