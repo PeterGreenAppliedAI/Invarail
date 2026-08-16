@@ -41,6 +41,8 @@ const MODEL_CAPS: Record<string, Partial<ModelCaps>> = {
   'qwen3-coder': { think: 'none' },
   'qwen3.5': { think: 'toggle' },
   'qwen3.6': { think: 'toggle' },
+  // SGLang-served NVFP4 (served id qwen3.8-27b); native VL; enable_thinking honored (verified 2026-08-16)
+  'qwen3.8': { supportsFormat: true, vision: true, think: 'toggle' },
   'gemma': { supportsFormat: true, vision: true },
   'gemma4': { supportsFormat: true, vision: true, think: 'toggle' },
   'muse-glimmer': { think: 'toggle' },

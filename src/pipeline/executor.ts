@@ -5,6 +5,7 @@ import type {
   PipelineResult,
 } from './types.js';
 import { extractParams } from './extractor.js';
+import { capsFor } from '../ollama/model-caps.js';
 import { pipelineStageError } from '../errors.js';
 import { logMetric } from '../metrics.js';
 
@@ -92,10 +93,21 @@ async function executeStageInner(stage: PipelineStage, ctx: PipelineContext): Pr
       if (stage.topK !== undefined) stageOptions.top_k = stage.topK;
       if (stage.topP !== undefined) stageOptions.top_p = stage.topP;
       if (stage.repeatPenalty !== undefined) stageOptions.repeat_penalty = stage.repeatPenalty;
+      const stageModel = stage.model ?? ctx.model;
+      // Per-stage think wins over the specialist default; only forwarded when the
+      // model's caps say the control is real (toggle takes booleans, levels takes
+      // effort strings) — never send a field a backend would reject or ignore.
+      const think = stage.think ?? ctx.think;
+      const thinkCap = capsFor(stageModel).think;
+      const thinkParam =
+        think !== undefined && thinkCap === 'toggle' && typeof think === 'boolean' ? { think }
+        : think !== undefined && thinkCap === 'levels' && typeof think === 'string' ? { think }
+        : {};
       const chatParams = {
-        model: stage.model ?? ctx.model,
+        model: stageModel,
         messages,
         options: stageOptions,
+        ...thinkParam,
       };
       const response = stage.stream && ctx.onStream
         ? await ctx.client.chatStream(chatParams, ctx.onStream)
