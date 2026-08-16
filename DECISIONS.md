@@ -4,6 +4,29 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Day the Foreground Slot Became Empirical (August 15 2026, evening)
+
+### The question and the method
+"Why do I keep using deepseek if qwen3.8 can do it just fine?" — settled by escalating head-to-heads, each designed to give the larger model its best case. Four contests, all instrumented, artifacts preserved:
+
+1. **Deep eval (tier 2)** — both 100% on the long-horizon battery. Tie.
+2. **Blind synthesis** (4-way, sealed A-D mapping; scripts/synthesis-eval.ts) — identical 8-doc webindex source pack → analytical article. **qwen3.8@on won blind** (most original thesis, best epistemics, correct safety-table attribution) at 2,911 ctok vs deepseek's very-close second at 8,400. gemma@off: accurate but thin (terse superpower reads as underweight prose — MTP hosting would fix speed, not depth). gpt-oss@low: the only FACTUAL ERRORS of the four (misattributed safety figures, mangled model name) under polished prose — deliberation matters for faithful synthesis in a way it doesn't for structured execution; a @medium prose rerun is queued.
+3. **Build duel** (scripts/build-duel.ts; single-file webapp, Playwright battery + screenshots) — functional 14/14 TIE; qwen3.8 decisively better design (card layout, formatted dates/currency, filter-aware labeling) at ⅔ the tokens. Harness lesson: accept confirm() dialogs or good UX scores as a delete failure.
+4. **Pi duel** (scripts/pi-duel.ts; both drive the SAME autonomous coding agent on the same jobqueue ticket — SQLite persistence, priorities, exponential backoff, dead-letters — scored by a hidden 12-check acceptance suite validated against a reference implementation BEFORE either ran) — **qwen3.8 12/12 in 384s with 11 real tests; deepseek 11/12 in 513s with 8 real tests** (max_retries off-by-one, line-level confirmed).
+
+### The audit insight (the day's deepest finding)
+Full source/test audit of both Pi artifacts found zero gaming and one profound asymmetry: **deepseek's tests never assert attempt counts — blind exactly where its implementation deviates from contract; qwen's tests assert exact call counts, which is WHY its implementation got the semantics right.** Test discipline and contract fidelity are the same skill. "Tests that pass" vs "tests that protect." Also from the audit: deepseek's BEGIN IMMEDIATE claim transaction was the single best line of code either produced; its created_at-based FIFO has same-tick fragility (qwen used a monotonic seq); qwen's deadline-once worker semantics is a deliberate, self-tested interpretation of an ambiguity in MY ticket (backoff-waiting work vs "no runnable work" — spec author's miss, noted).
+
+### Verdict and division of labor
+qwen3.8:27b, 4-0 (two wins, two ties broken on cost/design), on shared redundant fleet vs a dedicated box that ghosted its own management plane mid-duel. **Pending Peter's sleep-on-it: promote qwen3.8 to foreground slots (chat/briefing/synthesis/judges), which frees an entire DGX Spark — fleet re-plan is its own session.** The frontier-model division of labor observed all day: local models executed everything; the frontier model in the loop designed batteries, caught its own evaluator defects (L6 amnesty, confirm() dialogs, zombie aborts), and judged blind. Structure-provision remains the scarce good — for now, and the eval harness is the instrument that will say when that changes.
+
+### Infra fixed en route
+- Pi's models.json had deepseek pointed at the PRE-MOVE box (10.0.0.15) — prod pi_build was aimed at a dead endpoint; fixed to ds4 at 10.0.0.64, `gateway` provider added.
+- Gateway /v1 now enforces key auth when a key is presented (anonymous passes; `[a-zA-Z0-9_-]{16,128}` against a key list, gw- prefixed). Dedicated auditable `pi` client identity minted; key in gitignored scratchpad/pi_key.txt (0600). Per-key knobs available later: target_endpoint pinning, model allowlists, daily budgets.
+- ds4/Spark-2 had a transient connection-refusal window (NVIDIA Sync couldn't see the box either) — serving recovered on its own; watch for recurrence.
+
+---
+
 ## Absence Claims Get Tendrils — Model Nominates, Code Budgets (August 15 2026)
 
 ### The failure that drove it
