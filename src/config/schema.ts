@@ -17,6 +17,10 @@ export const VllmBackendSchema = z.object({
    *  ignore unknown fields, and a silent no-op is worse than an omitted field —
    *  only declare true after verifying the backend actually enforces it. */
   supportsThink: z.boolean().default(false),
+  /** How a think-capable backend expresses the control: 'native' = top-level
+   *  `think` (ds4/DwarfStar); 'qwen-template' = chat_template_kwargs.enable_thinking
+   *  (SGLang serving Qwen — verified 2026-08-16; boolean only, effort strings omit). */
+  thinkStyle: z.enum(['native', 'qwen-template']).default('native'),
 });
 
 export const InferenceConfigSchema = z.object({

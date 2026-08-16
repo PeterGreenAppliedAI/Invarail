@@ -23,10 +23,10 @@ export class MultiBackendClient extends OllamaClient {
   constructor(ollamaUrl: string, keepAlive: string | undefined, backends: VllmBackendConfig[]) {
     super(ollamaUrl, keepAlive);
     for (const b of backends) {
-      const client = new OpenAICompatClient(b.url, b.apiKey, b.supportsThink);
+      const client = new OpenAICompatClient(b.url, b.apiKey, b.supportsThink, b.thinkStyle);
       for (const model of b.models) {
         this.routes.set(model, client);
-        console.log(`[Inference] Route: "${model}" → OpenAI-compat ${b.url}${b.supportsThink ? ' (think-capable)' : ''}`);
+        console.log(`[Inference] Route: "${model}" → OpenAI-compat ${b.url}${b.supportsThink ? ` (think-capable, ${b.thinkStyle})` : ''}`);
       }
     }
   }
