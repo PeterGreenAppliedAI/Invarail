@@ -306,6 +306,12 @@ export class OpenAICompatClient {
   private headers(): Record<string, string> {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
+    // No keep-alive reuse: our requests run for minutes, the server (SGLang's
+    // uvicorn) closes idle keep-alives in seconds, and node's pooled sockets
+    // then hit ECONNRESET on reuse — "Connection failed, retrying" noise plus a
+    // 2s tax per stale socket (observed 2026-08-16). Fresh connections cost
+    // nothing at generation timescales; the race class costs forever.
+    h['Connection'] = 'close';
     return h;
   }
 
