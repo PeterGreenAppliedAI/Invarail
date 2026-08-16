@@ -341,6 +341,7 @@ export function tier1JudgePrompt(claim: Claim, sources: Array<{ url: string; tex
       '- CONTRADICTED: a source states a DIFFERENT specific detail (e.g. a different date, that it was a license not an acquisition, or that a "nonexistent" thing in fact exists). Quote it.',
       '- SILENT: the sources do not address the specific detail.',
       'Be conservative: only CONTRADICTED when a source clearly states a conflicting fact. Judge ONLY from the sources.',
+      'RANGES AND SETS: a claim about a range, set, or maximum ("labs released models from 754B to 2.78T") is NOT contradicted by a source describing one different instance inside or near that range (one model at 1.6T) — only by a source that directly disputes the bound itself. When in doubt between CONTRADICTED and SILENT for a range claim, choose SILENT.',
       'Return ONLY this JSON: {"status":"CONFIRMED|CONTRADICTED|SILENT","source_url":"<url or empty>","evidence":"<exact conflicting/confirming sentence or empty>","reason":"<one sentence>"}',
       'Return ONLY JSON. /no_think',
     ].join('\n'),
@@ -473,13 +474,20 @@ export function locateClaimSentence(md: string, claim: string): { start: number;
   // Decimal points are the same wound: "Gemini 3.5" split at "3." and the
   // Aug 1 report got "Gemini 3.According to anthropic.com, 5 Flash Lite"
   // spliced mid-version-number. Mask digit.digit the same way (1 char → 1 char).
+  // Compound tokens (llama.cpp, Z.ai, node.js) are the same wound as decimals:
+  // a letter-dot-letter is never a real sentence boundary (those are followed by
+  // whitespace). The Aug 16 report spliced corrections MID-WORD into two of them.
   const masked = md
     .replace(/https?:\/\/\S+/g, u => 'u'.repeat(u.length))
-    .replace(/(\d)\.(\d)/g, '$1x$2');
+    .replace(/(\d)\.(\d)/g, '$1x$2')
+    .replace(/(?<=[A-Za-z])\.(?=[A-Za-z])/g, 'x');
 
   let best: { start: number; end: number; sentence: string; score: number } | null = null;
-  // Candidate sentences: runs ending in ./!/? or at end-of-line
-  const re = /[^.!?\n]+[.!?]+|[^.!?\n]+(?=\n|$)/g;
+  // Candidate sentences: runs ending in ./!/? FOLLOWED BY WHITESPACE (or EOL) —
+  // a bare dot inside a compound token (llama.cpp, Z.ai) is not a terminator.
+  // The Aug 16 report spliced corrections MID-WORD into both ("llama.According
+  // to dev.to, cpp") because the old pattern split at any dot.
+  const re = /[^.!?\n]+[.!?]+(?=\s|$)|[^.!?\n]+(?=\n|$)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(masked)) !== null) {
     if (m.index >= searchable) break;
