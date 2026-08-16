@@ -261,8 +261,32 @@ async function runContestant(client: OllamaClient, c: typeof CONTESTANTS[number]
   } as Parameters<OllamaClient['chat']>[0]);
   currentThink = undefined;
   const flowRaw = compileResp.message?.content ?? '';
-  const flow = looseJson<Flow>(flowRaw);
+  let flow = looseJson<Flow>(flowRaw);
   add('P2: valid flow JSON', !!flow && Array.isArray(flow.steps) && flow.steps.length > 0, flow ? `${flow.steps?.length} steps` : 'unparseable');
+
+  // Dry-run against the KNOWN customer (production ossification: compile from
+  // trace → dry-run → repair once on the executor's error → only then trust).
+  let repaired = false;
+  if (flow) {
+    const dry = await executeFlow(flow, { customer_name: 'Acme Corp' }, ACME);
+    if (!dry.ok) {
+      console.log(`  P2 dry-run failed (${dry.error}) — one repair round`);
+      currentThink = c.think;
+      const fixResp = await client.chat({
+        model: c.model,
+        messages: [
+          { role: 'system', content: 'You compile exploration traces into reusable, deterministic flows. Precision matters: the flow is executed by a machine with NO model in the loop.' },
+          { role: 'user', content: `Your compiled flow failed a dry run.\n\nFLOW:\n${JSON.stringify(flow, null, 2)}\n\nEXECUTOR ERROR:\n${dry.error}\n\nTool output schemas (from your exploration): crm_search -> {customerId}; customer_lookup -> {accountManagerId, region}; invoices_totals -> {total, count, status}; staff_lookup -> {email, name}.\n\nFix the flow. Reply with ONLY the corrected JSON flow.` },
+        ],
+        ...(c.think !== undefined ? { think: c.think } : {}),
+        options: { temperature: 0.2, num_predict: 8192, num_ctx: 24576 },
+      } as Parameters<OllamaClient['chat']>[0]);
+      currentThink = undefined;
+      const fixed = looseJson<Flow>(fixResp.message?.content ?? '');
+      if (fixed && Array.isArray(fixed.steps)) { flow = fixed; repaired = true; }
+    }
+  }
+  add('P2: compiled correctly first try (no repair needed)', !!flow && !repaired);
 
   let hardcodeFree = false, generalized = false, execOk = false, rightEmail = false, rightTotal = false;
   if (flow) {
