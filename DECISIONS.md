@@ -4,6 +4,25 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The SGLang Cutover — One Model, One Box, Real Concurrency (August 16 2026)
+
+### Sequence (each step evidence-driven)
+1. **Config swap** (morning): all 15 specialists + briefing + reasoning + vision + browser-vision + Pi moved from deepseek/gemma to qwen3.8. Think policy per role: `think:false` everywhere, `think:true` on research (the blind-synthesis-winning mode).
+2. **First production stumble = the eval's own failure class**: the midnight cron produced a one-facet, 3-source report. Root cause: llm pipeline stages never forwarded `think` at all — qwen's default-on thinking burned decompose's 700-token budget ("thinking models fail at budgets", now observed in prod). Verification carried the report honestly (6/9 flagged, 3 Tier-1 contradictions caught, self-flagged source concentration).
+3. **Chat latency complaint** → log showed queueing behind the research cron on the shared fleet box, not model slowness. Deepseek never felt this only because it had a dedicated box — tenancy, not intelligence.
+4. **Peter deployed SGLang + NVFP4 on Spark-2** (lmsysorg/sglang:qwen38-27b, RadixArk NVFP4 checkpoint): MTP speculative decoding (NEXTN, 3 steps), 262K context, `--max-running-requests 4` (real continuous batching), native tool-call parser, reasoning parser (thinking → reasoning_content). ~23 tok/s single-stream (vs 18-19 Ollama Q4 — Spark is bandwidth-bound; the 131 headline was 5090 bandwidth).
+5. **Quant-roulette footgun caught**: same model id on two stacks (Ollama fleet Q4 + SGLang NVFP4) = nondeterministic serving identity. Fix: removed from Ollama entirely; served id is `qwen3.8-27b` (dash); routed DIRECT via inference.backends (never behind the gateway — the ds4 pattern).
+6. **thinkStyle backend option**: SGLang doesn't speak ds4's top-level `think`; Qwen toggles via `chat_template_kwargs.enable_thinking`. New per-backend `thinkStyle: 'native'|'qwen-template'` translates booleans (effort strings warn-once-omit). Verified live: think:false → 13 ctok direct; default → reasoning_content. Without this the per-stage think policy silently dies and every chat pays default-on thinking tax.
+7. **Per-stage think control** (the decompose fix, principled version): LlmStage.think, caps-gated forwarding in the executor (toggle=boolean, levels=string, never a rejectable field), ctx.think carries the specialist default, decompose/gap_check pin think:false with raised budgets, parse_angles warns on degenerate output. model-caps learns qwen3.8 (VL, format, toggle).
+
+### Doctrine confirmed
+- Think is a per-STAGE property, not per-specialist: structured stages never think; synthesis stages think when the human read says it pays.
+- Same-id-different-stack is provenance poison — serving identity must be unique per model id.
+- The tenancy axis (dedicated vs shared box) matters more for felt latency than any model property; continuous batching dissolves the chat-vs-cron collision structurally.
+- Pi routes `sglang/qwen3.8-27b` direct (models.json), no auth; the gateway `pi` key is retired from that path (kept for future gateway-routed Pi work).
+
+---
+
 ## The Day the Foreground Slot Became Empirical (August 15 2026, evening)
 
 ### The question and the method
