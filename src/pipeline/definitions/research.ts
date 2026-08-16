@@ -282,6 +282,10 @@ async function fetchAndSynthesize(ctx: PipelineContext, angle: string, label: st
         ].join('\n') },
         { role: 'user', content: `Facet: ${angle}\n\nSources:\n${sourceBlocks}` },
       ],
+      // Facet synthesis is EXTRACTION (the prompt says so) — think off. The
+      // analytical thinking belongs to final_synthesis alone (blind-A/B winner).
+      // Facet phase was ~20 of a 35-min run with thinking on (2026-08-16).
+      ...noThink(ctx.model),
       options: { temperature: 0.3, num_predict: 1600, ...(ctx.contextSize ? { num_ctx: ctx.contextSize } : {}) },
     }));
     return { angle, findings: stripThinking(resp.message?.content ?? ''), sources: valid.map(f => f.url) };
