@@ -27,7 +27,9 @@ import type {
  * reasoning needed to reach it. Harmless for non-reasoning models: max_tokens is a ceiling, not a
  * target, so a larger cap costs nothing when the model finishes early.
  */
-const REASONING_HEADROOM_TOKENS = 4096;
+// 4096 proved thin for report-scale synthesis on qwen3.8 (its card budgets
+// reasoning generously for long-horizon work); env-tunable without a deploy.
+const REASONING_HEADROOM_TOKENS = Number(process.env.REASONING_HEADROOM_TOKENS) || 16384;
 
 // Env-overridable for callers that legitimately wait longer than production
 // dispatch ever should (eval harnesses with reasoning-sized budgets).
@@ -96,7 +98,12 @@ export class OpenAICompatClient {
     };
     if (o.temperature !== undefined) body.temperature = o.temperature;
     if (o.top_p !== undefined) body.top_p = o.top_p;
-    if (o.num_predict !== undefined) body.max_tokens = o.num_predict + REASONING_HEADROOM_TOKENS;
+    if (o.num_predict !== undefined) {
+      // Headroom only when thinking can actually consume it — an explicit
+      // think:false request gets an honest max_tokens (no silent overrun room).
+      const thinkingOff = params.think === false;
+      body.max_tokens = o.num_predict + (thinkingOff ? 0 : REASONING_HEADROOM_TOKENS);
+    }
     if (o.stop !== undefined) body.stop = o.stop;
     // vLLM OpenAI server accepts these as extensions
     if (o.top_k !== undefined) body.top_k = o.top_k;
