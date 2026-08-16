@@ -227,7 +227,7 @@ export class OllamaClient {
         }
         lastErr = err;
         if (attempt < MAX_ATTEMPTS - 1) {
-          console.warn(`[Ollama] Connection failed, retrying in 2s...`);
+          console.warn(`[Ollama] Connection failed (${err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : err}), retrying in 2s...`);
           await new Promise(r => setTimeout(r, 2_000));
           continue;
         }
