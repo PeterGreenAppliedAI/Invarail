@@ -22,7 +22,10 @@ const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) ||
 // memory priming, 2026-08-16). Fail fast; callers degrade gracefully.
 const EMBED_TIMEOUT_MS = Number(process.env.OLLAMA_EMBED_TIMEOUT_MS) || 30_000;
 
-const EMBED_MIN_INTERVAL_MS = 250;
+// Matched to the gateway's inbound embed cap (100 req/min, observed 2026-08-16):
+// 650ms ≈ 92/min with margin. 250ms allowed ~240/min and turned every recovery
+// backfill into a 429 storm the backoff had to absorb.
+const EMBED_MIN_INTERVAL_MS = Number(process.env.EMBED_MIN_INTERVAL_MS) || 650;
 let embedChain: Promise<void> = Promise.resolve();
 let lastEmbedAt = 0;
 
