@@ -62,7 +62,7 @@ describe('OpenAICompatClient max_tokens reasoning headroom', () => {
       messages: [{ role: 'user', content: 'does the source support this claim?' }],
       options: { num_predict: 400 },
     });
-    expect(parseBody(captured).max_tokens).toBe(400 + 4096);
+    expect(parseBody(captured).max_tokens).toBe(400 + 16384);
   });
 
   it('still adds headroom on top of large answer budgets', async () => {
@@ -73,7 +73,20 @@ describe('OpenAICompatClient max_tokens reasoning headroom', () => {
       messages: [{ role: 'user', content: 'write the report' }],
       options: { num_predict: 8192 },
     });
-    expect(parseBody(captured).max_tokens).toBe(8192 + 4096);
+    expect(parseBody(captured).max_tokens).toBe(8192 + 16384);
+  });
+
+  it('gives an HONEST max_tokens (no headroom) when think is explicitly false', async () => {
+    const captured = mockFetchOnce(OK_RESPONSE);
+    const client = new OpenAICompatClient('http://sglang.local', undefined, true, 'qwen-template');
+    await client.chat({
+      model: 'qwen3.8-27b',
+      messages: [{ role: 'user', content: 'quick answer' }],
+      think: false,
+      options: { num_predict: 400 },
+    });
+    expect(parseBody(captured).max_tokens).toBe(400);
+    expect(parseBody(captured).chat_template_kwargs).toEqual({ enable_thinking: false });
   });
 
   it('omits max_tokens entirely when no num_predict is given', async () => {
