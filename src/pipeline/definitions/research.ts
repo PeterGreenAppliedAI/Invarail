@@ -176,16 +176,12 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 const noThink = (model: string): { think?: false } =>
   capsFor(model).think === 'toggle' ? { think: false } : {};
 
-/** Serialize the heavy facet-synthesis LLM calls: fetches run in parallel, but
- *  three concurrent 284B generations on one box split its throughput three
- *  ways and time each other out. Search has a politeness throttle; this is
- *  the same courtesy pointed at our own inference. */
-let synthesisChain: Promise<unknown> = Promise.resolve();
-function serializeSynthesis<T>(fn: () => Promise<T>): Promise<T> {
-  const run = synthesisChain.then(fn, fn);
-  synthesisChain = run.catch(() => {});
-  return run;
-}
+// (Removed 2026-08-16: serializeSynthesis — a deepseek/ds4-era accommodation
+// for three concurrent 284B generations self-contending on one box. SGLang
+// batches concurrent streams natively (--max-running-requests 4); serializing
+// on top of it turned the "3 concurrent facets" design into single-file — the
+// 46-minute facet phase. If a future backend self-contends again, reintroduce
+// as a BACKEND property, not a pipeline hardcode.)
 
 /** Investigate ONE facet: search → deep fetch → focused synthesis.
  *  With presetUrls (flow-gathered), the search step is skipped — the compiled
@@ -270,7 +266,7 @@ async function fetchAndSynthesize(ctx: PipelineContext, angle: string, label: st
     if (sourceText) for (const f of valid) if (!sourceText[f.url]) sourceText[f.url] = f.content;
 
     const sourceBlocks = valid.map((f, i) => `[Source ${i + 1}: ${f.url}]\n${f.content}`).join('\n\n---\n\n');
-    const resp = await serializeSynthesis(() => ctx.client.chat({
+    const resp = await ctx.client.chat({
       model: ctx.model,
       messages: [
         { role: 'system', content: [
@@ -287,7 +283,7 @@ async function fetchAndSynthesize(ctx: PipelineContext, angle: string, label: st
       // Facet phase was ~20 of a 35-min run with thinking on (2026-08-16).
       ...noThink(ctx.model),
       options: { temperature: 0.3, num_predict: 1600, ...(ctx.contextSize ? { num_ctx: ctx.contextSize } : {}) },
-    }));
+    });
     return { angle, findings: stripThinking(resp.message?.content ?? ''), sources: valid.map(f => f.url) };
 }
 
