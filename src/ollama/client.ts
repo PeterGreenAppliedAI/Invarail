@@ -16,6 +16,11 @@ import type {
 // dispatch ever should (eval harnesses with reasoning-sized budgets).
 const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
 
+// Embeds are seconds-scale operations — they must NEVER inherit the chat
+// timeout (a 600s wait on a wedged embedding box froze every dispatch behind
+// memory priming, 2026-08-16). Fail fast; callers degrade gracefully.
+const EMBED_TIMEOUT_MS = Number(process.env.OLLAMA_EMBED_TIMEOUT_MS) || 30_000;
+
 const EMBED_MIN_INTERVAL_MS = 250;
 let embedChain: Promise<void> = Promise.resolve();
 let lastEmbedAt = 0;
@@ -155,7 +160,7 @@ export class OllamaClient {
     await embedThrottle();
     try {
       const body: OllamaEmbedParams = { model, input, keep_alive: this.keepAlive };
-      const res = await this.post<OllamaEmbedResponse>('/api/embed', body);
+      const res = await this.post<OllamaEmbedResponse>('/api/embed', body, EMBED_TIMEOUT_MS);
       return res.embeddings;
     } catch {
       // Fallback: /api/embeddings with single-prompt format
@@ -163,7 +168,7 @@ export class OllamaClient {
       const results: number[][] = [];
       for (const text of texts) {
         await embedThrottle();
-        const res = await this.post<{ embedding: number[] }>('/api/embeddings', { model, prompt: text });
+        const res = await this.post<{ embedding: number[] }>('/api/embeddings', { model, prompt: text }, EMBED_TIMEOUT_MS);
         results.push(res.embedding);
       }
       return results;
