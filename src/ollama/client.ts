@@ -15,7 +15,11 @@ import type {
 // space them out instead of relying on 429-backoff after the fact.
 // Env-overridable for callers that legitimately wait longer than production
 // dispatch ever should (eval harnesses with reasoning-sized budgets).
-const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
+// LAZY reads (functions, not module consts): .env is loaded by loadConfig() at
+// RUNTIME, after the import graph has already evaluated — a module-scope const
+// captures the default before .env exists (2026-08-16: production ran 300s while
+// .env said 600s; only tmux-exported eval runs ever saw the overrides).
+const defaultRequestTimeoutMs = (): number => Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
 
 // Embeds are seconds-scale operations — they must NEVER inherit the chat
 // timeout (a 600s wait on a wedged embedding box froze every dispatch behind
@@ -24,18 +28,18 @@ const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) ||
 // request up to max_wait_seconds=30 BEFORE inference starts — 30s here would
 // hang up on a maximally-queued embed that was about to succeed, then retry
 // it and add load. Our patience must exceed their queue bound + inference.
-const EMBED_TIMEOUT_MS = Number(process.env.OLLAMA_EMBED_TIMEOUT_MS) || 45_000;
+const embedTimeoutMs = (): number => Number(process.env.OLLAMA_EMBED_TIMEOUT_MS) || 45_000;
 
 // Matched to the gateway's inbound embed cap (100 req/min, observed 2026-08-16):
 // 650ms ≈ 92/min with margin. 250ms allowed ~240/min and turned every recovery
 // backfill into a 429 storm the backoff had to absorb.
-const EMBED_MIN_INTERVAL_MS = Number(process.env.EMBED_MIN_INTERVAL_MS) || 650;
+const embedMinIntervalMs = (): number => Number(process.env.EMBED_MIN_INTERVAL_MS) || 650;
 let embedChain: Promise<void> = Promise.resolve();
 let lastEmbedAt = 0;
 
 function embedThrottle(): Promise<void> {
   const next = embedChain.then(async () => {
-    const wait = lastEmbedAt + EMBED_MIN_INTERVAL_MS - Date.now();
+    const wait = lastEmbedAt + embedMinIntervalMs() - Date.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     lastEmbedAt = Date.now();
   });
@@ -168,7 +172,7 @@ export class OllamaClient {
     await embedThrottle();
     try {
       const body: OllamaEmbedParams = { model, input, keep_alive: this.keepAlive };
-      const res = await this.post<OllamaEmbedResponse>('/api/embed', body, EMBED_TIMEOUT_MS);
+      const res = await this.post<OllamaEmbedResponse>('/api/embed', body, embedTimeoutMs());
       return res.embeddings;
     } catch {
       // Fallback: /api/embeddings with single-prompt format
@@ -176,7 +180,7 @@ export class OllamaClient {
       const results: number[][] = [];
       for (const text of texts) {
         await embedThrottle();
-        const res = await this.post<{ embedding: number[] }>('/api/embeddings', { model, prompt: text }, EMBED_TIMEOUT_MS);
+        const res = await this.post<{ embedding: number[] }>('/api/embeddings', { model, prompt: text }, embedTimeoutMs());
         results.push(res.embedding);
       }
       return results;
@@ -197,7 +201,7 @@ export class OllamaClient {
     }
   }
 
-  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, abortSignal?: AbortSignal): Promise<T> {
+  private async post<T>(path: string, body: unknown, timeoutMs = defaultRequestTimeoutMs(), abortSignal?: AbortSignal): Promise<T> {
     const jsonBody = JSON.stringify(body);
     const MAX_ATTEMPTS = 4;
     let lastErr: unknown;
