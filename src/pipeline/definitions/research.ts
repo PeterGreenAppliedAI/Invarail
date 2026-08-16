@@ -397,7 +397,11 @@ export const researchPipeline: PipelineDefinition = {
       type: 'llm',
       when: (ctx) => !ctx.params._flowFacets,
       temperature: 0.3,
-      maxTokens: 700,
+      maxTokens: 1200,
+      // Structured output — thinking counts against the budget and starved this
+      // stage into a one-facet report (2026-08-16). Facet QUALITY comes from the
+      // discovery digest, not deliberation.
+      think: false,
       buildPrompt: (ctx) => {
         const digest = ctx.params._discoveryDigest as string | undefined;
         return {
@@ -433,6 +437,7 @@ export const researchPipeline: PipelineDefinition = {
           if (m) { const arr = JSON.parse(m[0]); if (Array.isArray(arr)) angles = arr.filter(a => typeof a === 'string' && a.length > 5); }
         } catch { /* fall through */ }
         if (angles.length === 0) angles = [ctx.params.topic as string];
+        if (angles.length < 2) console.warn(`[Research] DEGENERATE decompose — ${angles.length} facet(s); report coverage will be thin. Raw head: ${raw.slice(0, 120)}`);
         ctx.params._angles = angles.slice(0, 6);
         console.log(`[Research] Facets (${(ctx.params._angles as string[]).length}): ${(ctx.params._angles as string[]).map(a => a.slice(0, 40)).join(' | ')}`);
       },
@@ -486,7 +491,8 @@ export const researchPipeline: PipelineDefinition = {
       name: 'gap_check',
       type: 'llm',
       temperature: 0.3,
-      maxTokens: 400,
+      maxTokens: 600,
+      think: false,  // structured verdict, small budget — same starvation class as decompose
       buildPrompt: (ctx) => {
         const digest = ctx.params._discoveryDigest as string | undefined;
         return {

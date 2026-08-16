@@ -29,6 +29,8 @@ export interface PipelineContext {
   userPriming?: string;
   /** Specialist model name */
   model: string;
+  /** Specialist-level thinking default for llm stages (per-stage `think` wins). */
+  think?: boolean | 'low' | 'medium' | 'high';
   /** Input context window for llm stages (num_ctx). From the specialist/session config. */
   contextSize?: number;
   /** Fast router model for classification tasks (e.g., llm_branch) */
@@ -107,6 +109,11 @@ export interface LlmStage extends BaseStage {
   repeatPenalty?: number;
   /** Stream output progressively via ctx.onStream. Use on the final user-facing stage. */
   stream?: boolean;
+  /** Per-stage thinking control. Structured-output stages (decompose, gap_check)
+   *  should set false — thinking counts against maxTokens and starves small
+   *  budgets into degenerate output (the 2026-08-16 one-facet report). Unset =
+   *  inherit the specialist's think (ctx.think), then the model default. */
+  think?: boolean | 'low' | 'medium' | 'high';
 }
 
 /** Run deterministic code (date math, formatting, validation) */
