@@ -20,7 +20,11 @@ const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) ||
 // Embeds are seconds-scale operations — they must NEVER inherit the chat
 // timeout (a 600s wait on a wedged embedding box froze every dispatch behind
 // memory priming, 2026-08-16). Fail fast; callers degrade gracefully.
-const EMBED_TIMEOUT_MS = Number(process.env.OLLAMA_EMBED_TIMEOUT_MS) || 30_000;
+// 45s, not 30: the gateway's embedding queue (a17a0d8 their side) can hold a
+// request up to max_wait_seconds=30 BEFORE inference starts — 30s here would
+// hang up on a maximally-queued embed that was about to succeed, then retry
+// it and add load. Our patience must exceed their queue bound + inference.
+const EMBED_TIMEOUT_MS = Number(process.env.OLLAMA_EMBED_TIMEOUT_MS) || 45_000;
 
 // Matched to the gateway's inbound embed cap (100 req/min, observed 2026-08-16):
 // 650ms ≈ 92/min with margin. 250ms allowed ~240/min and turned every recovery
