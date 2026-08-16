@@ -41,6 +41,12 @@ export class OpenAICompatClient {
      *  OpenAI-compat servers silently ignore unknown fields — declare via config
      *  only after verifying). */
     private readonly supportsThink = false,
+    /** How a think-capable backend expresses the control:
+     *  'native' — top-level `think` param (ds4/DwarfStar convention);
+     *  'qwen-template' — chat_template_kwargs.enable_thinking (SGLang serving
+     *  Qwen; boolean only — effort strings warn-once-omit, verified 2026-08-16:
+     *  enable_thinking:false → 13 ctok direct answer; default → reasoning_content). */
+    private readonly thinkStyle: 'native' | 'qwen-template' = 'native',
   ) {}
 
   /** Translate Ollama-shape messages to OpenAI, stitching tool_call_ids. */
@@ -110,7 +116,14 @@ export class OpenAICompatClient {
     // unknown fields — and a silent no-op is the exact bug class the 2026-08
     // gateway forensics traced. Unverified backend → warn once and omit.
     if (params.think !== undefined) {
-      if (this.supportsThink) {
+      if (this.supportsThink && this.thinkStyle === 'qwen-template') {
+        if (typeof params.think === 'boolean') {
+          body.chat_template_kwargs = { enable_thinking: params.think };
+        } else if (!OpenAICompatClient.effortWarned) {
+          OpenAICompatClient.effortWarned = true;
+          console.warn(`[OpenAI] think effort level "${params.think}" omitted — qwen-template backends accept boolean enable_thinking only. Warning shown once.`);
+        }
+      } else if (this.supportsThink) {
         body.think = params.think;
       } else if (!OpenAICompatClient.thinkWarned) {
         OpenAICompatClient.thinkWarned = true;
@@ -121,6 +134,7 @@ export class OpenAICompatClient {
   }
 
   private static thinkWarned = false;
+  private static effortWarned = false;
 
   /** Translate an OpenAI tool_calls array (string args) to Ollama shape (object args). */
   private parseToolCalls(toolCalls: any[] | undefined): OllamaMessage['tool_calls'] {
