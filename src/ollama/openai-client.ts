@@ -1,4 +1,5 @@
 import { ollamaUnreachable, ollamaInferenceError } from '../errors.js';
+import { inferenceAbortSignal } from './abort.js';
 import type {
   OllamaChatParams,
   OllamaChatResponse,
@@ -193,7 +194,7 @@ export class OpenAICompatClient {
           method: 'POST',
           headers: this.headers(),
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(300_000),
+          signal: AbortSignal.any([AbortSignal.timeout(300_000), inferenceAbortSignal()]),
         });
       } catch (err) {
         if (err instanceof DOMException && err.name === 'TimeoutError') {
@@ -318,7 +319,7 @@ export class OpenAICompatClient {
           method: 'POST',
           headers: this.headers(),
           body: jsonBody,
-          signal: abortSignal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), abortSignal]) : AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), inferenceAbortSignal(), ...(abortSignal ? [abortSignal] : [])]),
         });
       } catch (err) {
         if (abortSignal?.aborted) {

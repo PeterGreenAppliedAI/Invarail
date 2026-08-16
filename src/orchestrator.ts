@@ -5,6 +5,7 @@ import type { InvarailConfig } from './config/types.js';
 import type { ChannelAdapterConfig, InboundMessage } from './channels/types.js';
 import { OllamaClient } from './ollama/client.js';
 import { createInferenceClient } from './ollama/multi-backend.js';
+import { abortAllInference } from './ollama/abort.js';
 import { ToolRegistry } from './tools/registry.js';
 import { ChannelRegistry } from './channels/registry.js';
 import { SessionStore } from './sessions/store.js';
@@ -312,6 +313,9 @@ export class Orchestrator {
   }
 
   async stop(): Promise<void> {
+    // FIRST: tear down every in-flight inference request — orphaned generations
+    // and embeds wedge upstream queues for the next boot (2026-08-16).
+    abortAllInference('orchestrator stop');
     this.heartbeatCron?.stop();
     this.cronService?.stop();
     this.webIndex?.stop();
