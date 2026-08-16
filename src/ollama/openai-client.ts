@@ -30,11 +30,12 @@ import type {
  */
 // 4096 proved thin for report-scale synthesis on qwen3.8 (its card budgets
 // reasoning generously for long-horizon work); env-tunable without a deploy.
-const REASONING_HEADROOM_TOKENS = Number(process.env.REASONING_HEADROOM_TOKENS) || 16384;
+// LAZY (see client.ts): .env loads at runtime, module consts evaluate first.
+const reasoningHeadroomTokens = (): number => Number(process.env.REASONING_HEADROOM_TOKENS) || 16384;
 
 // Env-overridable for callers that legitimately wait longer than production
 // dispatch ever should (eval harnesses with reasoning-sized budgets).
-const DEFAULT_REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
+const defaultRequestTimeoutMs = (): number => Number(process.env.OLLAMA_CHAT_TIMEOUT_MS) || 300_000;
 
 export class OpenAICompatClient {
   constructor(
@@ -103,7 +104,7 @@ export class OpenAICompatClient {
       // Headroom only when thinking can actually consume it — an explicit
       // think:false request gets an honest max_tokens (no silent overrun room).
       const thinkingOff = params.think === false;
-      body.max_tokens = o.num_predict + (thinkingOff ? 0 : REASONING_HEADROOM_TOKENS);
+      body.max_tokens = o.num_predict + (thinkingOff ? 0 : reasoningHeadroomTokens());
     }
     if (o.stop !== undefined) body.stop = o.stop;
     // vLLM OpenAI server accepts these as extensions
@@ -308,7 +309,7 @@ export class OpenAICompatClient {
     return h;
   }
 
-  private async post<T>(path: string, body: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, abortSignal?: AbortSignal): Promise<T> {
+  private async post<T>(path: string, body: unknown, timeoutMs = defaultRequestTimeoutMs(), abortSignal?: AbortSignal): Promise<T> {
     const jsonBody = JSON.stringify(body);
     let lastErr: unknown;
     const MAX_ATTEMPTS = 4;
