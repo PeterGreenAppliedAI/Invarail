@@ -55,7 +55,7 @@ table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px;
 th { background: #1e40af; color: #fff; padding: 10px 14px; text-align: left; font-family: 'Segoe UI', system-ui, sans-serif; font-weight: 600; }
 td { padding: 8px 14px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
 tr:nth-child(even) td { background: #f9fafb; }
-img { max-width: 100%; height: auto; margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 4px; }
+img { max-width: 100%; height: auto; margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 4px; page-break-inside: avoid; }
 code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
 a { color: #2563eb; }
 @media print { .report { padding: 20px; } h2 { page-break-after: avoid; } }
@@ -885,6 +885,12 @@ export const researchPipeline: PipelineDefinition = {
             : '';
         });
         let body = markdownToHtml(md);
+        // LibreOffice ignores CSS max-width on import and places images at
+        // natural size — a 1040px chart overflows the printable area and gets
+        // CLIPPED at the page edge. Explicit width/height ATTRIBUTES are what
+        // Writer honors (same quirk family as the absolute-src lesson above).
+        // All charts share figsize 8x4.5 per CHART_RULES, so 640x360 is exact.
+        body = body.replace(/<img /g, '<img width="640" height="360" ');
         // Style the first H1 as the report title + add a meta line
         body = body.replace(/<h1>/, '<h1 class="report-title">');
         const meta = `<div class="report-meta">${new Date().toLocaleDateString('en-US', { dateStyle: 'long' })} · ${(ctx.params._allSources as string[]).length} sources</div>`;
