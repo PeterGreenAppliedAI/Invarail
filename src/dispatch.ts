@@ -1341,6 +1341,8 @@ async function runPipelineDispatch(
     client,
     executor,
     toolContext,
+    // Specialist-level thinking default for llm stages (per-stage `think` wins).
+    think: specialist.think,
     history: isolateContext ? undefined : history,
     workspaceContext,
     userPriming: userPriming || undefined,
