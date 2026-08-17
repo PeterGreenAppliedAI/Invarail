@@ -100,8 +100,8 @@ async function executeStageInner(stage: PipelineStage, ctx: PipelineContext): Pr
       const think = stage.think ?? ctx.think;
       const thinkCap = capsFor(stageModel).think;
       const thinkParam =
-        think !== undefined && thinkCap === 'toggle' && typeof think === 'boolean' ? { think }
-        : think !== undefined && thinkCap === 'levels' && typeof think === 'string' ? { think }
+        think !== undefined && (thinkCap === 'toggle' || thinkCap === 'full') && typeof think === 'boolean' ? { think }
+        : think !== undefined && (thinkCap === 'levels' || thinkCap === 'full') && typeof think === 'string' ? { think }
         : {};
       const chatParams = {
         model: stageModel,
