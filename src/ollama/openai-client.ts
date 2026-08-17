@@ -128,9 +128,12 @@ export class OpenAICompatClient {
       if (this.supportsThink && this.thinkStyle === 'qwen-template') {
         if (typeof params.think === 'boolean') {
           body.chat_template_kwargs = { enable_thinking: params.think };
-        } else if (!OpenAICompatClient.effortWarned) {
-          OpenAICompatClient.effortWarned = true;
-          console.warn(`[OpenAI] think effort level "${params.think}" omitted — qwen-template backends accept boolean enable_thinking only. Warning shown once.`);
+        } else {
+          // Effort levels — verified honored via reasoning_effort (2026-08-17:
+          // low = ~72% less thinking, same answers). Qwen's ceiling is 'xhigh';
+          // our 'high' maps to it.
+          const effort = params.think === 'high' ? 'xhigh' : params.think;
+          body.chat_template_kwargs = { reasoning_effort: effort };
         }
       } else if (this.supportsThink) {
         body.think = params.think;
@@ -143,7 +146,6 @@ export class OpenAICompatClient {
   }
 
   private static thinkWarned = false;
-  private static effortWarned = false;
 
   /** Translate an OpenAI tool_calls array (string args) to Ollama shape (object args). */
   private parseToolCalls(toolCalls: any[] | undefined): OllamaMessage['tool_calls'] {

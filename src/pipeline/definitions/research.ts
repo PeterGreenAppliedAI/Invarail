@@ -174,7 +174,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
  *  user-facing prose calls (facet findings, final synthesis, sentence
  *  corrections) keep the model's default — the owner reads those. */
 const noThink = (model: string): { think?: false } =>
-  capsFor(model).think === 'toggle' ? { think: false } : {};
+  ['toggle', 'full'].includes(capsFor(model).think ?? '') ? { think: false } : {};
 
 // (Removed 2026-08-16: serializeSynthesis — a deepseek/ds4-era accommodation
 // for three concurrent 284B generations self-contending on one box. SGLang

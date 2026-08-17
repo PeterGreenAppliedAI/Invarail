@@ -22,9 +22,12 @@ export interface ModelCaps {
    *             silently ignores false (accepts ≠ obeys — gpt-oss:120b). Boolean
    *             think on these models is a no-op at best; combined with `format`
    *             it triggers an Ollama output-discard bug. Use effort strings.
+   *  'full'   — BOTH: boolean toggle AND effort levels (qwen3.8 via SGLang:
+   *             enable_thinking booleans + reasoning_effort strings, verified 2026-08-17
+   *             — low cuts thinking ~72% vs default with identical correctness)
    *  'none'   — rejects the think field (Ollama 400)
    *  undefined — unprobed; treat as unknown */
-  think?: 'toggle' | 'levels' | 'none';
+  think?: 'toggle' | 'levels' | 'full' | 'none';
 }
 
 const DEFAULT_CAPS: ModelCaps = { supportsFormat: true, parallelToolCalls: false, vision: false };
@@ -42,7 +45,7 @@ const MODEL_CAPS: Record<string, Partial<ModelCaps>> = {
   'qwen3.5': { think: 'toggle' },
   'qwen3.6': { think: 'toggle' },
   // SGLang-served NVFP4 (served id qwen3.8-27b); native VL; enable_thinking honored (verified 2026-08-16)
-  'qwen3.8': { supportsFormat: true, vision: true, think: 'toggle' },
+  'qwen3.8': { supportsFormat: true, vision: true, think: 'full' },
   'gemma': { supportsFormat: true, vision: true },
   'gemma4': { supportsFormat: true, vision: true, think: 'toggle' },
   'muse-glimmer': { think: 'toggle' },

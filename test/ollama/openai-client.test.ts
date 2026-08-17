@@ -100,3 +100,26 @@ describe('OpenAICompatClient max_tokens reasoning headroom', () => {
     expect(parseBody(captured).max_tokens).toBeUndefined();
   });
 });
+
+describe('qwen-template effort levels', () => {
+  it('translates effort strings to chat_template_kwargs.reasoning_effort, high -> xhigh', async () => {
+    const captured = mockFetchOnce(OK_RESPONSE);
+    const client = new OpenAICompatClient('http://sglang.local', undefined, true, 'qwen-template');
+    await client.chat({
+      model: 'qwen3.8-27b',
+      messages: [{ role: 'user', content: 'hard problem' }],
+      think: 'low',
+      options: { num_predict: 400 },
+    });
+    expect(parseBody(captured).chat_template_kwargs).toEqual({ reasoning_effort: 'low' });
+
+    const captured2 = mockFetchOnce(OK_RESPONSE);
+    await client.chat({
+      model: 'qwen3.8-27b',
+      messages: [{ role: 'user', content: 'hard problem' }],
+      think: 'high',
+      options: { num_predict: 400 },
+    });
+    expect(parseBody(captured2).chat_template_kwargs).toEqual({ reasoning_effort: 'xhigh' });
+  });
+});
