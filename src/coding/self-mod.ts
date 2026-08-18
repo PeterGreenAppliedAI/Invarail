@@ -110,13 +110,17 @@ export class SelfModWorktrees {
     // diff touches package files). data/ is gitignored too, and the routing-eval test reads
     // data/training cwd-relative — symlink just that allowlisted subdir, nothing else.
     const mainNodeModules = join(this.repoRoot, 'node_modules');
-    if (existsSync(mainNodeModules)) {
-      symlinkSync(mainNodeModules, join(worktreePath, 'node_modules'), 'dir');
+    const wtNodeModules = join(worktreePath, 'node_modules');
+    if (existsSync(mainNodeModules) && !existsSync(wtNodeModules)) {
+      symlinkSync(mainNodeModules, wtNodeModules, 'dir');
     }
+    // data/ is gitignored EXCEPT tracked files (data/training/routing-eval.jsonl is committed),
+    // so a fresh worktree may already have this path checked out — symlink only when absent.
     const mainTraining = join(this.repoRoot, 'data', 'training');
-    if (existsSync(mainTraining)) {
+    const wtTraining = join(worktreePath, 'data', 'training');
+    if (existsSync(mainTraining) && !existsSync(wtTraining)) {
       mkdirSync(join(worktreePath, 'data'), { recursive: true });
-      symlinkSync(mainTraining, join(worktreePath, 'data', 'training'), 'dir');
+      symlinkSync(mainTraining, wtTraining, 'dir');
     }
 
     const active: ActiveWorktree = {

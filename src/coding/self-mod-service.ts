@@ -165,6 +165,9 @@ export class SelfModService {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Log server-side too — the channel reply can be lost (e.g. consumed HTTP response)
+      // and a silent propose failure is undiagnosable from the outside.
+      console.warn(`[SelfMod] propose "${slug}" failed:`, msg);
       return { ok: false, reply: `Self-mod failed: ${msg.slice(0, 400)}` };
     } finally {
       this.busy = false;

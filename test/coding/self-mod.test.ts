@@ -46,6 +46,17 @@ describe('SelfModWorktrees', () => {
     expect(wt.getState().active?.slug).toBe('add-widget');
   });
 
+  it('creates a worktree when data/training is TRACKED (checked out, not symlinked)', () => {
+    // Regression: data/ is gitignored EXCEPT data/training/routing-eval.jsonl which is
+    // committed — a fresh worktree checks it out and the symlink must not EEXIST-crash.
+    git(repo, 'add', '-f', 'data/training/pairs.jsonl');
+    git(repo, 'commit', '-q', '-m', 'track training data');
+    const active = wt.create('tracked-training');
+    expect(existsSync(join(active.worktreePath, 'data', 'training', 'pairs.jsonl'))).toBe(true);
+    expect(lstatSync(join(active.worktreePath, 'data', 'training')).isSymbolicLink()).toBe(false);
+    expect(wt.getState().active?.slug).toBe('tracked-training');
+  });
+
   it('enforces one active worktree at a time', () => {
     wt.create('first');
     expect(() => wt.create('second')).toThrow(InvarailError);
