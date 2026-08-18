@@ -27,6 +27,13 @@ The Pi duel (2026-08-15): Pi + qwen3.8 autonomously produced 12/12 contract-grad
 ### Hygiene rules
 One change per session; always a branch; never chain unvalidated changes (no compounding drift); session budget caps; code-change proposals enter the autonomy ladder at propose_confirm (per-path promotion later, earned via logAutonomousAction track record).
 
+### Phase A SHIPPED (August 18 2026 — 67b9216, fab26db)
+`PiCodingAdapter` (src/coding/pi-session.ts) wraps `createAgentSession()`; SDK pinned exact 0.80.2; pi_build's CLI spawn deleted. External behavior verified identical (extractor lines, quality standards, cwd-scoping — SDK tools bind to the session cwd, confirmed in sdk source at agent-session.js `createAllToolDefinitions(this._cwd)`). Event substrate live: five events (agent_start, turn_start, tool_execution_end w/ durations, turn_end, agent_end — deliberately NOT the SDK's full stream; tool_execution_start tracked internally for durations only, never logged) → metrics.jsonl, plus a `pi_session` summary row carrying the session JSONL path (provenance anchor). Smoke bar passed live: roman-numeral build, 461s, 7 turns / 9 tool calls / 1 tool error self-repaired, 15/15 tests independently verified, session JSONL on disk.
+
+Two observations for Phase B (recorded, not built):
+1. **In-process = shared fate.** The SDK runs inside LocalClaw's process: a Pi/SDK crash is now a LocalClaw process risk, and Pi's bash inherits our env (the CLI spawn also inherited env — behavior-identical, but it strengthens the case for the dumb supervisor + worktree env hygiene).
+2. **abort() is cooperative where SIGKILL was absolute.** The timeout path races `session.abort()` with a 30s grace; a wedged bash child could outlive the bound. Watch `pi_session` rows with `timedOut=true` before Phase B trusts this as a hard budget.
+
 ### Memory integration (added same day — NO second memory system)
 FalkorDB is Invarail's institutional memory; Pi becomes one worker that learns from it and contributes VERIFIED experience back. Existing machinery reused wholesale: coding experiences are ordinary Facts (imp 5 = system invariants, 4 = validated conventions/proven lessons, 3 = prior successes/failures, 1-2 = ephemeral debugging, natural decay); SUPERSEDES handles evolving engineering truth ("web_fetch rejects Atom" → superseded by "supports XML-family as of commit abc"); Turn extends with source:"pi" + session/task/repo/commit/model/thinking → provenance answers "why do we believe this" all the way down to the session JSONL. Four components only:
 1. **PiCodingAdapter** — Invarail → Pi SDK (Phase A artifact).
