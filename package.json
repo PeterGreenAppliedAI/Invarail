@@ -16,7 +16,7 @@
     "cli": "tsx src/cli/index.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@earendil-works/pi-coding-agent": "0.80.2",
     "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^12.10.0",
     "croner": "^10.0.1",

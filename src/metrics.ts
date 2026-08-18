@@ -160,3 +160,44 @@ export function logReviewNote(data: { category: string; note: string }): void {
     ...data,
   });
 }
+
+/** Lifecycle event from a Pi coding session — the observation substrate the
+ *  experience harvester consumes. Deliberately five events, not the SDK's full
+ *  stream: agent/turn boundaries + tool outcomes. */
+export function logPiSessionEvent(data: {
+  sessionId: string;
+  /** Build slug — groups events with their pi_session summary record */
+  slug: string;
+  event: 'agent_start' | 'turn_start' | 'tool_execution_end' | 'turn_end' | 'agent_end';
+  toolName?: string;
+  isError?: boolean;
+  durationMs?: number;
+}): void {
+  logMetric({
+    timestamp: new Date().toISOString(),
+    type: 'pi_session_event',
+    ...data,
+  });
+}
+
+/** End-of-run summary for a Pi coding session. sessionFile is the session
+ *  JSONL on disk — provenance anchor for "why do we believe this" queries. */
+export function logPiSession(data: {
+  slug: string;
+  model: string;
+  sessionId?: string;
+  sessionFile?: string;
+  ok: boolean;
+  timedOut: boolean;
+  durationMs: number;
+  turns: number;
+  toolCalls: number;
+  toolErrors: number;
+  error?: string;
+}): void {
+  logMetric({
+    timestamp: new Date().toISOString(),
+    type: 'pi_session',
+    ...data,
+  });
+}
