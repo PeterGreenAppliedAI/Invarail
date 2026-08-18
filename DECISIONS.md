@@ -4,6 +4,31 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Pi Becomes the Coding Substrate — LocalClaw Keeps the Authority (August 18 2026, COMMITTED DIRECTION)
+
+### The decision
+All coding — user-requested builds AND LocalClaw modifying ITSELF — goes through the Pi SDK (`createAgentSession()` from @earendil-works/pi-coding-agent, MIT, embedded not forked). LocalClaw stops competing as a coding harness and keeps what is actually ours: routing, memory, task state, governance/authority, evaluation, deterministic pipelines, channels. Peter, on reading Pi's duel output: "this pi code puts my localclaw to shame… I need to ship pi code with my localclaw and make sure all coding gets done through it and that way it can alter its own code and add its own tools and run its own config."
+
+### Evidence
+The Pi duel (2026-08-15): Pi + qwen3.8 autonomously produced 12/12 contract-grade work with an 11-test behavioral suite and correct packaging in 384s — better code than any LocalClaw-native path has ever produced. Division of labor per doctrine: LocalClaw answers why / may-it / what-happened-before / which-model+effort / was-it-actually-good / what-next; Pi owns the loop (explore, edit, bash, test, self-repair).
+
+### Architecture
+- **Adapter, not integration sprawl**: one module (src/coding/pi-session.ts) wraps the SDK — the McpManager pattern. Version pinned. Lifecycle events (agent_start/turn_start/tool_execution_*/message_end/agent_end) flow to metrics + Falkor.
+- **Structural supervisor boundary (not conventional)**: Pi writes ONLY in git worktrees — never the running tree, never main. Protected paths (dispatch security layers, pending-action ledger, grants, config loader/clamps, secrets, the supervisor itself) are Tier-3 under the existing review rubric: merges touching them are owner-confirmed via the ledger, ALWAYS, no promotion path. Lessons doctrine applied to source: experience informs execution, never expands authority — a process must not rewrite the mechanism granting its authority while it executes.
+- **The validation gate is the product**: Pi's own tests are necessary, not sufficient. Merge gate = tsc + full suite + the deterministic batteries built 2026-08-15/16 (smoke runner, eval checks) + rubric tiering by touched paths. Self-modification gated by self-evaluation — the eval harness graduates from benchmarking tool to merge gate.
+- **The supervisor stays DUMB**: ~50 lines, no model anywhere near it — pull validated branch → run gates → restart → health-check → auto-rollback on boot failure. The one genuinely new component; retires the manual Ctrl-C deployment model.
+- **Unified with config-not-code**: this IS Phase 2 with muscles. Same ladder: evidence (code-detected failure signatures) → proposal → owner confirm → Pi implements in worktree → gates → merge → supervised restart. Tuning proposals and code proposals ride one governance rail; Falkor briefs sessions with prior experience ("similar change failed because X; successful approach was Y") and harvests outcomes after.
+
+### Phases (each shippable alone)
+- **A**: pi_build's CLI spawn → SDK adapter; events into metrics; identical external behavior.
+- **B**: worktree self-modification flow — gates, ledger-confirmed merges, dumb supervisor with rollback.
+- **C**: Falkor experience briefs into session context; post-session harvest (Pi events → graph, lessons harvester extended to Pi sessions).
+
+### Hygiene rules
+One change per session; always a branch; never chain unvalidated changes (no compounding drift); session budget caps; code-change proposals enter the autonomy ladder at propose_confirm (per-path promotion later, earned via logAutonomousAction track record).
+
+---
+
 ## Six Attempts to a 14-Minute Report — Stripping the Last Accommodations (August 16 2026, afternoon)
 
 ### The saga (each failure closed a class)
