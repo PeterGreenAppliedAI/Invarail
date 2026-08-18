@@ -153,6 +153,40 @@ The foreground promotion was decided by four instrumented head-to-heads (deep ev
 
 A `MultiBackendClient` routes each call by model id: foreground models to OpenAI-compatible servers (SGLang, vLLM, ds4), utility models to an Ollama-compatible gateway. Ollama-only setups work — see the eval for measured picks.
 
+## Capabilities at a Glance
+
+| Capability | Tools | Description |
+|-----------|-------|-------------|
+| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, default) or Brave/Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
+| Research | `web_search`, `web_fetch`, `code_session`, `reason` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
+| Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
+| Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only security gate |
+| Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands or Docker sandbox, persistent Python/Node/Bash REPL sessions, safe file I/O |
+| Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit`, `cron_run` | Real cron expressions, timezone-aware, persistent; `cron_run` triggers any job immediately without touching its schedule |
+| Task Board | `task_add`, `task_list`, `task_update`, `task_done`, `task_remove` | Persistent kanban-style task system with TASKS.md rendering |
+| Reasoning | `reason` | Forced synthesis pass over gathered tool observations — deep analysis, content formatting |
+| Messaging | `send_message` | Cross-channel message delivery (confirm-gated, grant-eligible) |
+| Browsing | `browser` | Dual-mode browser: DOM-first with automatic visual escalation (Xvfb + vision model). Click, type, select, fill forms on any site including SPAs |
+| Vision | *(automatic)* | Image analysis via the multimodal foreground model — descriptions injected into context for natural Q&A |
+| Voice | TTS/STT | Kokoro TTS + faster-whisper STT — voice in, voice out, with toggle hands-free mode |
+| Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from outcomes |
+| Data files | `code_session`, `read_file` | Upload CSV/Excel/JSON → pandas analysis in a persistent code session → charts + interpretation on request |
+| Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment). Experience informs execution; it never expands authority |
+| Lessons | `!lessons` *(+ automatic)* | Negative procedural memory — approach-level boundaries harvested from observed failures, injected only after recurrence (evidence ≥ 2) |
+| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become Invarail tools — stdio or streamable-HTTP, small-model description curation, schema-filtered params, per-server result budgets, readOnlyHint-aware confirm gating, fully-local OAuth |
+| Flow-first research | explicit tool naming | Name a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow in a research request and the pipeline uses its compiled searches as the facets+sources, then verifies and renders exactly as normal |
+| Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
+| Heartbeat | *(autonomous)* | Deterministic fact diff + LLM reasoning, auto-expire stale facts, interactive memory review |
+| Briefing | *(scheduled)* | 3x daily CoT reasoning about calendar + tasks + memory — contextual insights, not status dumps |
+| Knowledge Import | `knowledge_import` | Import PDFs, CSVs, markdown into a vector-searchable knowledge base |
+| Context Compaction | *(automatic)* | Structured compression (Goal/Progress/Next Steps), proactive at budget pressure, tool-pair sanitization |
+| Document Gen | `document` | Create and convert documents via LibreOffice headless — markdown in, code-owned styling out → PDF/DOCX/XLSX/PPTX |
+| Image Gen | `image_generate` | Text-to-image and img2img via Flux on dedicated hardware |
+| Code Generation | `pi_build` | Build code with the embedded [Pi](https://pi.dev) SDK — scaffold projects, write tests, auto-commit. Cwd-scoped arena, lifecycle-observed, externally test-gated |
+| Browser Companion | Chrome Extension | Side panel rides shotgun while you browse — summarize pages, ask about selected text, right-click context menus. Page content injected directly, no fetching |
+| Self-Improvement | *(automatic)* | Error learning store, tool-specific recovery guidance, drift detection, observation summarization, learning promotion via heartbeat |
+| CLI | `npm run cli` | Terminal interface with streaming, slash commands, markdown rendering, session persistence |
+
 ## Channels & Console
 
 **Channels:** Discord, Telegram, Slack, WhatsApp (Baileys, no Chrome), Gmail, Microsoft Graph, iMessage (BlueBubbles), Web API, and a **Chrome extension** side panel (page context injected directly — summarize/ask about any page, no fetching). Any platform can be added by implementing a 5-method `ChannelAdapter` — zero core changes. All adapters deliver file attachments (PDFs, images, documents).
@@ -197,6 +231,154 @@ security: {
 ```
 
 Set `ownerId`. `ownerOnlyTools` is a code gate — the tools don't exist in the model's world for anyone else.
+
+## Feature Guides
+
+### Management Console
+
+<img width="2554" height="1302" alt="Invarail management console" src="https://github.com/user-attachments/assets/a309e3d2-0bd5-4cf0-9806-0cbfeb1f0663" />
+
+- **Dashboard** — system status, backend health, channel connections, cron/memory stats
+- **Chat** — markdown rendering, inline charts, file uploads (images, PDFs), toggle voice mode with VAD
+- **Sessions** — browse all conversation transcripts across channels, with tool-call details
+- **Tasks** — kanban board with drag-to-advance, priorities
+- **Cron & Heartbeats** — view, toggle, run now, delete
+- **Memory** — search facts by sender, browse categories/tags/entities, consolidate
+- **Channels** — live connection status with reconnect buttons
+- **Tools** — all registered tools grouped by category with parameter schemas
+- **Config** — collapsible tree of the running configuration (secrets redacted)
+
+The console REST API lives at `/console/api/`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/status` | System health, model count, channel statuses |
+| GET | `/models` | List available models |
+| GET | `/config` | Running configuration (secrets redacted) |
+| GET | `/channels` · POST `/channels/:id/reconnect` | Channel status / reconnect |
+| GET/DELETE | `/sessions[/:agent/:key]` | List, load, delete transcripts |
+| GET/POST/PATCH/DELETE | `/tasks[/:id]` | Task CRUD |
+| GET/POST/PATCH/DELETE | `/cron[/:id]` · POST `/cron/:id/run` | Cron CRUD + run now |
+| GET | `/facts/all` · POST `/facts/consolidate` | Memory browse + consolidate |
+| GET | `/tools` | Registered tools with schemas |
+| POST | `/chat` | SSE-streaming chat (with image extraction) |
+| GET | `/files/:path` | Serve workspace files (charts, etc.) |
+
+### Voice (TTS/STT)
+
+- **STT** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) server; incoming voice messages are transcribed automatically.
+- **TTS** — [Kokoro](https://github.com/remsky/Kokoro-FastAPI); near-real-time synthesis (~150ms/sentence). Voice responses get a TTS-friendly prompt injection (no emojis, no markdown).
+
+The rule: **voice in → voice out, text in → text out.** Adapters without audio support ignore it gracefully.
+
+Two services on your inference node:
+
+```bash
+docker run -p 5005:8880 ghcr.io/remsky/kokoro-fastapi     # Kokoro TTS (OpenAI-compatible)
+faster-whisper-server --model large-v3 --device cuda       # STT (port 8000)
+```
+
+```env
+QWEN_TTS_URL=http://your-gpu-node:5005
+WHISPER_URL=http://your-gpu-node:8000
+```
+
+```json5
+tts: { enabled: true, url: "${QWEN_TTS_URL}", voice: "af_bella", format: "mp3" },
+stt: { enabled: true, url: "${WHISPER_URL}", model: "whisper-large-v3", language: "en" },
+```
+
+The console chat's **toggle voice mode** is hands-free: VAD detects when you stop speaking, transcribes, dispatches, plays the TTS reply, and resumes recording. A standalone hold-to-talk voice UI lives at `http://localhost:3100` with SSE progress streaming. Voice-originated chat uses a lighter model (`qwen2.5:7b`) for latency; tool-using categories keep the full specialist model.
+
+### Vision
+
+Incoming images run through the multimodal foreground model automatically: attachment saved → base64 to the vision model → description injected into the message context → routed as answerable chat. If vision fails, the message still processes with a note. Console chat accepts paste/drag-drop/paperclip uploads.
+
+```json5
+vision: { enabled: true, model: "qwen3.8-27b", maxTokens: 512 },
+```
+
+### WhatsApp
+
+Connects via [Baileys](https://github.com/WhiskeySockets/Baileys) (WebSocket, no Puppeteer/Chrome).
+
+1. `whatsapp: { enabled: true }` in config, start the bot
+2. A QR code appears in the terminal
+3. Phone: **WhatsApp → Settings → Linked Devices → Link a Device**, scan with WhatsApp's built-in scanner
+4. Session persists in `.baileys_auth/` — restarts reconnect automatically
+
+Re-link (expired session): `rm -rf .baileys_auth` and restart. WhatsApp may unlink devices after ~14 days of inactivity; reconnection is automatic, full logout needs a re-scan.
+
+### Document Generation
+
+```
+document[{"action": "create", "content": "# Report\n...", "format": "pdf", "filename": "report"}]
+document[{"action": "convert", "inputPath": "data.csv", "format": "xlsx"}]
+```
+
+Formats: PDF, DOCX, XLSX, PPTX, HTML, CSV, TXT, ODT, ODS, ODP. Models write markdown; code owns styling and HTML — models never author publish-path structure. Output delivered as channel attachments via the `[FILE:]` token system (stripped from model observations so paths can't be rewritten, re-appended for delivery). Requires LibreOffice (`brew install --cask libreoffice`; `SOFFICE_PATH` env override).
+
+### Task Board
+
+Persistent kanban tasks (`tasks.json` → rendered `TASKS.md`): priorities, assignees, due dates, tags. "Add a task to buy groceries" / "show my tasks" / "mark a1b2c3d4 done". `TASKS.md` is protected — the bot mutates it only through the TaskStore. Urgency tiers and calendar-day labels are computed **in code** (`src/temporal/`); models receive pre-labeled data with labels marked authoritative — no hallucinated urgency, no wrong-day events.
+
+### Heartbeat
+
+Every 2 hours, fully deterministic in structure — code decides what to review, the LLM reasons about it: transcript review (fact extraction), learning promotion (3+ recurrences → `LEARNINGS.md`), media cleanup, fact auto-expiry, dedup, fact diff + LLM reasoning over new/removed facts, code-driven task urgency, and 2-3 review candidates surfaced during waking hours.
+
+Interactive review: `!heartbeat yes` (confirm all) · `!heartbeat no` (remove all — recorded, won't re-extract) · `!heartbeat no 2` (remove only #2). Manual triggers: `!cleanup`, `!promote`.
+
+### Briefing
+
+Separate from heartbeat: 8:00am, 1:15pm, 5:00pm. Gathers calendar + tasks + memory directly via the tool executor, flags stale facts, then CoT reasoning about connections and conflicts — morning ("what to prepare for"), afternoon ("what's left"), evening ("anything to prep tonight").
+
+```json5
+heartbeat: {
+  enabled: true,
+  schedule: "0 */2 * * *",
+  delivery: { channel: "discord", target: "<channel-or-user-id>" },
+},
+```
+
+### Plan Pipeline (multi-step tasks)
+
+For "search Eventbrite for tech events near X, then add one to my task list"-class requests — the model plans, code executes:
+
+1. **Plan** — LLM emits steps as `{tool, params, purpose}` JSON
+2. **Self-reflect** — LLM critiques its own plan (missing snapshots, bad ordering, placeholder params, blind first-result selection) and revises
+3. **Execute loop** — code iterates, calling tools directly: smart content selection from rendered page text, dynamic param resolution from real page data, DOM-first browser with automatic visual-mode escalation (Xvfb + vision model + pixel coordinates) only when DOM interaction fails
+4. **Verify** — per-step success checks; failures get one LLM-adjusted retry
+5. **Summarize + record** — outcomes become graph `:Experience` nodes judged by the user's actual reaction
+
+**Foreman handoffs:** specialists receive structured briefings (task, plan context, prior-step status + artifact paths) with full results on disk at `.plan-artifacts/step-N.txt` — `read_file` on demand instead of prompt bloat. All pipeline dispatches run context-isolated (no parent session history).
+
+### Context Compaction
+
+Budget-aware sliding window: short conversations pass through untouched; long ones split into a verbatim recent zone and an archive zone that gets memory-flushed (facts → MEMORY.md, hash-deduped) and summarized. Tool observations trim in-place during long loops. Compaction failure degrades to turn-count truncation; raw transcripts are never modified.
+
+```json5
+session: { contextSize: 32768, recentTurnsToKeep: 6, maxHistoryTurns: 100 },
+```
+
+### Workspace System
+
+Per-agent markdown injected into context: `SOUL.md` (persona + per-channel behavior), `USER.md`, `IDENTITY.md`, `MEMORY.md`, `HEARTBEAT.md`, `TOOLS.md`, `TASKS.md` (protected). Channel-aware: the bot knows its source channel per message, so SOUL.md can define different rules per platform. Tool-using specialists get minimal workspace context to preserve token budget; chat gets full.
+
+### CLI
+
+`npm run cli` — terminal interface with streaming, markdown rendering, tool-call visualization, and slash commands (`/status`, `/model`, `/tools`, `/pipelines`, `/tasks`, `/sessions`, `/research`, `/compress`, `/reset`).
+
+### Self-Improvement Layers
+
+1. **Error learning store** — tool failures recorded to `.learnings/errors.jsonl`; matching hints prepended before future executions
+2. **Pattern matching** — observations scanned for 8 known error patterns, enriched with tool-specific recovery guidance
+3. **Drift detection** — repeated calls, hedging language, growing responses → re-anchor prompt with the original request
+4. **Post-task review** — quality check on tool-heavy responses, corrections logged
+5. **Learning promotion** — recurring patterns (3+) promoted to `LEARNINGS.md` by heartbeat
+
+### Router Training Data
+
+Every `!reset` and compaction harvests `{message, category}` pairs into `data/training/router-pairs.jsonl` — a dataset of the *owner's actual phrasing*, not generic benchmarks, for eventually fine-tuning a smaller, faster router than few-shot phi4.
 
 ## Repository Map
 
@@ -253,9 +435,18 @@ Exec allowlist or Docker sandbox · SSRF protection on all fetchers · path-trav
 
 ## Attribution
 
-Patterns adapted (and re-engineered for small local models) from: **[Hermes Agent](https://github.com/nousresearch/hermes-agent)** (structured context compression, frozen memory snapshots, smart model routing), **[Deep Agents](https://github.com/langchain-ai/deepagents)** (progressive disclosure, subagent context isolation), **[agent-reasoning](https://github.com/jasperan/agent-reasoning)** (plan self-reflection), **[Goose](https://github.com/aaif-goose/goose)** (tool-specific error recovery, typed sub-dispatch results, LLM observation summarization). Those frameworks assume frontier models drive the agent; Invarail's contribution is making the patterns hold when a 27B is driving — deterministic pipelines control flow, code owns authority, and the model does the parts that require judgment.
+Several architectural patterns were adapted from open source agent frameworks:
 
-Coding substrate: **[Pi](https://pi.dev)** by Earendil Works (MIT).
+| Project | What We Adapted |
+|---------|----------------|
+| **[Hermes Agent](https://github.com/nousresearch/hermes-agent)** (NousResearch) | Structured context compression (Goal/Progress/Next Steps), frozen memory snapshots, character-bounded memory, smart model routing, tool-pair sanitization, CLI inspiration |
+| **[Deep Agents](https://github.com/langchain-ai/deepagents)** (LangChain) | Progressive disclosure (compact index, read on demand), subagent context isolation, tool argument truncation in older messages |
+| **[agent-reasoning](https://github.com/jasperan/agent-reasoning)** (jasperan) | Self-reflection stage for the plan pipeline (draft → critique → improve) |
+| **[Goose](https://github.com/aaif-goose/goose)** (AAIF/Block) | Tool-specific error recovery (errors as actionable prompts), structured sub-dispatch results, LLM-based observation summarization |
+
+Those frameworks assume frontier models drive the agent. Invarail's contribution is making the patterns hold when a local 27B is driving — deterministic pipelines control flow, code owns authority, and the model does only the parts that require judgment.
+
+Coding substrate: **[Pi](https://pi.dev)** by Earendil Works (MIT, embedded via SDK).
 
 ## Roadmap
 
