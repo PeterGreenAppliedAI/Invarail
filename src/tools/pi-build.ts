@@ -1,32 +1,24 @@
-import { spawn } from 'node:child_process';
 import { mkdirSync, readdirSync, statSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { z } from 'zod';
 import type { InvarailTool, ToolContext } from './types.js';
 import type { PiConfigSchema } from '../config/schema.js';
+import { PiCodingAdapter } from '../coding/pi-session.js';
 
 type PiConfig = z.infer<typeof PiConfigSchema>;
 
 /**
- * Pi (picoder) build tool — CODE-DRIVEN coding agent, replaces OpenCode.
+ * Pi build tool — CODE-DRIVEN coding agent, driven through the Pi SDK adapter
+ * (src/coding/pi-session.ts), not a CLI spawn.
  *
  * Inversion of control kept intact: the code_gen pipeline owns the workflow (enrich → build →
- * verify → fix → report); this tool is the bounded "make the files" slot. Unlike OpenCode there is
- * NO server, NO global session DB, and NO snapshot/move hack — Pi runs cwd-scoped to the project
- * directory, so files land where they belong and the agent can't write outside the build dir by
- * default (the package.json-overwrite class of bug is structurally prevented).
+ * verify → fix → report); this tool is the bounded "make the files" slot. Pi runs cwd-scoped to
+ * the project directory (SDK tools are bound to the session cwd), so files land where they belong
+ * and the agent can't write outside the build dir by default.
  *
  * Returns a string containing `Project directory: <dir>` and `session: <slug>` so the existing
  * code_gen pipeline's extractors keep working unchanged.
  */
-
-// Resolve the Pi CLI (dist/cli.js) as a sibling of the package's main export. The package only
-// exposes the ESM `import` condition (no `require`), so use the ESM resolver, not createRequire.
-function piCliPath(): string {
-  const mainUrl = import.meta.resolve('@earendil-works/pi-coding-agent'); // file://…/dist/index.js
-  return join(dirname(fileURLToPath(mainUrl)), 'cli.js');
-}
 
 function slugify(name: string): string {
   return name
@@ -48,22 +40,6 @@ const QUALITY_STANDARDS = [
   '- Include a dependency file (package.json, requirements.txt, go.mod) with correct dependencies.',
 ].join('\n');
 
-function runPi(cliPath: string, args: string[], cwd: string, timeout: number): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise(resolve => {
-    // stdin MUST be ignored (/dev/null). Pi's print mode reads stdin to merge piped input, so an
-    // open inherited stdin pipe makes it block forever waiting for EOF that never comes. 'ignore'
-    // gives it immediate EOF. (This is why an interactive-shell run worked but a spawned one hung.)
-    const child = spawn('node', [cliPath, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '';
-    const CAP = 8 * 1024 * 1024;
-    child.stdout.on('data', d => { if (stdout.length < CAP) stdout += d.toString(); });
-    child.stderr.on('data', d => { if (stderr.length < CAP) stderr += d.toString(); });
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
-    child.on('close', code => { clearTimeout(timer); resolve({ code: code ?? 1, stdout, stderr }); });
-    child.on('error', err => { clearTimeout(timer); resolve({ code: 1, stdout, stderr: stderr + String(err) }); });
-  });
-}
-
 function listFiles(dir: string, prefix = ''): string[] {
   const out: string[] = [];
   try {
@@ -78,7 +54,8 @@ function listFiles(dir: string, prefix = ''): string[] {
   return out;
 }
 
-export function createPiBuildTool(config: PiConfig): InvarailTool {
+export function createPiBuildTool(config: PiConfig, adapter?: PiCodingAdapter): InvarailTool {
+  const pi = adapter ?? new PiCodingAdapter(config);
   return {
     name: 'pi_build',
     description: `Build code with the Pi coding agent. Pi reads, writes, and edits files in an isolated project directory to implement the requested feature or project.
@@ -126,28 +103,19 @@ Returns the project directory and a list of files created.`,
         fullPrompt = prompt + '\n' + QUALITY_STANDARDS;
       }
 
-      const cliPath = piCliPath();
-      // -p print mode, -a trust this run (non-interactive), tools allowlisted, cwd = projectDir so
-      // every write is scoped to the build dir. --no-context-files is important: Pi otherwise walks
-      // UP from the build dir and loads AGENTS.md/CLAUDE.md — which would pull Invarail's OWN
-      // CLAUDE.md (the build dir lives inside this repo) into every unrelated build. The pipeline's
-      // enriched spec + quality standards are the single source of build instructions.
-      const args = [
-        '-p',
-        '--no-context-files',
-        '--model', model,
-        '--api-key', config.apiKey,
-        '--tools', config.tools.join(','),
-        '-a',
-        fullPrompt,
-      ];
+      console.log(`[Pi] ${isFix ? 'Fixing' : 'Building'} "${slug}" with ${model} (cwd-scoped, SDK)...`);
+      let result;
+      try {
+        result = await pi.runSession({ prompt: fullPrompt, cwd: projectDir, model, label: slug });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `Pi build failed: ${msg.slice(0, 500)}\nProject directory: ${projectDir}\nsession: ${slug}`;
+      }
 
-      console.log(`[Pi] ${isFix ? 'Fixing' : 'Building'} "${slug}" with ${model} (cwd-scoped)...`);
-      const result = await runPi(cliPath, args, projectDir, config.timeout);
-
-      if (result.code !== 0 && !readdirSync(projectDir).some(f => !f.startsWith('.'))) {
-        // Non-zero exit AND nothing written — a real failure, surface it.
-        return `Pi build failed (exit ${result.code}): ${(result.stderr || result.stdout).slice(0, 500)}\nProject directory: ${projectDir}\nsession: ${slug}`;
+      if (!result.ok && !readdirSync(projectDir).some(f => !f.startsWith('.'))) {
+        // Failed AND nothing written — a real failure, surface it.
+        const reason = result.timedOut ? `timed out after ${config.timeout}ms` : (result.error ?? 'unknown error');
+        return `Pi build failed (${reason.slice(0, 500)})\nProject directory: ${projectDir}\nsession: ${slug}`;
       }
 
       const files = listFiles(projectDir);
