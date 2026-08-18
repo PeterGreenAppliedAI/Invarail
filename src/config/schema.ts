@@ -317,6 +317,18 @@ export const PiConfigSchema = z.object({
   }).default({}),
 });
 
+// Self-modification (Phase B): Pi implements changes to Invarail's OWN repo in isolated git
+// worktrees; merges are gate-checked and ALWAYS owner-confirmed via the pending-action ledger.
+export const SelfModConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  // Extends the built-in Tier-3 protected-path list (merge-gate.ts). Config may only ADD
+  // paths — the built-ins are code-clamped and cannot be removed from here.
+  protectedPathsExtra: z.array(z.string()).default([]),
+  // Pi session budget for a self-mod worktree session; falls back to pi.timeout when unset.
+  sessionTimeoutMs: z.number().optional(),
+  gateTimeoutMs: z.number().default(600000),    // tsc + full suite in the worktree
+});
+
 export const ImageGenConfigSchema = z.object({
   enabled: z.boolean().default(false),
   url: z.string().default('http://127.0.0.1:11434'),
@@ -512,6 +524,7 @@ export const InvarailConfigSchema = z.object({
   vision: VisionConfigSchema.default({}),
   imageGen: ImageGenConfigSchema.default({}),
   pi: PiConfigSchema.default({}),
+  selfMod: SelfModConfigSchema.default({}),
   voice: VoiceConfigSchema.default({}),
   heartbeat: HeartbeatConfigSchema.optional(),
 });

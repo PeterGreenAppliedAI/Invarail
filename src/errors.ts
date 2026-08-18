@@ -14,7 +14,8 @@ export type ErrorCode =
   | 'SESSION_IO_ERROR'
   | 'PIPELINE_STAGE_ERROR'
   | 'PIPELINE_EXTRACT_FAILURE'
-  | 'MCP_SERVER_ERROR';
+  | 'MCP_SERVER_ERROR'
+  | 'SELF_MOD_ERROR';
 
 export class InvarailError extends Error {
   constructor(
@@ -93,4 +94,8 @@ export function pipelineExtractFailure(stage: string, raw: string): InvarailErro
 export function mcpServerError(server: string, cause: unknown): InvarailError {
   const msg = cause instanceof Error ? cause.message : String(cause);
   return new InvarailError('MCP_SERVER_ERROR', `MCP server "${server}" error: ${msg}`, cause);
+}
+
+export function selfModError(details: string, cause?: unknown): InvarailError {
+  return new InvarailError('SELF_MOD_ERROR', `Self-modification: ${details}`, cause);
 }
