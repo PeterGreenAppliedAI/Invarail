@@ -27,6 +27,14 @@ The Pi duel (2026-08-15): Pi + qwen3.8 autonomously produced 12/12 contract-grad
 ### Hygiene rules
 One change per session; always a branch; never chain unvalidated changes (no compounding drift); session budget caps; code-change proposals enter the autonomy ladder at propose_confirm (per-path promotion later, earned via logAutonomousAction track record).
 
+### Memory integration (added same day — NO second memory system)
+FalkorDB is Invarail's institutional memory; Pi becomes one worker that learns from it and contributes VERIFIED experience back. Existing machinery reused wholesale: coding experiences are ordinary Facts (imp 5 = system invariants, 4 = validated conventions/proven lessons, 3 = prior successes/failures, 1-2 = ephemeral debugging, natural decay); SUPERSEDES handles evolving engineering truth ("web_fetch rejects Atom" → superseded by "supports XML-family as of commit abc"); Turn extends with source:"pi" + session/task/repo/commit/model/thinking → provenance answers "why do we believe this" all the way down to the session JSONL. Four components only:
+1. **PiCodingAdapter** — Invarail → Pi SDK (Phase A artifact).
+2. **CodingMemoryContext** — pre-session Falkor retrieval → small experience packet (relevance floor + item cap + repo-scoped tags, same discipline as chat priming — never the whole transcript of last time).
+3. **PiMemorySearch** — read-only Falkor search as a project-local .pi/extensions tool hitting the console API. Read-only FOREVER, not initially: the model asking is fine; the model asserting into memory is the authority boundary. Invarail extracts; the model never writes.
+4. **PiExperienceRecorder** — HALF-BUILT ALREADY: extend the lesson-harvester's sources to Pi session JSONL (failures → lessons, code-detected, marker-tracked, never model self-assessment); validated positives → Facts via the existing extraction path. The merge-gate validation event and the memory verified:true flag are the SAME event — a memory can never claim a success the gate didn't witness. PR-merged strengthens; PR-reverted supersedes to long_term_failure.
+Later (record now, route when n is meaningful): task-category → model → effort → outcome tuples accumulate on Pi Turns from day one; experience-based routing proposals arrive as config-overlay changes on the ladder, never silent behavior shifts.
+
 ---
 
 ## Six Attempts to a 14-Minute Report — Stripping the Last Accommodations (August 16 2026, afternoon)
