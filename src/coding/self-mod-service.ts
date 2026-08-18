@@ -216,7 +216,9 @@ export class SelfModService {
   private autoCommitLeftovers(worktreePath: string, slug: string): void {
     const status = this.git(['status', '--porcelain'], worktreePath);
     if (!status.trim()) return;
-    this.git(['add', '-A'], worktreePath);
+    // node_modules is a copied arena artifact, never content — exclude it defensively
+    // (the gate's forbidden-files check backstops Pi committing it directly).
+    this.git(['add', '-A', '--', ':(exclude)node_modules'], worktreePath);
     try {
       this.git(['commit', '-q', '-m', `self-mod: ${slug} (auto-commit of uncommitted session output)`], worktreePath);
     } catch { /* nothing staged (e.g. only ignored files) */ }

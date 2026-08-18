@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -109,10 +110,21 @@ export class SelfModWorktrees {
     // main (safe while package-lock is unchanged; the gate forces real npm ci + Tier 3 when the
     // diff touches package files). data/ is gitignored too, and the routing-eval test reads
     // data/training cwd-relative — symlink just that allowlisted subdir, nothing else.
+    // COPY node_modules (APFS clonefile: near-instant, copy-on-write), never symlink it:
+    // tsc resolves realpaths, so a symlink makes inferred types reference paths outside the
+    // worktree (TS2742 "not portable") — and a symlink isn't matched by .gitignore's
+    // "node_modules/" dir pattern, so git add -A would commit it. Both found live.
     const mainNodeModules = join(this.repoRoot, 'node_modules');
     const wtNodeModules = join(worktreePath, 'node_modules');
     if (existsSync(mainNodeModules) && !existsSync(wtNodeModules)) {
-      symlinkSync(mainNodeModules, wtNodeModules, 'dir');
+      const real = realpathSync(mainNodeModules);
+      const clone = spawnSync('cp', ['-Rc', real, wtNodeModules], { timeout: 300_000 });
+      if (clone.status !== 0) {
+        const plain = spawnSync('cp', ['-R', real, wtNodeModules], { timeout: 600_000 });
+        if (plain.status !== 0) {
+          throw selfModError(`node_modules copy failed: ${(plain.stderr ?? '').toString().slice(0, 200)}`);
+        }
+      }
     }
     // data/ is gitignored EXCEPT tracked files (data/training/routing-eval.jsonl is committed),
     // so a fresh worktree may already have this path checked out — symlink only when absent.

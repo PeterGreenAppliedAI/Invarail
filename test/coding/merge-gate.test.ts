@@ -97,11 +97,24 @@ describe('runMergeGate', () => {
     expect(v.checks.map(c => c.name)).toEqual(['tsc']);
   });
 
+  it('forbidden files: a branch touching node_modules or data/ hard-fails before checks', async () => {
+    const baseSha = git(repo, 'rev-parse', 'HEAD');
+    commitChange('node_modules', 'i am a committed symlink artifact\n');
+    const recorder: CheckRunner = vi.fn(async name => ({ name, pass: true, output: 'ok', durationMs: 1 }));
+    const v = await runMergeGate({ worktreePath: worktree, baseSha, checkRunner: recorder });
+    expect(v.pass).toBe(false);
+    expect(v.checks[0].name).toBe('foreign-files');
+    expect(v.checks[0].output).toContain('node_modules');
+    expect(recorder).not.toHaveBeenCalled(); // fails before spending gate time
+  });
+
   it('deps change: removes node_modules symlink, runs npm ci first, Tier 3', async () => {
     mkdirSync(join(repo, 'node_modules'), { recursive: true });
     symlinkSync(join(repo, 'node_modules'), join(worktree, 'node_modules'), 'dir');
     const baseSha = git(repo, 'rev-parse', 'HEAD');
-    commitChange('package.json', '{"name":"x"}\n');
+    writeFileSync(join(worktree, 'package.json'), '{"name":"x"}\n');
+    git(worktree, 'add', 'package.json'); // explicit path — add -A would sweep the symlink (the forbidden-files case)
+    git(worktree, 'commit', '-q', '-m', 'deps change');
     const calls: string[] = [];
     const recorder: CheckRunner = async (name) => { calls.push(name); return { name, pass: true, output: 'ok', durationMs: 1 }; };
     const v = await runMergeGate({ worktreePath: worktree, baseSha, checkRunner: recorder });

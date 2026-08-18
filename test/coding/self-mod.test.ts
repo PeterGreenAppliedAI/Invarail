@@ -17,10 +17,11 @@ function makeRepo(): string {
   git(dir, 'config', 'user.name', 'test');
   git(dir, 'config', 'commit.gpgsign', 'false');
   writeFileSync(join(dir, 'file.txt'), 'v1\n');
+  writeFileSync(join(dir, '.gitignore'), 'node_modules/\ndata/\n'); // mirrors the real repo's dir patterns
   mkdirSync(join(dir, 'node_modules'), { recursive: true });
   mkdirSync(join(dir, 'data', 'training'), { recursive: true });
   writeFileSync(join(dir, 'data', 'training', 'pairs.jsonl'), '{}\n');
-  git(dir, 'add', 'file.txt');
+  git(dir, 'add', 'file.txt', '.gitignore');
   git(dir, 'commit', '-q', '-m', 'init');
   return dir;
 }
@@ -35,15 +36,20 @@ describe('SelfModWorktrees', () => {
   });
   afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
-  it('creates a worktree on a self-mod branch with symlinked node_modules and data/training', () => {
+  it('creates a worktree on a self-mod branch with COPIED node_modules and symlinked data/training', () => {
+    writeFileSync(join(repo, 'node_modules', 'probe.txt'), 'dep\n');
     const active = wt.create('add-widget');
     expect(active.branch).toBe('self-mod/add-widget');
     expect(active.baseSha).toBe(git(repo, 'rev-parse', 'HEAD'));
     expect(existsSync(join(active.worktreePath, 'file.txt'))).toBe(true);
-    expect(lstatSync(join(active.worktreePath, 'node_modules')).isSymbolicLink()).toBe(true);
+    // node_modules must be a real copy — symlinks break tsc realpath resolution (TS2742)
+    // and evade .gitignore's dir-only "node_modules/" pattern
+    expect(lstatSync(join(active.worktreePath, 'node_modules')).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(active.worktreePath, 'node_modules', 'probe.txt'))).toBe(true);
     expect(lstatSync(join(active.worktreePath, 'data', 'training')).isSymbolicLink()).toBe(true);
     expect(git(active.worktreePath, 'branch', '--show-current')).toBe('self-mod/add-widget');
     expect(wt.getState().active?.slug).toBe('add-widget');
+    expect(git(active.worktreePath, 'status', '--porcelain')).not.toContain('node_modules');
   });
 
   it('creates a worktree when data/training is TRACKED (checked out, not symlinked)', () => {

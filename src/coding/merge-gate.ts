@@ -150,6 +150,17 @@ export async function runMergeGate(opts: MergeGateOptions): Promise<GateVerdict>
   const checks: GateCheck[] = [];
   let depsReinstalled = false;
 
+  // Foreign objects: arena artifacts (node_modules copy) and runtime data must never enter a
+  // merge, no matter how they got committed. Hard fail before spending gate time.
+  const forbidden = touchedFiles.filter(f => f === 'node_modules' || f.startsWith('node_modules/') || f.startsWith('data/'));
+  if (forbidden.length > 0) {
+    checks.push({ name: 'foreign-files', pass: false, output: `branch touches arena/runtime paths: ${forbidden.slice(0, 10).join(', ')}`, durationMs: 0 });
+    return {
+      pass: false, tier, touchedFiles, protectedTouched, gateConfigTampered,
+      depsReinstalled, checks, baseSha: opts.baseSha, headSha, durationMs: Date.now() - start,
+    };
+  }
+
   // Dependency changes invalidate the node_modules symlink AND must never install through it
   // (that would mutate the main tree's deps from inside the arena) — real, isolated npm ci.
   const depsTouched = touchedFiles.some(f => f === 'package.json' || f === 'package-lock.json');
