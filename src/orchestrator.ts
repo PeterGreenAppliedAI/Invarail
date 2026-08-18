@@ -16,6 +16,8 @@ import { dispatchMessage } from './dispatch.js';
 import { logAutonomousAction } from './metrics.js';
 import { pendingActions } from './security/pending-actions.js';
 import { standingGrants } from './security/grants.js';
+import { SelfModService } from './coding/self-mod-service.js';
+import { isOwner } from './identity/principal.js';
 import { appendRunRecord, appendDeadLetter, scanArtifacts, listDeadLetters } from './cron/run-log.js';
 import { handleConfirmation } from './security/confirm-handler.js';
 import { PrepContextStore, captureBriefingAnswer } from './services/prep-context.js';
@@ -74,6 +76,7 @@ export class Orchestrator {
   private embeddingStore?: EmbeddingStore;
   private webIndex?: import('./webindex/service.js').WebIndexService;
   private mcpManager?: import('./mcp/manager.js').McpManager;
+  private selfModService?: SelfModService;
   /** sessionKey → full inbound messages typed while that session's dispatch is
    *  running (full messages so undrained leftovers can replay as normal traffic) */
   private steeringQueues = new Map<string, InboundMessage[]>();
@@ -229,6 +232,22 @@ export class Orchestrator {
     );
     const taskStore = this.taskStore;
 
+    // Self-modification service (Phase B) — worktree arenas, gate, ledger-confirmed merges.
+    // exit(42) is the supervisor handshake: "deploy restart requested" (0 = intentional stop).
+    if (this.config.selfMod?.enabled) {
+      this.selfModService = new SelfModService({
+        config: this.config,
+        onRestartRequested: () => {
+          setTimeout(async () => {
+            console.log('[SelfMod] Exiting 42 for supervised deploy restart');
+            await this.stop().catch(() => undefined);
+            process.exit(42);
+          }, 3000); // grace for the confirmation reply to reach the channel
+        },
+      });
+      this.selfModService.bootSweep();
+    }
+
     // Register all tools
     const { embeddingStore, mcpManager, webIndex } = await registerAllTools(this.toolRegistry, this.config, {
       cronService: this.cronService,
@@ -238,6 +257,7 @@ export class Orchestrator {
       heartbeatConfig: this.config.heartbeat,
       factStore: this.factStore,
       graphMemory: this.graphMemory,
+      selfModService: this.selfModService,
     });
     this.embeddingStore = embeddingStore;
     this.mcpManager = mcpManager;
@@ -1081,6 +1101,31 @@ export class Orchestrator {
       return;
     }
 
+    if (trimmed.startsWith('!improve')) {
+      // Owner-only, and silently so — the command does not exist for anyone else.
+      if (!isOwner(msg.senderId, this.config)) return;
+      const args = trimmed.slice('!improve'.length).trim();
+      const target = { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id };
+      let replyText: string;
+      if (!this.selfModService) {
+        replyText = 'Self-modification is disabled — set `selfMod.enabled: true` in config.';
+      } else if (args === '' || args === 'status') {
+        replyText = (args === '' ? 'Usage: `!improve <what to change>` · `!improve status` · `!improve abandon`\n' : '') + this.selfModService.status();
+      } else if (args === 'abandon') {
+        replyText = this.selfModService.abandon();
+      } else {
+        replyText = `🔧 Self-mod session starting: "${args.slice(0, 120)}" — Pi builds in an isolated worktree; gate results and a confirm request will follow.`;
+        void this.selfModService.propose(args, principal, msg.channel)
+          .then(res => this.channelRegistry.send(target, { text: res.reply }))
+          .catch(err => this.channelRegistry.send(target, { text: `Self-mod failed: ${err instanceof Error ? err.message : String(err)}` }))
+          .catch(err => console.warn('[Orchestrator] Failed to send self-mod result:', err instanceof Error ? err.message : err));
+      }
+      await this.channelRegistry.send(target, { text: replyText }).catch((err) => {
+        console.warn('[Orchestrator] Failed to send improve reply:', err instanceof Error ? err.message : err);
+      });
+      return;
+    }
+
     if (trimmed.startsWith('!grants')) {
       const args = trimmed.slice('!grants'.length).trim();
       let replyText: string;
@@ -1343,7 +1388,7 @@ export class Orchestrator {
     if (trimmed.startsWith('!') && !/^![12]\b/.test(trimmed)) {
       await this.channelRegistry.send(
         { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
-        { text: `Unknown command \`${trimmed.split(/\s/)[0]}\`. Available:\n\`!reset\` \`!save\` \`!discard\` \`!forget <term>\` \`!heartbeat\` \`!autonomy\` \`!grants\` \`!lessons\` \`!experiences\` \`!blender <request>\` \`!research <topic>\`` },
+        { text: `Unknown command \`${trimmed.split(/\s/)[0]}\`. Available:\n\`!reset\` \`!save\` \`!discard\` \`!forget <term>\` \`!heartbeat\` \`!autonomy\` \`!grants\` \`!lessons\` \`!experiences\` \`!blender <request>\` \`!research <topic>\` \`!improve <change>\`` },
       ).catch(() => {});
       return;
     }

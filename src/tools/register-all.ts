@@ -56,6 +56,7 @@ export interface RegisterToolsOptions {
   heartbeatConfig?: import('../config/types.js').HeartbeatConfig;
   factStore?: import('../memory/fact-store.js').FactStore;
   graphMemory?: import('../memory/graph-store.js').GraphMemoryStore;
+  selfModService?: import('../coding/self-mod-service.js').SelfModService;
 }
 
 export interface RegisterToolsResult {
@@ -210,6 +211,14 @@ export async function registerAllTools(
   if (config.pi?.enabled) {
     registry.register(createPiBuildTool(config.pi));
     console.log(`[Tools] Pi registered (${config.pi.model})`);
+  }
+
+  // Self-modification merge executor — ledger-only (never in any specialist's tools list;
+  // models cannot see it). Registered so the confirm path can execute stored actions.
+  if (config.selfMod?.enabled && options?.selfModService) {
+    const { createSelfMergeTool } = await import('./self-merge.js');
+    registry.register(createSelfMergeTool(options.selfModService));
+    console.log('[Tools] self_merge registered (ledger-only)');
   }
 
   // Workspace tools (always available)

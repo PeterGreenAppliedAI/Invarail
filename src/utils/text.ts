@@ -29,3 +29,13 @@ export function splitFinalMessage(text: string, limit: number): string[] {
   }
   return chunks;
 }
+
+/** Lowercase-kebab slug bounded to 50 chars; falls back to a timestamped name. */
+export function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50) || `build-${Date.now()}`;
+}

@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import type { InvarailTool, ToolContext } from './types.js';
 import type { PiConfigSchema } from '../config/schema.js';
 import { PiCodingAdapter } from '../coding/pi-session.js';
+import { slugify } from '../utils/text.js';
 
 type PiConfig = z.infer<typeof PiConfigSchema>;
 
@@ -19,15 +20,6 @@ type PiConfig = z.infer<typeof PiConfigSchema>;
  * Returns a string containing `Project directory: <dir>` and `session: <slug>` so the existing
  * code_gen pipeline's extractors keep working unchanged.
  */
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 50) || `build-${Date.now()}`;
-}
 
 const QUALITY_STANDARDS = [
   '',
