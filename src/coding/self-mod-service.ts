@@ -26,6 +26,7 @@ const SELF_MOD_GUARDRAILS = [
   '- Read CLAUDE.md first for architecture and code standards.',
   '- Verify your work: run `npx tsc --noEmit` and the relevant tests with `npx vitest run <path>`.',
   '- COMMIT your changes with git when done (git add + git commit). Uncommitted work does not count.',
+  '- A read-only memory_search tool may be available: search prior experience before choosing an approach.',
 ].join('\n');
 
 export interface SelfModServiceOptions {
@@ -40,6 +41,9 @@ export interface SelfModServiceOptions {
   /** Memory integration (Phase C) — absent: memory writes are skipped, everything else works */
   graphMemory?: import('../memory/graph-store.js').GraphMemoryStore;
   experienceStore?: import('../memory/experience-store.js').ExperienceStore;
+  /** For the lesson brief + memory_search callback (lessons need embeddings) */
+  client?: import('../ollama/client.js').OllamaClient;
+  workspacePath?: string;
 }
 
 export interface ProposeResult {
@@ -59,6 +63,7 @@ export class SelfModService {
   private readonly onRestartRequested?: () => void;
   private readonly graphMemory?: import('../memory/graph-store.js').GraphMemoryStore;
   private readonly experienceStore?: import('../memory/experience-store.js').ExperienceStore;
+  private readonly memoryDeps: import('./coding-memory.js').CodingMemoryDeps;
   private busy = false;
 
   constructor(opts: SelfModServiceOptions) {
@@ -74,6 +79,13 @@ export class SelfModService {
     this.onRestartRequested = opts.onRestartRequested;
     this.graphMemory = opts.graphMemory;
     this.experienceStore = opts.experienceStore;
+    this.memoryDeps = {
+      experienceStore: opts.experienceStore,
+      graphMemory: opts.graphMemory,
+      client: opts.client,
+      ownerId: opts.config.ownerId,
+      workspacePath: opts.workspacePath,
+    };
   }
 
   bootSweep(): void {
@@ -167,10 +179,14 @@ export class SelfModService {
       const active = this.worktrees.create(slug, spec);
       console.log(`[SelfMod] Worktree ${active.worktreePath} (base ${active.baseSha.slice(0, 8)})`);
 
+      const { buildPriorExperienceBrief, buildMemorySearchCallback } = await import('./coding-memory.js');
+      const brief = await buildPriorExperienceBrief(spec, this.memoryDeps).catch(() => '');
       const session = await this.adapter.runSession({
-        prompt: spec + '\n' + SELF_MOD_GUARDRAILS,
+        prompt: spec + brief + '\n' + SELF_MOD_GUARDRAILS,
         cwd: active.worktreePath,
         label: `self-mod:${slug}`,
+        taskCategory: 'self_mod',
+        memorySearch: buildMemorySearchCallback(this.memoryDeps),
       });
       this.worktrees.updateActive({ sessionId: session.sessionId, sessionFile: session.sessionFile });
 

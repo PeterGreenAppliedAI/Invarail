@@ -240,6 +240,8 @@ export class Orchestrator {
         config: this.config,
         graphMemory: this.graphMemory,
         experienceStore: sharedExperienceStore(this.client),
+        client: this.client,
+        workspacePath: defaultWorkspace,
         onRestartRequested: () => {
           setTimeout(async () => {
             console.log('[SelfMod] Exiting 42 for supervised deploy restart');

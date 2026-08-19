@@ -46,7 +46,7 @@ function listFiles(dir: string, prefix = ''): string[] {
   return out;
 }
 
-export function createPiBuildTool(config: PiConfig, adapter?: PiCodingAdapter): InvarailTool {
+export function createPiBuildTool(config: PiConfig, adapter?: PiCodingAdapter, memory?: import('../coding/coding-memory.js').CodingMemoryDeps): InvarailTool {
   const pi = adapter ?? new PiCodingAdapter(config);
   return {
     name: 'pi_build',
@@ -98,7 +98,14 @@ Returns the project directory and a list of files created.`,
       console.log(`[Pi] ${isFix ? 'Fixing' : 'Building'} "${slug}" with ${model} (cwd-scoped, SDK)...`);
       let result;
       try {
-        result = await pi.runSession({ prompt: fullPrompt, cwd: projectDir, model, label: slug });
+        let memorySearch: ((q: string) => Promise<string>) | undefined;
+        if (memory) {
+          const { buildPriorExperienceBrief, buildMemorySearchCallback } = await import('../coding/coding-memory.js');
+          const brief = await buildPriorExperienceBrief(prompt, memory).catch(() => '');
+          if (brief) fullPrompt = fullPrompt + brief;
+          memorySearch = buildMemorySearchCallback(memory);
+        }
+        result = await pi.runSession({ prompt: fullPrompt, cwd: projectDir, model, label: slug, taskCategory: 'code_gen', memorySearch });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return `Pi build failed: ${msg.slice(0, 500)}\nProject directory: ${projectDir}\nsession: ${slug}`;

@@ -7,7 +7,9 @@ import {
   getAgentDir,
   ModelRegistry,
   SettingsManager,
+  type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
 import type { PiConfigSchema } from '../config/schema.js';
 import { configInvalid } from '../errors.js';
 import { logPiSession, logPiSessionEvent } from '../metrics.js';
@@ -31,6 +33,14 @@ export interface PiSessionRequest {
   model?: string;
   /** Metrics grouping label; defaults to basename(cwd) */
   label?: string;
+  /** Routing-tuple field recorded on the pi_session summary (self_mod | code_gen) */
+  taskCategory?: string;
+  /** When present, a read-only memory_search customTool is registered for the session.
+   *  The callback is the whole memory surface — the adapter never imports memory modules,
+   *  memory modules never see SDK types. The callback must not throw (and ours doesn't);
+   *  the wrapper here also guards, since a thrown tool would land as isError in the
+   *  failure harvest. */
+  memorySearch?: (query: string) => Promise<string>;
 }
 
 export interface PiSessionStats {
@@ -88,14 +98,37 @@ export class PiCodingAdapter {
     });
     await resourceLoader.reload();
 
+    const customTools: ToolDefinition[] = [];
+    if (req.memorySearch) {
+      const memorySearch = req.memorySearch;
+      customTools.push({
+        name: 'memory_search',
+        label: 'Memory search',
+        description: 'Search Invarail\'s institutional memory (prior coding experiences, lessons from past failures, facts) — READ-ONLY. WHEN TO USE: before choosing an approach, or when stuck on something that may have been solved before.',
+        parameters: Type.Object({
+          query: Type.String({ description: 'What to search for (task shape, error message, subsystem name)' }),
+        }),
+        async execute(_toolCallId: string, params: unknown) {
+          let text: string;
+          try {
+            text = await memorySearch(String((params as { query?: unknown })?.query ?? ''));
+          } catch {
+            text = 'No relevant prior experience or facts found.';
+          }
+          return { content: [{ type: 'text', text }], details: undefined };
+        },
+      } as unknown as ToolDefinition);
+    }
+
     const { session } = await createAgentSession({
       cwd: req.cwd,
       model,
-      tools: [...this.config.tools],
+      tools: [...this.config.tools, ...(customTools.length ? ['memory_search'] : [])],
       authStorage,
       modelRegistry,
       settingsManager,
       resourceLoader,
+      ...(customTools.length ? { customTools } : {}),
     });
 
     const slug = req.label ?? basename(req.cwd);
@@ -186,6 +219,7 @@ export class PiCodingAdapter {
     logPiSession({
       slug,
       model: modelRef,
+      ...(req.taskCategory ? { taskCategory: req.taskCategory } : {}),
       sessionId,
       sessionFile: result.sessionFile,
       ok: result.ok,

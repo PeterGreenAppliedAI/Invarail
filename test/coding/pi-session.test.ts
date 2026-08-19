@@ -187,6 +187,42 @@ describe('PiCodingAdapter', () => {
     expect(result.error).toBe('stream error: 500');
   });
 
+  it('registers a read-only memory_search customTool when the callback is provided', async () => {
+    const adapter = new PiCodingAdapter(makeConfig());
+    await adapter.runSession({
+      prompt: 'x', cwd: '/tmp/builds/demo',
+      memorySearch: async q => `results for ${q}`,
+      taskCategory: 'self_mod',
+    });
+    const opts = sdkMock.state.createOptions as Record<string, unknown>;
+    const customTools = opts.customTools as Array<{ name: string; execute: (id: string, p: unknown) => Promise<{ content: Array<{ text: string }> }> }>;
+    expect(customTools).toHaveLength(1);
+    expect(customTools[0].name).toBe('memory_search');
+    expect((opts.tools as string[])).toContain('memory_search');
+    const result = await customTools[0].execute('call1', { query: 'widgets' });
+    expect(result.content[0].text).toBe('results for widgets');
+    expect(metricsMock.logPiSession.mock.calls[0][0]).toMatchObject({ taskCategory: 'self_mod' });
+  });
+
+  it('memory_search wrapper never throws — a failing callback returns no-results text', async () => {
+    const adapter = new PiCodingAdapter(makeConfig());
+    await adapter.runSession({
+      prompt: 'x', cwd: '/tmp/builds/demo',
+      memorySearch: async () => { throw new Error('memory plumbing broke'); },
+    });
+    const customTools = (sdkMock.state.createOptions as Record<string, unknown>).customTools as Array<{ execute: (id: string, p: unknown) => Promise<{ content: Array<{ text: string }> }> }>;
+    const result = await customTools[0].execute('call1', { query: 'q' });
+    expect(result.content[0].text).toContain('No relevant prior experience');
+  });
+
+  it('no memorySearch → no customTools, tools list unchanged', async () => {
+    const adapter = new PiCodingAdapter(makeConfig({ tools: ['read', 'bash'] }));
+    await adapter.runSession({ prompt: 'x', cwd: '/tmp/builds/demo' });
+    const opts = sdkMock.state.createOptions as Record<string, unknown>;
+    expect(opts.customTools).toBeUndefined();
+    expect(opts.tools).toEqual(['read', 'bash']);
+  });
+
   it('throws CONFIG_INVALID when the model is not in the registry', async () => {
     sdkMock.state.findResult = null;
     const adapter = new PiCodingAdapter(makeConfig());

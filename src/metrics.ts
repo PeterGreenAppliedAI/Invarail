@@ -185,6 +185,9 @@ export function logPiSessionEvent(data: {
 export function logPiSession(data: {
   slug: string;
   model: string;
+  /** Routing-tuple dimension (self_mod | code_gen) — recorded from day one, routed on
+   *  only when n is meaningful (config-overlay proposals, never silent behavior shifts) */
+  taskCategory?: string;
   sessionId?: string;
   sessionFile?: string;
   ok: boolean;

@@ -208,9 +208,14 @@ export async function registerAllTools(
   }
 
   // Pi (picoder) coding agent — headless, cwd-scoped. The code_gen pipeline calls pi_build.
+  // Memory deps assembled via coding-memory (the allowlisted experience-store consumer).
   if (config.pi?.enabled) {
-    registry.register(createPiBuildTool(config.pi));
-    console.log(`[Tools] Pi registered (${config.pi.model})`);
+    const { buildCodingMemoryDeps } = await import('../coding/coding-memory.js');
+    const memoryDeps = options?.ollamaClient
+      ? buildCodingMemoryDeps({ client: options.ollamaClient, graphMemory: options.graphMemory, ownerId: config.ownerId, workspacePath: workspace })
+      : undefined;
+    registry.register(createPiBuildTool(config.pi, undefined, memoryDeps));
+    console.log(`[Tools] Pi registered (${config.pi.model}${memoryDeps ? ', memory-briefed' : ''})`);
   }
 
   // Self-modification merge executor — ledger-only (never in any specialist's tools list;
