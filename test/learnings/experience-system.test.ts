@@ -100,7 +100,13 @@ describe('authority boundary (experience informs, never expands authority)', () 
       'src/dispatch.ts',                       // priming injection (plain text)
       'src/services/heartbeat-service.ts',     // synthesis step
       'src/learnings/experience-synthesis.ts', // writer
-      'src/orchestrator.ts',                   // !experiences command
+      'src/orchestrator.ts',                   // !experiences command + selfMod wiring
+      'src/coding/self-mod-service.ts',        // WRITER of gate-verified outcomes (Phase C) —
+                                               // records system-observed events; never reads
+                                               // experience to alter permissions or routing
+      'src/coding/coding-memory.ts',           // advisory reader (Phase C) — prior-experience
+                                               // prompt text + read-only memory_search, same
+                                               // class as dispatch priming
     ]);
     // Walk src/ for imports of experience-store
     const { execSync } = require('node:child_process') as typeof import('node:child_process');
