@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
  */
 
 export interface LessonCandidate {
-  kind: 'max_iterations' | 'tool_failures' | 'repair_cluster' | 'action_rejected' | 'dead_letter';
+  kind: 'max_iterations' | 'tool_failures' | 'repair_cluster' | 'action_rejected' | 'dead_letter' | 'pi_session_failed';
   /** Tool involved, when tool-scoped */
   tool?: string;
   /** Model observed failing (tool_call.category carries the model id) */
@@ -146,7 +146,27 @@ export function harvestLessonCandidates(opts: {
     }
   }
 
-  // 5. Dead letters — background work that exhausted retries
+  // 5. Failed Pi coding sessions (self-mod AND builds) — authority-grade at count 1.
+  //    Error context enriched from the session JSONL when available (the transcript is
+  //    the provenance bottom; the metric row only knows ok/timedOut).
+  for (const e of events) {
+    if (e.type === 'pi_session' && (e.ok === false || e.timedOut === true)) {
+      const examples: string[] = [];
+      if (e.timedOut === true) examples.push('session timed out');
+      if (typeof e.error === 'string' && e.error) examples.push(e.error.slice(0, 200));
+      const jsonlError = typeof e.sessionFile === 'string' ? extractPiFailureContext(e.sessionFile) : '';
+      if (jsonlError) examples.push(jsonlError);
+      candidates.push({
+        kind: 'pi_session_failed',
+        model: typeof e.model === 'string' ? e.model : undefined,
+        count: 1,
+        examples: examples.slice(0, 3),
+        contexts: typeof e.slug === 'string' ? [String(e.slug)] : [],
+      });
+    }
+  }
+
+  // 6. Dead letters — background work that exhausted retries
   const deadLetters = readJsonl(deadLetterPath).filter(d => typeof d.at === 'string' && (d.at as string) > since);
   for (const d of deadLetters) {
     if ((d.at as string) > newest) newest = d.at as string;
@@ -158,9 +178,51 @@ export function harvestLessonCandidates(opts: {
     });
   }
 
-  // Highest-signal first, bounded — the synthesis model sees at most 6
-  candidates.sort((a, b) => b.count - a.count);
+  // Authority beats frequency: a count-1 rollback or failed Pi session is orders of
+  // magnitude more informative than 30 generic tool timeouts — severity ranks first,
+  // count breaks ties. Bounded: the synthesis model sees at most 6.
+  const severity = (c: LessonCandidate): number =>
+    c.kind === 'action_rejected' || c.kind === 'pi_session_failed' ? 3
+    : c.kind === 'dead_letter' ? 2
+    : 1;
+  candidates.sort((a, b) => severity(b) - severity(a) || b.count - a.count);
   return { candidates: candidates.slice(0, MAX_CANDIDATES), newestTimestamp: newest };
+}
+
+/**
+ * Best-effort tail-parse of a Pi session JSONL for the last error text. Defensive by
+ * design: the format belongs to the SDK — any surprise shape returns '' rather than
+ * breaking the harvest.
+ */
+export function extractPiFailureContext(sessionFile: string): string {
+  try {
+    if (!existsSync(sessionFile)) return '';
+    const lines = readFileSync(sessionFile, 'utf-8').split('\n').filter(Boolean).slice(-50);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"isError":true') && !lines[i].includes('"isError": true')) continue;
+      try {
+        const entry = JSON.parse(lines[i]) as Record<string, unknown>;
+        const texts: string[] = [];
+        // Recurse everywhere; COLLECT only at text-ish keys (ids/roles/paths stay out).
+        const walk = (v: unknown, key?: string): void => {
+          if (typeof v === 'string') {
+            if ((key === 'text' || key === 'error' || key === 'output') && v.trim()) texts.push(v);
+            return;
+          }
+          if (Array.isArray(v)) { v.forEach(x => walk(x, key)); return; }
+          if (v && typeof v === 'object') {
+            for (const [k, val] of Object.entries(v)) walk(val, k);
+          }
+        };
+        walk(entry);
+        const text = texts.join(' ').replace(/\s+/g, ' ').trim();
+        if (text) return text.slice(0, 200);
+      } catch { /* malformed line — keep scanning */ }
+    }
+    return '';
+  } catch {
+    return '';
+  }
 }
 
 export function defaultMarkerPath(workspacePath: string): string {

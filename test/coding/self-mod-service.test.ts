@@ -208,6 +208,56 @@ describe('SelfModService', () => {
     expect(new SelfModWorktrees(repo).readDeployMarker()!.experienceId).toBeUndefined();
   });
 
+  it('bootSweep: deploy-failed.json → supersedes the marker-carried experience, then clears', async () => {
+    const wt = new SelfModWorktrees(repo);
+    mkdirSync(join(repo, 'data', 'self-mod'), { recursive: true });
+    writeFileSync(join(repo, 'data', 'self-mod', 'deploy-failed.json'), JSON.stringify({
+      prevSha: 'aaa', mergeSha: 'bbb', slug: 'rolled-thing', ts: new Date().toISOString(), experienceId: 'exp_gone',
+    }));
+    const experienceStore = { supersedeById: vi.fn(async () => 'exp_new'), save: vi.fn() };
+    const svc = new SelfModService({
+      config: config(), repoRoot: repo, adapter: committingAdapter(), pendingStore,
+      experienceStore: experienceStore as never,
+    });
+    svc.bootSweep();
+    await vi.waitFor(() => expect(experienceStore.supersedeById).toHaveBeenCalledOnce());
+    const [oldId, failedInput] = experienceStore.supersedeById.mock.calls[0] as [string, Record<string, unknown>];
+    expect(oldId).toBe('exp_gone');
+    expect(failedInput.outcome).toBe('failed');
+    expect(failedInput.verified).toBe(true);   // epistemic confidence: the rollback really happened
+    expect(failedInput.commit).toBe('bbb');
+    await vi.waitFor(() => expect(wt.readFailedMarker()).toBeNull()); // consumed exactly once
+  });
+
+  it('bootSweep belt: live marker whose mergeSha is not an ancestor also counts as rollback', async () => {
+    const wt = new SelfModWorktrees(repo);
+    // A sha that exists nowhere in history — is-ancestor fails
+    wt.writeDeployMarker({ prevSha: 'aaa', mergeSha: 'f'.repeat(40), slug: 'ghost-merge', ts: new Date().toISOString(), experienceId: 'exp_ghost' });
+    const experienceStore = { supersedeById: vi.fn(async () => 'exp_new2'), save: vi.fn() };
+    const svc = new SelfModService({
+      config: config(), repoRoot: repo, adapter: committingAdapter(), pendingStore,
+      experienceStore: experienceStore as never,
+    });
+    svc.bootSweep();
+    await vi.waitFor(() => expect(experienceStore.supersedeById).toHaveBeenCalledWith(
+      'exp_ghost', expect.objectContaining({ outcome: 'failed' }), 'selfmod:ghost-merge',
+    ));
+  });
+
+  it('bootSweep: a healthy deploy marker (mergeSha == HEAD ancestor) is NOT a rollback', async () => {
+    const wt = new SelfModWorktrees(repo);
+    const head = git(repo, 'rev-parse', 'HEAD');
+    wt.writeDeployMarker({ prevSha: 'aaa', mergeSha: head, slug: 'healthy', ts: new Date().toISOString(), experienceId: 'exp_ok' });
+    const experienceStore = { supersedeById: vi.fn(), save: vi.fn() };
+    const svc = new SelfModService({
+      config: config(), repoRoot: repo, adapter: committingAdapter(), pendingStore,
+      experienceStore: experienceStore as never,
+    });
+    svc.bootSweep();
+    await new Promise(r => setTimeout(r, 50));
+    expect(experienceStore.supersedeById).not.toHaveBeenCalled();
+  });
+
   it('executeMerge: no active worktree → refuses', async () => {
     const svc = makeService({ adapter: committingAdapter() });
     await expect(svc.executeMerge({ slug: 'ghost', branch: 'self-mod/ghost', headSha: 'x' }))

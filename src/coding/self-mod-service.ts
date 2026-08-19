@@ -77,12 +77,62 @@ export class SelfModService {
   }
 
   bootSweep(): void {
+    // Rollback detection FIRST — sweep() deletes stale markers, and evidence must be
+    // consumed before it's destroyed.
+    this.detectRollback().catch(err =>
+      console.warn('[SelfMod] Rollback detection failed:', err instanceof Error ? err.message : err));
     try {
       const swept = this.worktrees.sweep();
       if (swept.length) console.log(`[SelfMod] Boot sweep removed: ${swept.join(', ')}`);
     } catch (err) {
       console.warn('[SelfMod] Boot sweep failed:', err instanceof Error ? err.message : err);
     }
+  }
+
+  /**
+   * A rolled-back merge is an authoritative, system-observed failure. Two evidence paths:
+   * deploy-failed.json (the supervisor preserved the marker on rollback — primary), and a
+   * live deploy.json whose mergeSha is no longer an ancestor of HEAD (belt, in case the
+   * rename failed). The merge's verified 'worked' Experience is superseded by an equally
+   * verified 'failed' one — verified is epistemic confidence, and this really happened.
+   */
+  private async detectRollback(): Promise<void> {
+    let marker = this.worktrees.readFailedMarker();
+    let fromFailedFile = true;
+    if (!marker) {
+      const live = this.worktrees.readDeployMarker();
+      if (live && !this.isAncestor(live.mergeSha)) {
+        marker = live;
+        fromFailedFile = false;
+      }
+    }
+    if (!marker) return;
+
+    logAutonomousAction({
+      action: 'self_mod_rolled_back', tier: 'propose_confirm', source: 'supervisor',
+      reversible: false, outcome: 'failure', detail: marker.slug, resource: marker.mergeSha,
+    });
+    console.warn(`[SelfMod] Deploy of "${marker.slug}" (${marker.mergeSha.slice(0, 8)}) was ROLLED BACK by the supervisor`);
+
+    if (marker.experienceId && this.experienceStore) {
+      const newId = await this.experienceStore.supersedeById(marker.experienceId, {
+        text: `Self-mod "${marker.slug}" (${marker.mergeSha.slice(0, 8)}): passed the gate but FAILED deployment — supervisor rolled back to ${marker.prevSha.slice(0, 8)}.`,
+        taskShape: `self-mod: ${marker.slug}`,
+        approach: 'merged after gate pass; failed post-merge gates or health check',
+        outcome: 'failed',
+        satisfaction: -1,
+        verified: true,           // the rollback was system-observed — this really happened
+        commit: marker.mergeSha,
+        model: this.config.pi.model,
+      }, `selfmod:${marker.slug}`);
+      if (newId) console.log(`[SelfMod] Experience ${marker.experienceId} superseded by ${newId} (rollback)`);
+    }
+    if (fromFailedFile) this.worktrees.clearFailedMarker();
+  }
+
+  private isAncestor(sha: string): boolean {
+    const r = spawnSync('git', ['merge-base', '--is-ancestor', sha, 'HEAD'], { cwd: this.repoRoot, timeout: 30_000 });
+    return r.status === 0;
   }
 
   status(): string {
@@ -140,6 +190,11 @@ export class SelfModService {
         return { ok: false, reply: `Self-mod **${slug}** failed: Pi session ${session.timedOut ? 'timed out' : 'errored'} (${session.error ?? 'unknown'}) and produced no changes. Worktree removed.` };
       }
       if (!gate.pass) {
+        const failing = gate.checks.find(c => !c.pass)?.name ?? 'no-changes';
+        logAutonomousAction({
+          action: 'self_mod_gate_failed', tier: 'propose_confirm', source: 'user_command',
+          reversible: true, outcome: 'failure', detail: `${slug}: ${failing}`,
+        });
         return {
           ok: false, slug,
           reply: `Self-mod **${slug}**: gate FAILED — not proposing a merge.\n${this.gateSummary(gate)}\nWorktree kept for inspection: \`${active.worktreePath}\`\nDiscard with \`!improve abandon\`.`,

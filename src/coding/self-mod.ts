@@ -196,6 +196,22 @@ export class SelfModWorktrees {
     }
   }
 
+  /** The supervisor renames deploy.json → deploy-failed.json on rollback — evidence
+   *  preserved for boot-time consumption, then cleared exactly once. */
+  readFailedMarker(): DeployMarker | null {
+    try {
+      return JSON.parse(readFileSync(join(this.dataDir, 'deploy-failed.json'), 'utf-8')) as DeployMarker;
+    } catch {
+      return null;
+    }
+  }
+
+  clearFailedMarker(): void {
+    try {
+      unlinkSync(join(this.dataDir, 'deploy-failed.json'));
+    } catch { /* already gone */ }
+  }
+
   /**
    * Boot sweep: remove worktree dirs that aren't the active one (crashed runs), prune git's
    * bookkeeping, and delete stale deploy markers (not matching HEAD, or too old — a marker

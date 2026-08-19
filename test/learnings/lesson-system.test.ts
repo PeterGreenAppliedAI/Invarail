@@ -70,6 +70,43 @@ describe('LessonStore', () => {
   });
 });
 
+describe('pi_session_failed candidates', () => {
+  it('failed/timed-out Pi sessions become authority-grade candidates enriched from the session JSONL', () => {
+    const metricsPath = join(dir, 'metrics.jsonl');
+    const jsonlPath = join(dir, 'session.jsonl');
+    writeFileSync(jsonlPath, [
+      JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'trying a thing' }] } }),
+      JSON.stringify({ type: 'message', message: { role: 'toolResult', isError: true, content: [{ type: 'text', text: 'TS2304: Cannot find name Foo' }] } }),
+    ].join('\n') + '\n');
+    writeFileSync(metricsPath, [
+      JSON.stringify({ timestamp: '2026-08-19T10:00:00.000Z', type: 'pi_session', slug: 'self-mod:fix-router', model: 'sglang/qwen3.8-27b', ok: false, timedOut: false, error: 'gate never reached', sessionFile: jsonlPath }),
+      JSON.stringify({ timestamp: '2026-08-19T10:01:00.000Z', type: 'pi_session', slug: 'ok-build', model: 'sglang/qwen3.8-27b', ok: true, timedOut: false }),
+    ].join('\n') + '\n');
+
+    const { candidates } = harvestLessonCandidates({ metricsPath, deadLetterPath: '/nonexistent', sinceTimestamp: '' });
+    const pi = candidates.filter(c => c.kind === 'pi_session_failed');
+    expect(pi).toHaveLength(1); // ok:true session is NOT a candidate
+    expect(pi[0].model).toBe('sglang/qwen3.8-27b');
+    expect(pi[0].contexts).toEqual(['self-mod:fix-router']);
+    expect(pi[0].examples.join(' ')).toContain('gate never reached');
+    expect(pi[0].examples.join(' ')).toContain('TS2304');
+  });
+
+  it('authority beats frequency: a count-1 pi failure outranks 30 generic tool failures', () => {
+    const metricsPath = join(dir, 'metrics2.jsonl');
+    const lines: object[] = [];
+    for (let i = 0; i < 30; i++) {
+      lines.push({ timestamp: `2026-08-19T10:00:${String(i).padStart(2, '0')}.000Z`, type: 'tool_call', tool: 'web_fetch', success: false, error: 'timeout' });
+    }
+    lines.push({ timestamp: '2026-08-19T10:01:00.000Z', type: 'pi_session', slug: 'rolled', model: 'm', ok: false, timedOut: true });
+    writeFileSync(metricsPath, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+
+    const { candidates } = harvestLessonCandidates({ metricsPath, deadLetterPath: '/nonexistent', sinceTimestamp: '' });
+    expect(candidates[0].kind).toBe('pi_session_failed');
+    expect(candidates[0].examples).toContain('session timed out');
+  });
+});
+
 describe('harvestLessonCandidates', () => {
   it('groups failure evidence with the right thresholds and advances the marker', () => {
     const metricsPath = join(dir, 'metrics.jsonl');

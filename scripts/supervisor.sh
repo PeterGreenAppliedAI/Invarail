@@ -22,12 +22,19 @@ cd "$REPO" || exit 1
 
 PORT="${INVARAIL_PORT:-3100}"
 MARKER="$REPO/data/self-mod/deploy.json"
+FAILED_MARKER="$REPO/data/self-mod/deploy-failed.json"
 FAILED="$REPO/data/self-mod/FAILED"
 CHILD=""
 
 log() { echo "[supervisor $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 marker_field() { node -e "try{process.stdout.write(String(JSON.parse(require('fs').readFileSync('$MARKER','utf8')).$1||''))}catch(e){}"; }
-rollback() { log "ROLLBACK: git reset --hard ${1:0:8}"; git reset --hard "$1"; }
+# Rollback PRESERVES the marker as deploy-failed.json — the app's boot sweep consumes it
+# to supersede the merge's verified Experience. Recovery state, not telemetry.
+rollback() {
+  log "ROLLBACK: git reset --hard ${1:0:8}"
+  [ -f "$MARKER" ] && mv "$MARKER" "$FAILED_MARKER"
+  git reset --hard "$1"
+}
 gates_ok() { log "gates: tsc + vitest"; npx tsc --noEmit && npx vitest run; }
 
 health_ok() {
@@ -68,10 +75,11 @@ while true; do
     42)
       log "deploy restart requested"
       PREV="$(marker_field prevSha)"; MERGE="$(marker_field mergeSha)"; HEAD="$(git rev-parse HEAD)"
-      rm -f "$MARKER"
       if [ -z "$PREV" ] || [ "$MERGE" != "$HEAD" ]; then
-        log "marker missing/stale (merge=$MERGE head=$HEAD) — plain restart"; continue
+        log "marker missing/stale (merge=$MERGE head=$HEAD) — plain restart"; rm -f "$MARKER"; continue
       fi
+      # Marker stays on disk through the deploy attempt: rollback() moves it to
+      # deploy-failed.json; a healthy boot leaves it for the app's stale sweep.
       if ! git diff --quiet "$PREV" HEAD -- package-lock.json 2>/dev/null; then
         log "lockfile changed — npm ci"
         npm ci --no-audit --no-fund || { rollback "$PREV"; continue; }

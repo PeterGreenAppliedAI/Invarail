@@ -110,13 +110,20 @@ export async function synthesizeLessons(opts: {
 
   // Batch distrust: a large batch where EVERYTHING is worth keeping means the
   // model isn't discriminating — keep nothing, keep the marker so the same
-  // evidence isn't re-litigated forever
-  const keepers = synthesized.filter(s => s.lesson.worth_keeping === true && s.lesson.boundary);
+  // evidence isn't re-litigated forever. EXCEPTION: authority-grade candidates
+  // (a rollback, a rejected/failed autonomous act, a failed Pi session) survive
+  // the discard — the marker advances regardless, so dropping one here loses a
+  // count-1 high-severity failure permanently.
+  let keepers = synthesized.filter(s => s.lesson.worth_keeping === true && s.lesson.boundary);
   if (synthesized.length >= 5 && keepers.length === synthesized.length) {
-    console.warn(`[Lessons] Batch distrusted — model marked all ${synthesized.length} candidates worth keeping`);
+    const authority = keepers.filter(s => s.candidate.kind === 'action_rejected' || s.candidate.kind === 'pi_session_failed');
+    console.warn(`[Lessons] Batch distrusted — model marked all ${synthesized.length} candidates worth keeping${authority.length ? ` (retaining ${authority.length} authority-grade)` : ''}`);
     logAutonomousAction({ action: 'lesson_batch_distrusted', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'failure', detail: `${synthesized.length} candidates` });
-    saveHarvestMarker(markerPath, newestTimestamp);
-    return result;
+    if (authority.length === 0) {
+      saveHarvestMarker(markerPath, newestTimestamp);
+      return result;
+    }
+    keepers = authority;
   }
   result.skipped = synthesized.length - keepers.length;
 
