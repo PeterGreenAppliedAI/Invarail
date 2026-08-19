@@ -324,7 +324,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     if (params.config.memory?.experiences?.enabled !== false && message.length > 10) {
       try {
         const { sharedExperienceStore } = await import('./memory/experience-store.js');
-        const matches = (await sharedExperienceStore(params.client).searchRelevant(message, 2, 0.6))
+        const matches = (await sharedExperienceStore(params.client, params.config.memory?.falkordb).searchRelevant(message, 2, 0.6))
           .filter(m => m.evidenceCount >= 2);
         if (matches.length > 0) {
           console.log(`[Dispatch] Experience injection: ${matches.length}`);

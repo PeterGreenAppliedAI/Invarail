@@ -91,13 +91,14 @@ export function buildCodingMemoryDeps(opts: {
   ownerId?: string;
   workspacePath?: string;
   experienceStore?: ExperienceStore;
+  falkordb?: { host?: string; port?: number; graphName?: string };
 }): CodingMemoryDeps {
   return {
     client: opts.client,
     graphMemory: opts.graphMemory,
     ownerId: opts.ownerId,
     workspacePath: opts.workspacePath,
-    experienceStore: opts.experienceStore ?? (opts.client ? sharedExperienceStore(opts.client) : undefined),
+    experienceStore: opts.experienceStore ?? (opts.client ? sharedExperienceStore(opts.client, opts.falkordb) : undefined),
   };
 }
 

@@ -58,7 +58,10 @@ interface ExperienceStoreConfig {
 const DEFAULT_CONFIG: ExperienceStoreConfig = {
   host: 'localhost',
   port: 6379,
-  graphName: 'localclaw_memory',   // same graph as facts — one memory, many node types
+  // MUST equal GraphMemoryStore's default — one memory, many node types; provenance
+  // edges cannot cross graphs. (The pre-rename historical graph is 'localclaw_memory';
+  // set memory.falkordb.graphName in config to point both stores at it.)
+  graphName: 'invarail_memory',
   embeddingDims: 4096,
 };
 
@@ -285,10 +288,20 @@ export class ExperienceStore {
 }
 
 // Shared instance — dispatch priming and heartbeat synthesis must see the
-// same store (mirrors the embeddingStore() singleton pattern)
+// same store (mirrors the embeddingStore() singleton pattern).
+// Graph identity MUST match GraphMemoryStore's (facts, turns, and experiences are one
+// memory — provenance edges cannot cross graphs): pass config.memory.falkordb where
+// available; first caller with config wins for the singleton.
 let shared: ExperienceStore | null = null;
-export function sharedExperienceStore(client: OllamaClient): ExperienceStore {
-  if (!shared) shared = new ExperienceStore(client);
+export function sharedExperienceStore(client: OllamaClient, falkordb?: { host?: string; port?: number; graphName?: string }): ExperienceStore {
+  if (!shared) {
+    shared = new ExperienceStore(client, {
+      ...DEFAULT_CONFIG,
+      ...(falkordb?.host ? { host: falkordb.host } : {}),
+      ...(falkordb?.port ? { port: falkordb.port } : {}),
+      ...(falkordb?.graphName ? { graphName: falkordb.graphName } : {}),
+    });
+  }
   return shared;
 }
 export function setExperienceStoreForTests(store: ExperienceStore | null): void {

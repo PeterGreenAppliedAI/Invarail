@@ -239,7 +239,7 @@ export class Orchestrator {
       this.selfModService = new SelfModService({
         config: this.config,
         graphMemory: this.graphMemory,
-        experienceStore: sharedExperienceStore(this.client),
+        experienceStore: sharedExperienceStore(this.client, this.config.memory?.falkordb),
         client: this.client,
         workspacePath: defaultWorkspace,
         onRestartRequested: () => {
@@ -1158,7 +1158,7 @@ export class Orchestrator {
     if (/^!experiences?\b/.test(trimmed)) {
       const args = trimmed.replace(/^!experiences?\s*/, '').trim();
       const { sharedExperienceStore } = await import('./memory/experience-store.js');
-      const store = sharedExperienceStore(this.client);
+      const store = sharedExperienceStore(this.client, this.config.memory?.falkordb);
       let replyText: string;
       const dropMatch = args.match(/^drop\s+(\S+)$/i);
       if (dropMatch) {

@@ -223,7 +223,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
         const exp = await synthesizeExperiences({
           client,
           model: config.memory?.extractionModel ?? config.router.model,
-          store: sharedExperienceStore(client),
+          store: sharedExperienceStore(client, config.memory?.falkordb),
           recentTurns,
         });
         if (exp.created.length > 0 || exp.reinforced > 0 || exp.superseded > 0) {
