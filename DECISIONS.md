@@ -4,6 +4,12 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Local-First Gate Needs a Floor, Not a Count — Muse Glimmer Class, Second Strike (August 19 2026)
+
+First production request after go-live: "research 10 NYSE stocks with volatility above 15" → all 6 facets reported "4 local-index hits — skipping web search," sources were NVIDIA/GLM/arxiv AI articles, gap_check waved it through, report was garbage. Root cause: local_search's embedding floor was 0.35 while the memory system's MEASURED relevance floor for the same qwen3-embedding model is 0.52 — KNN always returns nearest neighbors, and at 0.35 "nearest" still passes for an off-domain query, so the research pipeline's ≥2-hit gate (research.ts:203) skipped the web on pure adjacency. Same failure shape as Muse Glimmer (2026-08-15): that fix hardened absence-claims and synthesis provenance but left the GATE hit-count-based. Fix (94e42af): floor raised to the calibrated 0.52 (`LOCAL_SEARCH_FLOOR`, exported + tested) — below-floor queries return the explicit "No local index results → use web_search" message, no URLs, so the hit-count gate structurally cannot fire on garbage. Doctrine, third confirmation: **scoring orders, the floor rejects** — any gate keyed on result COUNT is only as good as the floor beneath it. (Deliberately fixed directly, not via !improve — Peter: not ready to run fixes through Pi yet.)
+
+---
+
 ## Pi Becomes the Coding Substrate — LocalClaw Keeps the Authority (August 18 2026, COMMITTED DIRECTION)
 
 ### The decision
