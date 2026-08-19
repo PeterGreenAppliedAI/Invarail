@@ -29,6 +29,19 @@ export interface Experience {
   createdAt: string;
   lastConfirmed: string;
   superseded?: boolean;
+  /** EPISTEMIC CONFIDENCE, not success: true when an external validation gate witnessed
+   *  the event (e.g. the self-mod merge gate + owner confirm). A ROLLED-BACK merge yields
+   *  a verified FAILED experience — verified says "this really happened", outcome says
+   *  what happened. Verified injects at evidence 1 (the gate substitutes for recurrence).
+   *  Never set from model self-assessment. */
+  verified?: boolean;
+  /** Deterministic external identity for system-observed events (e.g. the merge SHA).
+   *  save() is idempotent on it: a replay after a crash finds the existing node. */
+  commit?: string;
+  /** Explicit chain properties (the SUPERSEDES edge is the source of truth; these make
+   *  archaeology cheap without a traversal). */
+  supersededBy?: string;
+  supersedesId?: string;
 }
 
 export interface ExperienceMatch extends Experience {
@@ -96,8 +109,18 @@ export class ExperienceStore {
    *   differs) → save new + SUPERSEDES old (code-decided, no LLM)
    * Returns {id, action}.
    */
-  async save(input: Omit<Experience, 'id' | 'evidenceCount' | 'createdAt' | 'lastConfirmed'> & { evidenceCount?: number }, sourceSessionKey?: string): Promise<{ id: string; action: 'created' | 'reinforced' | 'superseded_old' } | null> {
+  async save(input: Omit<Experience, 'id' | 'evidenceCount' | 'createdAt' | 'lastConfirmed'> & { evidenceCount?: number }, sourceSessionKey?: string): Promise<{ id: string; action: 'created' | 'reinforced' | 'superseded_old' | 'exists' } | null> {
     if (!(await this.ensure())) return null;
+    // Idempotency on external identity: a crash between write and marker/cleanup means the
+    // caller may replay — the same commit must never mint a second experience.
+    if (input.commit) {
+      const existing = await this.graph!.query(
+        `MATCH (x:Experience {commit: $commit}) RETURN x.id AS id LIMIT 1`,
+        { params: { commit: input.commit } },
+      );
+      const row = ((existing.data ?? []) as Array<{ id: string }>)[0];
+      if (row) return { id: row.id, action: 'exists' };
+    }
     const [embedding] = await this.client.embed(input.text);
     if (!embedding?.length) return null;
     const now = new Date().toISOString();
@@ -128,8 +151,8 @@ export class ExperienceStore {
     await this.graph!.query(
       `CREATE (x:Experience {id: $id, text: $text, taskShape: $taskShape, approach: $approach,
         outcome: $outcome, satisfaction: $satisfaction, evidenceCount: $ev, model: $model,
-        createdAt: $now, lastConfirmed: $now, superseded: false, embedding: vecf32($emb)})`,
-      { params: { id, text: input.text, taskShape: input.taskShape, approach: input.approach, outcome: input.outcome, satisfaction: input.satisfaction, ev: input.evidenceCount ?? 1, model: input.model, now, emb: embedding } },
+        createdAt: $now, lastConfirmed: $now, superseded: false, verified: $verified, commit: $commit, embedding: vecf32($emb)})`,
+      { params: { id, text: input.text, taskShape: input.taskShape, approach: input.approach, outcome: input.outcome, satisfaction: input.satisfaction, ev: input.evidenceCount ?? 1, model: input.model, now, verified: input.verified ?? false, commit: input.commit ?? '', emb: embedding } },
     );
 
     // Provenance to the source session's most recent turn, when known
@@ -159,7 +182,10 @@ export class ExperienceStore {
     return { id, action: 'created' };
   }
 
-  /** KNN over live experiences; floor rejects, scoring orders (facts doctrine). */
+  /** KNN over live experiences; floor rejects, scoring orders (facts doctrine).
+   *  Evidence gate lives HERE (the policy point): verified experiences pass at
+   *  evidence 1 (an external gate witnessed the outcome — recurrence substitute);
+   *  unverified need ≥ 2, same bar as lessons. */
   async searchRelevant(query: string, topK = 2, minSimilarity = 0.6): Promise<ExperienceMatch[]> {
     if (!(await this.ensure())) return [];
     try {
@@ -170,18 +196,64 @@ export class ExperienceStore {
          WHERE (node.superseded IS NULL OR node.superseded = false)
          RETURN node.id AS id, node.text AS text, node.taskShape AS taskShape, node.approach AS approach,
                 node.outcome AS outcome, node.satisfaction AS satisfaction, node.evidenceCount AS evidenceCount,
-                node.model AS model, node.createdAt AS createdAt, node.lastConfirmed AS lastConfirmed, score
+                node.model AS model, node.createdAt AS createdAt, node.lastConfirmed AS lastConfirmed,
+                node.verified AS verified, score
          ORDER BY score ASC LIMIT $k`,
         { params: { emb: embedding, k: topK * 3 } },
       );
       return ((res.data ?? []) as Array<Record<string, unknown>>)
         .map(r => ({ ...(r as unknown as Experience), score: 1 - (r.score as number) }))
         .filter(m => m.score >= minSimilarity)
+        .filter(m => (m.verified ? m.evidenceCount >= 1 : m.evidenceCount >= 2))
         .slice(0, topK);
     } catch (err) {
       console.warn('[Experience] search failed:', err instanceof Error ? err.message : err);
       return [];
     }
+  }
+
+  /**
+   * Id-addressed supersede for externally-observed reversals (e.g. the supervisor rolled
+   * back a merge whose Experience was written as 'worked'). The KNN contradiction path
+   * cannot catch this: the failed version's text is near-identical (distance < 0.15),
+   * which matches neither the dupe branch (outcome differs) nor the contradiction band.
+   */
+  async supersedeById(
+    oldId: string,
+    failedInput: Omit<Experience, 'id' | 'evidenceCount' | 'createdAt' | 'lastConfirmed'> & { evidenceCount?: number },
+    sourceSessionKey?: string,
+  ): Promise<string | null> {
+    if (!(await this.ensure())) return null;
+    const found = await this.graph!.query(
+      `MATCH (o:Experience {id: $oldId}) RETURN o.id`,
+      { params: { oldId } },
+    );
+    if (((found.data ?? []) as unknown[]).length === 0) return null;
+    const [embedding] = await this.client.embed(failedInput.text);
+    if (!embedding?.length) return null;
+    const now = new Date().toISOString();
+    const id = `exp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    await this.graph!.query(
+      `MATCH (o:Experience {id: $oldId})
+       SET o.superseded = true, o.supersededBy = $id
+       CREATE (n:Experience {id: $id, text: $text, taskShape: $taskShape, approach: $approach,
+         outcome: $outcome, satisfaction: $satisfaction, evidenceCount: $ev, model: $model,
+         createdAt: $now, lastConfirmed: $now, superseded: false, verified: $verified, commit: $commit,
+         supersedesId: $oldId, embedding: vecf32($emb)})
+       CREATE (n)-[:SUPERSEDES {at: $now}]->(o)`,
+      { params: { oldId, id, text: failedInput.text, taskShape: failedInput.taskShape, approach: failedInput.approach, outcome: failedInput.outcome, satisfaction: failedInput.satisfaction, ev: failedInput.evidenceCount ?? 1, model: failedInput.model, now, verified: failedInput.verified ?? false, commit: failedInput.commit ?? '', emb: embedding } },
+    );
+    if (sourceSessionKey) {
+      try {
+        await this.graph!.query(
+          `MATCH (x:Experience {id: $id}), (t:Turn {sessionKey: $sk})
+           WITH x, t ORDER BY t.createdAt DESC LIMIT 1
+           CREATE (x)-[:EXTRACTED_FROM]->(t)`,
+          { params: { id, sk: sourceSessionKey } },
+        );
+      } catch { /* provenance is best-effort */ }
+    }
+    return id;
   }
 
   async list(includeSuperseded = false): Promise<Experience[]> {
@@ -190,7 +262,8 @@ export class ExperienceStore {
       `MATCH (x:Experience) ${includeSuperseded ? '' : 'WHERE x.superseded IS NULL OR x.superseded = false'}
        RETURN x.id AS id, x.text AS text, x.taskShape AS taskShape, x.approach AS approach, x.outcome AS outcome,
               x.satisfaction AS satisfaction, x.evidenceCount AS evidenceCount, x.model AS model,
-              x.createdAt AS createdAt, x.lastConfirmed AS lastConfirmed, x.superseded AS superseded
+              x.createdAt AS createdAt, x.lastConfirmed AS lastConfirmed, x.superseded AS superseded,
+              x.verified AS verified
        ORDER BY x.lastConfirmed DESC`,
     );
     return (res.data ?? []) as Experience[];
