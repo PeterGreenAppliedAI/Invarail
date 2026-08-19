@@ -161,6 +161,53 @@ describe('SelfModService', () => {
     expect(restart).not.toHaveBeenCalled();
   });
 
+  it('executeMerge: verified experience written, id lands IN THE MARKER (recovery state), turn precedes save', async () => {
+    const calls: string[] = [];
+    const experienceStore = {
+      save: vi.fn(async () => { calls.push('save'); return { id: 'exp_123', action: 'created' as const }; }),
+    };
+    const graphMemory = {
+      addTurn: vi.fn(async () => { calls.push('turn'); }),
+    };
+    const svc = new SelfModService({
+      config: config(), repoRoot: repo, adapter: committingAdapter(), pendingStore,
+      onRestartRequested: () => { calls.push('restart'); restart(); },
+      gateRunner: gateOpts => runMergeGate({ ...gateOpts, checkRunner: passingChecks }),
+      experienceStore: experienceStore as never, graphMemory: graphMemory as never,
+    });
+    const res = await svc.propose('add a widget', 'peter', 'discord');
+    const pending = pendingStore.findById(res.pendingId!, 'peter')!;
+    await svc.executeMerge(pending.params);
+
+    expect(calls).toEqual(['turn', 'save', 'restart']); // turn first (provenance), save awaited BEFORE restart
+    const marker = new SelfModWorktrees(repo).readDeployMarker()!;
+    expect(marker.experienceId).toBe('exp_123');
+    const saveArg = experienceStore.save.mock.calls[0][0] as Record<string, unknown>;
+    expect(saveArg.verified).toBe(true);
+    expect(saveArg.outcome).toBe('worked');
+    expect(saveArg.commit).toBe(marker.mergeSha);
+    const turnArgs = graphMemory.addTurn.mock.calls[0] as unknown[];
+    expect(turnArgs[1]).toBe('pi');
+    expect((turnArgs[4] as Record<string, string>).source).toBe('pi');
+    expect((turnArgs[4] as Record<string, string>).commit).toBe(marker.mergeSha);
+  });
+
+  it('executeMerge: memory down degrades — deploy proceeds, marker has no experienceId', async () => {
+    const experienceStore = { save: vi.fn(async () => { throw new Error('falkor unreachable'); }) };
+    const svc = new SelfModService({
+      config: config(), repoRoot: repo, adapter: committingAdapter(), pendingStore,
+      onRestartRequested: restart,
+      gateRunner: gateOpts => runMergeGate({ ...gateOpts, checkRunner: passingChecks }),
+      experienceStore: experienceStore as never,
+    });
+    const res = await svc.propose('add a widget', 'peter', 'discord');
+    const pending = pendingStore.findById(res.pendingId!, 'peter')!;
+    const reply = await svc.executeMerge(pending.params);
+    expect(reply).toContain('Merged');
+    expect(restart).toHaveBeenCalledOnce();
+    expect(new SelfModWorktrees(repo).readDeployMarker()!.experienceId).toBeUndefined();
+  });
+
   it('executeMerge: no active worktree → refuses', async () => {
     const svc = makeService({ adapter: committingAdapter() });
     await expect(svc.executeMerge({ slug: 'ghost', branch: 'self-mod/ghost', headSha: 'x' }))

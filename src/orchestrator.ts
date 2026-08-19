@@ -235,8 +235,11 @@ export class Orchestrator {
     // Self-modification service (Phase B) — worktree arenas, gate, ledger-confirmed merges.
     // exit(42) is the supervisor handshake: "deploy restart requested" (0 = intentional stop).
     if (this.config.selfMod?.enabled) {
+      const { sharedExperienceStore } = await import('./memory/experience-store.js');
       this.selfModService = new SelfModService({
         config: this.config,
+        graphMemory: this.graphMemory,
+        experienceStore: sharedExperienceStore(this.client),
         onRestartRequested: () => {
           setTimeout(async () => {
             console.log('[SelfMod] Exiting 42 for supervised deploy restart');

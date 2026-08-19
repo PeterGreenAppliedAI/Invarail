@@ -37,6 +37,9 @@ export interface SelfModServiceOptions {
   pendingStore?: PendingActionStore;
   /** Called after a successful merge — the orchestrator schedules reply delivery then exit(42) */
   onRestartRequested?: () => void;
+  /** Memory integration (Phase C) — absent: memory writes are skipped, everything else works */
+  graphMemory?: import('../memory/graph-store.js').GraphMemoryStore;
+  experienceStore?: import('../memory/experience-store.js').ExperienceStore;
 }
 
 export interface ProposeResult {
@@ -54,6 +57,8 @@ export class SelfModService {
   private readonly gateRunner: (opts: MergeGateOptions) => Promise<GateVerdict>;
   private readonly pending: PendingActionStore;
   private readonly onRestartRequested?: () => void;
+  private readonly graphMemory?: import('../memory/graph-store.js').GraphMemoryStore;
+  private readonly experienceStore?: import('../memory/experience-store.js').ExperienceStore;
   private busy = false;
 
   constructor(opts: SelfModServiceOptions) {
@@ -67,6 +72,8 @@ export class SelfModService {
     this.gateRunner = opts.gateRunner ?? runMergeGate;
     this.pending = opts.pendingStore ?? pendingActions;
     this.onRestartRequested = opts.onRestartRequested;
+    this.graphMemory = opts.graphMemory;
+    this.experienceStore = opts.experienceStore;
   }
 
   bootSweep(): void {
@@ -107,7 +114,7 @@ export class SelfModService {
     const slug = slugify(spec).slice(0, 40);
     this.busy = true;
     try {
-      const active = this.worktrees.create(slug);
+      const active = this.worktrees.create(slug, spec);
       console.log(`[SelfMod] Worktree ${active.worktreePath} (base ${active.baseSha.slice(0, 8)})`);
 
       const session = await this.adapter.runSession({
@@ -115,6 +122,7 @@ export class SelfModService {
         cwd: active.worktreePath,
         label: `self-mod:${slug}`,
       });
+      this.worktrees.updateActive({ sessionId: session.sessionId, sessionFile: session.sessionFile });
 
       // Safety net: the gate diffs committed history — auto-commit anything Pi left dirty.
       this.autoCommitLeftovers(active.worktreePath, slug);
@@ -202,15 +210,70 @@ export class SelfModService {
       throw selfModError(`merge of ${branch} failed (conflict with main?) — worktree kept`, err);
     }
     const mergeSha = this.git(['rev-parse', 'HEAD']);
-    this.worktrees.writeDeployMarker({ prevSha, mergeSha, slug, ts: new Date().toISOString() });
+
+    // The gate/confirm event IS the memory verified event — write it now, awaited, BEFORE the
+    // restart callback (a write racing exit(42) dies mid-flight). Best-effort: memory being
+    // down must never block a deploy. Idempotent on mergeSha (crash replay finds the node).
+    const experienceId = await this.recordVerifiedExperience(active, mergeSha, verdict).catch(err => {
+      console.warn('[SelfMod] Verified-experience write failed (deploy continues):', err instanceof Error ? err.message : err);
+      return undefined;
+    });
+
+    this.worktrees.writeDeployMarker({
+      prevSha, mergeSha, slug, ts: new Date().toISOString(),
+      ...(experienceId ? { experienceId } : {}),
+    });
     this.worktrees.remove();
     logAutonomousAction({
       action: 'self_mod_merged', tier: 'propose_confirm', source: 'user_command',
-      reversible: false, outcome: 'confirmed', approval: 'confirmed', detail: slug, resource: mergeSha,
+      reversible: false, outcome: 'confirmed', approval: 'confirmed', detail: slug,
+      resource: experienceId ? `${mergeSha}|exp:${experienceId}` : mergeSha,
     });
     console.log(`[SelfMod] Merged ${branch} → main (${prevSha.slice(0, 8)} → ${mergeSha.slice(0, 8)}); requesting supervised restart`);
     this.onRestartRequested?.();
     return `Merged **${slug}** into main (${mergeSha.slice(0, 8)}). Restarting under the supervisor — gates re-run, health-checked, auto-rollback to ${prevSha.slice(0, 8)} on failure.`;
+  }
+
+  /**
+   * The success write: a (:Turn source:'pi') for provenance + a verified Experience.
+   * Everything here is CODE-BUILT (spec, touched files, gate stats) — never model
+   * self-assessment. Returns the experienceId for the deploy marker.
+   */
+  private async recordVerifiedExperience(
+    active: import('./self-mod.js').ActiveWorktree,
+    mergeSha: string,
+    verdict: GateVerdict,
+  ): Promise<string | undefined> {
+    if (!this.experienceStore) return undefined;
+    const slug = active.slug;
+    const spec = active.spec ?? slug;
+    const ownerId = this.config.ownerId ?? 'owner';
+    const sessionKey = `selfmod:${slug}`;
+    const files = verdict.touchedFiles.slice(0, 6).join(', ');
+    const summary = `Self-mod "${spec.slice(0, 160)}": merged as ${mergeSha.slice(0, 8)} — ${verdict.touchedFiles.length} files (${files}), gate tier ${verdict.tier}, checks ${verdict.checks.map(c => c.name).join('+')} passed.`;
+
+    // Turn FIRST — experience provenance links to the most recent Turn for the sessionKey.
+    // A crash-replay duplicate Turn is cosmetic; the Experience is idempotent on commit.
+    if (this.graphMemory) {
+      await this.graphMemory.addTurn(summary, 'pi', ownerId, sessionKey, {
+        source: 'pi',
+        model: this.config.pi.model,
+        commit: mergeSha,
+        jsonlPath: active.sessionFile ?? '',
+      }).catch(err => console.warn('[SelfMod] Turn write failed:', err instanceof Error ? err.message : err));
+    }
+
+    const saved = await this.experienceStore.save({
+      text: summary,
+      taskShape: `self-mod: ${spec.slice(0, 120)}`,
+      approach: `touched ${files || 'no files'}; gate tier ${verdict.tier}`,
+      outcome: 'worked',
+      satisfaction: 1,          // owner confirm = explicit approval signal
+      verified: true,           // the merge gate witnessed this — epistemic confidence, not praise
+      commit: mergeSha,
+      model: this.config.pi.model,
+    }, sessionKey);
+    return saved?.id;
   }
 
   private autoCommitLeftovers(worktreePath: string, slug: string): void {

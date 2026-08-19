@@ -27,6 +27,11 @@ export interface ActiveWorktree {
   /** main HEAD at worktree creation — the gate diffs three-dot against this */
   baseSha: string;
   createdAt: string;
+  /** The !improve spec — persisted so the post-confirm memory write can name the task */
+  spec?: string;
+  /** Pi session provenance (set after the session runs) */
+  sessionId?: string;
+  sessionFile?: string;
 }
 
 interface SelfModState {
@@ -38,6 +43,9 @@ export interface DeployMarker {
   mergeSha: string;
   slug: string;
   ts: string;
+  /** The verified Experience written at merge time. IN THE MARKER, not just metrics:
+   *  rollback recovery must be self-contained — correctness never depends on telemetry. */
+  experienceId?: string;
 }
 
 const STALE_MARKER_MS = 15 * 60_000;
@@ -92,7 +100,7 @@ export class SelfModWorktrees {
     return this.git(['rev-parse', 'HEAD']);
   }
 
-  create(slug: string): ActiveWorktree {
+  create(slug: string, spec?: string): ActiveWorktree {
     const state = this.getState();
     if (state.active) {
       throw selfModError(
@@ -141,9 +149,17 @@ export class SelfModWorktrees {
       worktreePath,
       baseSha,
       createdAt: new Date().toISOString(),
+      ...(spec ? { spec } : {}),
     };
     this.writeState({ active });
     return active;
+  }
+
+  /** Persist provenance fields onto the active worktree (survives restarts, like the marker). */
+  updateActive(patch: Partial<Pick<ActiveWorktree, 'spec' | 'sessionId' | 'sessionFile'>>): void {
+    const state = this.getState();
+    if (!state.active) return;
+    this.writeState({ active: { ...state.active, ...patch } });
   }
 
   remove(): void {

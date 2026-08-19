@@ -570,8 +570,11 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
 
   /**
    * Store a conversation turn in the graph for cross-session search.
+   * `extra` adds additive provenance props (e.g. Pi sessions: source/model/commit/jsonlPath —
+   * "why do we believe this" bottoms out at the session JSONL). Existing consumers
+   * (searchTurns, experience provenance) are prop-agnostic.
    */
-  async addTurn(text: string, role: 'user' | 'assistant', senderId: string, sessionKey: string): Promise<void> {
+  async addTurn(text: string, role: 'user' | 'assistant' | 'pi', senderId: string, sessionKey: string, extra?: { source?: string; model?: string; commit?: string; jsonlPath?: string }): Promise<void> {
     if (!this.graph) await this.connect();
     if (!text || text.length < 10) return;
 
@@ -582,9 +585,10 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
       await this.graph!.query(
         `CREATE (:Turn {
           id: $id, text: $text, role: $role, senderId: $senderId,
-          sessionKey: $sessionKey, createdAt: $now
+          sessionKey: $sessionKey, createdAt: $now,
+          source: $source, model: $model, commit: $commit, jsonlPath: $jsonlPath
         })`,
-        { params: { id: turnId, text: stored, role, senderId, sessionKey, now: new Date().toISOString() } }
+        { params: { id: turnId, text: stored, role, senderId, sessionKey, now: new Date().toISOString(), source: extra?.source ?? '', model: extra?.model ?? '', commit: extra?.commit ?? '', jsonlPath: extra?.jsonlPath ?? '' } }
       );
 
       // Link turn to existing entities mentioned in the text
