@@ -6,6 +6,8 @@ import type { WebIndexService } from '../webindex/service.js';
 /** Recency weighting: fresh docs matter more for a news-shaped index.
  *  Half-life ~14 days on top of cosine similarity; undated docs get a mild
  *  penalty rather than exclusion. */
+export const LOCAL_SEARCH_FLOOR = 0.52;
+
 function recencyBoost(publishedAt: string | null | undefined, now: number): number {
   if (!publishedAt) return 0.85;
   const ageDays = (now - new Date(publishedAt).getTime()) / 86_400_000;
@@ -50,7 +52,12 @@ export function createLocalSearchTool(deps: {
       }
 
       // Over-fetch chunks, collapse to docs, re-rank by similarity × recency.
-      const chunks = deps.embeddings.search(queryEmbedding, count * 4, 0.35, 'webindex');
+      // Floor 0.52 = the memory system's MEASURED relevance floor for qwen3-embedding
+      // (scoring orders, the floor rejects). At 0.35 an off-domain query (stock research
+      // against an AI index, 2026-08-19) still "hits" nearest neighbors, and the research
+      // pipeline's ≥2-hit gate then skips web search on pure garbage — the Muse Glimmer
+      // bug class. Below the floor the tool says so, and the fall-through actually fires.
+      const chunks = deps.embeddings.search(queryEmbedding, count * 4, LOCAL_SEARCH_FLOOR, 'webindex');
       const now = Date.now();
       const maxAgeMs = deps.maxAgeDays * 86_400_000;
       const byDoc = new Map<string, { score: number; snippet: string; meta: ReturnType<WebIndexService['docMeta']> }>();
