@@ -22,12 +22,14 @@ function makeTool(searchImpl: (emb: number[], k: number, floor: number, src: str
 }
 
 describe('local_search relevance floor', () => {
-  it('passes the calibrated 0.52 floor to the embedding store — never the old 0.35', async () => {
+  it('passes the measured 0.65 floor to the embedding store — never the old 0.35', async () => {
+    // 0.65 = measured on the real webindex corpus: off-domain tops out at 0.59, on-domain
+    // starts at 0.70 (scripts/floor-measure.mts). The memory corpus's 0.52 did not transfer.
     const { tool, search } = makeTool(() => []);
     await tool.execute({ query: 'NYSE stock volatility' }, ctx);
     const floorArg = search.mock.calls[0][2];
     expect(floorArg).toBe(LOCAL_SEARCH_FLOOR);
-    expect(floorArg).toBeGreaterThanOrEqual(0.52);
+    expect(floorArg).toBe(0.65);
   });
 
   it('below-floor queries return the explicit web_search fall-through message', async () => {

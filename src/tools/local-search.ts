@@ -6,7 +6,12 @@ import type { WebIndexService } from '../webindex/service.js';
 /** Recency weighting: fresh docs matter more for a news-shaped index.
  *  Half-life ~14 days on top of cosine similarity; undated docs get a mild
  *  penalty rather than exclusion. */
-export const LOCAL_SEARCH_FLOOR = 0.52;
+/** MEASURED on the actual webindex corpus (scripts/floor-measure.mts, 2026-08-19, 2094
+ *  chunks): off-domain queries (stocks) top out at 0.59, on-domain (AI topics) start at
+ *  0.70 — 0.65 splits the band. The memory system's 0.52 did NOT transfer (different text
+ *  distribution); floors are per-corpus, never borrowed. Re-measure if the embed model or
+ *  seed list changes. */
+export const LOCAL_SEARCH_FLOOR = 0.65;
 
 function recencyBoost(publishedAt: string | null | undefined, now: number): number {
   if (!publishedAt) return 0.85;
@@ -51,12 +56,10 @@ export function createLocalSearchTool(deps: {
         return `Local index unavailable (embedding failed: ${err instanceof Error ? err.message.slice(0, 80) : err}) — use web_search.`;
       }
 
-      // Over-fetch chunks, collapse to docs, re-rank by similarity × recency.
-      // Floor 0.52 = the memory system's MEASURED relevance floor for qwen3-embedding
-      // (scoring orders, the floor rejects). At 0.35 an off-domain query (stock research
-      // against an AI index, 2026-08-19) still "hits" nearest neighbors, and the research
-      // pipeline's ≥2-hit gate then skips web search on pure garbage — the Muse Glimmer
-      // bug class. Below the floor the tool says so, and the fall-through actually fires.
+      // Over-fetch chunks, collapse to docs, re-rank by similarity × recency. The floor
+      // rejects off-domain queries entirely (see LOCAL_SEARCH_FLOOR) so the research
+      // pipeline's ≥2-hit gate can only fire on genuine coverage — below it, the tool
+      // says "use web_search" and the fall-through actually fires.
       const chunks = deps.embeddings.search(queryEmbedding, count * 4, LOCAL_SEARCH_FLOOR, 'webindex');
       const now = Date.now();
       const maxAgeMs = deps.maxAgeDays * 86_400_000;
