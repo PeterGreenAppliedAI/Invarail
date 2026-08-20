@@ -5,7 +5,7 @@ import type { InvarailTool, ToolContext } from './types.js';
 export function createReadFileTool(): InvarailTool {
   return {
     name: 'read_file',
-    description: 'Read the contents of a file within the workspace. WHEN TO USE: Need to read a file from a prior step, check artifact contents, or load data for processing. Use this instead of exec[cat]. DO NOT use exec to read files — always use read_file.',
+    description: 'Read the contents of a file within the workspace. WHEN TO USE: Need to read a file from a prior step, check artifact contents, or load data for processing. Use this instead of exec[cat]. DO NOT use exec to read files — always use read_file. Paths are relative to YOUR workspace (you are already inside it) — never prefix data/workspaces/...',
     parameterDescription: 'path (required): File path relative to workspace. maxLines (optional): Max lines to return (default: all).',
     example: 'read_file[{"path": "src/index.ts", "maxLines": 50}]',
     parameters: {

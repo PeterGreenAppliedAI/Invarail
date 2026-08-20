@@ -19,7 +19,7 @@ const PROTECTED_FILES = new Set([
 export function createWriteFileTool(): InvarailTool {
   return {
     name: 'write_file',
-    description: 'Write or create a file (workspace-only for safety). Cannot overwrite protected files (SOUL.md, TOOLS.md, IDENTITY.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md, TASKS.md).',
+    description: 'Write or create a file (workspace-only for safety). Cannot overwrite protected files (SOUL.md, TOOLS.md, IDENTITY.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md, TASKS.md). Paths are relative to YOUR workspace (you are already inside it) — never prefix data/workspaces/...',
     parameterDescription: 'path (required): File path relative to workspace. content (required): File content to write.',
     example: 'write_file[{"path": "output/report.md", "content": "# Analysis Report\\n\\nFindings..."}]',
     parameters: {
