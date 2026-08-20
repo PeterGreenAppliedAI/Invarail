@@ -649,6 +649,14 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     // (weekly_gather Aug 1 and blender Aug 6 both fell into this trap.)
     console.log('[Dispatch] Explicit MCP tool mention — exec pipeline bypassed for ReAct');
     result = await runSpecialist(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming, browserControlMode);
+  } else if (specialistConfig.dispatchMode === 'arena') {
+    // Arena mode (DECISIONS 2026-08-20, the arena duel): open ReAct loop, natural stop —
+    // skips BOTH the pipeline branch and the legacy multi-orchestration special case.
+    // Same security layers, same confirm set (they live on this path already); gains
+    // session history the pipeline's isolation never had. Config-gated: remove the
+    // dispatchMode field to restore scripted dispatch.
+    console.log(`[Dispatch] Arena mode for "${effectiveCategory}" — open loop, natural stop`);
+    result = await runSpecialist(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming, browserControlMode);
   } else if (!params.skipPipeline && specialistConfig.pipeline && params.pipelineRegistry?.has(specialistConfig.pipeline)) {
     // Deterministic pipeline — LLM fills params, code decides workflow
     result = await runPipelineDispatch(effectiveParams, classification, specialistConfig, history, statePreamble, userPriming);

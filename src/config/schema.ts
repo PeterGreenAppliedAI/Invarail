@@ -56,6 +56,10 @@ export const SpecialistConfigSchema = z.object({
   repeatPenalty: z.number().optional(),
   maxIterations: z.number().default(10),
   tools: z.array(z.string()).default([]),
+  /** 'arena' forces the open ReAct loop (natural stop, dispatch skips pipelines AND the
+   *  legacy multi-orchestration) — the measured winner of the 2026-08-20 arena duel.
+   *  Unset = existing behavior. Reversal is deleting this field. */
+  dispatchMode: z.enum(['pipeline', 'arena']).optional(),
   /** Workspace context level: 'full' injects all workspace files, 'minimal' injects SOUL+IDENTITY only.
    *  Defaults to 'minimal' for tool-using specialists, 'full' for chat. */
   contextLevel: z.enum(['full', 'minimal']).optional(),

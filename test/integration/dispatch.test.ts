@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { dispatchMessage } from '../../src/dispatch.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
+import { PipelineRegistry } from '../../src/pipeline/registry.js';
 import type { OllamaClient } from '../../src/ollama/client.js';
 import type { InvarailConfig } from '../../src/config/types.js';
 import { loadConfig } from '../../src/config/loader.js';
@@ -344,5 +345,63 @@ describe('removed-category tolerance (Invarail trim, 2026-08-10)', () => {
       });
       expect(result.answer).toBeTruthy();
     }
+  });
+});
+
+describe('arena dispatch mode (DECISIONS 2026-08-20: the arena duel)', () => {
+  function arenaSetup(dispatchMode?: 'arena') {
+    const client = createMockClient('multi', 'Task completed via open loop.');
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.multi = {
+      model: 'test-model',
+      maxTokens: 1024,
+      temperature: 0.3,
+      maxIterations: 5,
+      tools: ['read_file'],
+      pipeline: 'plan',                       // deliberately still set — arena must beat it
+      ...(dispatchMode ? { dispatchMode } : {}),
+    } as InvarailConfig['specialists'][string];
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'read_file',
+      description: 'Read a file',
+      parameterDescription: 'path',
+      parameters: { type: 'object', properties: { path: { type: 'string', description: 'p' } }, required: ['path'] },
+      category: 'exec',
+      execute: async () => 'file contents',
+    });
+    const pipelineRegistry = new PipelineRegistry();
+    const hasSpy = vi.spyOn(pipelineRegistry, 'has');
+    return { client, config, registry, pipelineRegistry, hasSpy };
+  }
+
+  it('dispatchMode: arena skips the pipeline even when pipeline is set and registered', async () => {
+    const { client, config, registry, pipelineRegistry, hasSpy } = arenaSetup('arena');
+    const result = await dispatchMessage({
+      client, registry, config, pipelineRegistry,
+      message: 'do a multi-step thing',
+      overrideCategory: 'multi',
+    });
+    expect(result.category).toBe('multi');
+    expect(result.answer).toContain('open loop');
+    expect(hasSpy).not.toHaveBeenCalled();     // the pipeline branch was never consulted
+  });
+
+  it('without dispatchMode, the pipeline registry IS consulted (legacy behavior preserved)', async () => {
+    const { client, config, registry, pipelineRegistry, hasSpy } = arenaSetup(undefined);
+    await dispatchMessage({
+      client, registry, config, pipelineRegistry,
+      message: 'do a multi-step thing',
+      overrideCategory: 'multi',
+    });
+    expect(hasSpy).toHaveBeenCalledWith('plan'); // proves the arena test's non-consultation is meaningful
+  });
+
+  it('schema: dispatchMode parses arena and defaults to absent', async () => {
+    const { SpecialistConfigSchema } = await import('../../src/config/schema.js');
+    const parsed = SpecialistConfigSchema.parse({ model: 'm', dispatchMode: 'arena' });
+    expect(parsed.dispatchMode).toBe('arena');
+    expect(SpecialistConfigSchema.parse({ model: 'm' }).dispatchMode).toBeUndefined();
+    expect(() => SpecialistConfigSchema.parse({ model: 'm', dispatchMode: 'freeform' })).toThrow();
   });
 });
