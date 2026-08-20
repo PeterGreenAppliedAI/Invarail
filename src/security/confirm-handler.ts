@@ -68,7 +68,10 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     const pending = store.findById(denyMatch[1].toLowerCase(), principal);
     if (!pending) return { handled: false };
     store.consume(pending.id);
-    logAutonomousAction({ action: `denied:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'rejected', detail: JSON.stringify(pending.params).slice(0, 120), approval: 'rejected' });
+    // Pending id LEADS detail: params previews truncate, and denial consumers
+    // (proposal-history absorption) match by id — a long spec ate the whole
+    // 120-char window and made "denied is permanent" unenforceable (drill 2026-08-20).
+    logAutonomousAction({ action: `denied:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: true, outcome: 'rejected', detail: `${pending.id} ${JSON.stringify(pending.params).slice(0, 110)}`, approval: 'rejected' });
     const reply = `🚫 Cancelled — **${pending.tool}** will not run.`;
     if (ctx.sessionStore) {
       try {

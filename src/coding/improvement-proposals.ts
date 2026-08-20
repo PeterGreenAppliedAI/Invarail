@@ -106,8 +106,15 @@ export class ProposalHistory {
       const ts = r.timestamp as string;
       if (ts > newest) newest = ts;
       const detail = String(r.detail ?? '');
+      // Extract a spec fragment from truncated params previews ({"spec":"<fragment...) —
+      // fallback matching for rows logged before the id-leads-detail fix.
+      const specFragMatch = detail.match(/"spec":"([^"]{20,})/);
+      const specFrag = specFragMatch?.[1];
       for (const [signature, entry] of current) {
-        if (entry.outcome === 'proposed' && (detail.includes(signature) || (entry.pendingId && detail.includes(entry.pendingId)))) {
+        const byId = !!entry.pendingId && detail.includes(entry.pendingId);
+        const bySignature = detail.includes(signature);
+        const bySpecPrefix = !!specFrag && entry.spec.startsWith(specFrag.slice(0, 60));
+        if (entry.outcome === 'proposed' && (byId || bySignature || bySpecPrefix)) {
           this.append({ ...entry, outcome: 'denied' });
           marked++;
         }

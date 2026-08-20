@@ -62,6 +62,21 @@ describe('ProposalHistory', () => {
     expect(history.bySignature().get('web_fetch:403')?.outcome).toBe('denied');
     expect(history.absorbDenialsFromMetrics()).toBe(0); // cursor advanced — no rescan
   });
+
+  it('absorbs legacy rows where truncation ate the id: matches by spec prefix', () => {
+    // Pre-fix denial rows: detail = params JSON sliced at 120 chars — a long spec
+    // means neither pendingId nor signature ever appears (drill 2026-08-20).
+    const spec = "Add a 'retry' option with default set to false and an exponential backoff strategy when using the `navigateTo` method of the browser tool.";
+    history.append({ signature: 'browser:timeout', spec, proposedAt: new Date().toISOString(), outcome: 'proposed', pendingId: '9f85f39a' });
+    appendFileSync(join(dir, 'metrics.jsonl'), JSON.stringify({
+      timestamp: new Date().toISOString(), type: 'autonomous_action',
+      action: 'denied:self_improve', outcome: 'rejected',
+      detail: JSON.stringify({ spec, signature: 'browser:timeout' }).slice(0, 120),
+    }) + '\n');
+
+    expect(history.absorbDenialsFromMetrics()).toBe(1);
+    expect(history.bySignature().get('browser:timeout')?.outcome).toBe('denied');
+  });
 });
 
 describe('draftProposal', () => {
