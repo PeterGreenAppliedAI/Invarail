@@ -44,7 +44,9 @@ export const PROTECTED_PATHS: readonly string[] = [
   'src/config/schema.ts',
   'src/coding/self-mod.ts',
   'src/coding/merge-gate.ts',
+  'src/coding/improvement-proposals.ts',   // shapes what enters the ladder — never self-modifiable below Tier 3
   'src/tools/self-merge.ts',
+  'src/tools/self-improve.ts',
   'scripts/supervisor.sh',
   '.github/',
   'package.json',

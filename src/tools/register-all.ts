@@ -224,6 +224,11 @@ export async function registerAllTools(
     const { createSelfMergeTool } = await import('./self-merge.js');
     registry.register(createSelfMergeTool(options.selfModService));
     console.log('[Tools] self_merge registered (ledger-only)');
+    if (options.channelRegistry) {
+      const { createSelfImproveTool } = await import('./self-improve.js');
+      registry.register(createSelfImproveTool({ service: options.selfModService, channelRegistry: options.channelRegistry }));
+      console.log('[Tools] self_improve registered (ledger-only)');
+    }
   }
 
   // Workspace tools (always available)
