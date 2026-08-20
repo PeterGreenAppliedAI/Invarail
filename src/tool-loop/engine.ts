@@ -474,6 +474,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
   // Repair prompts don't consume tool-call budget — each one-shot repair
   // extends the loop by one iteration (bounded: each flag fires at most once)
   let extraIterations = 0;
+  let finalAnswerChecks = 0;
   // Narration coarseness: channels get ONE line per tool STREAK, not per call —
   // a 7-write run narrated "Using write_file…" seven times to Discord (Aug 1),
   // violating the deliberate milestone-level channel design
@@ -803,6 +804,26 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       continue;
     }
 
+    // Turn-stopping checkpoint (dsh shape; DECISIONS "completion contracts"): code gets a
+    // last look at the natural stop. Reject → the deficit is injected and the loop
+    // continues on granted iterations (repairs-don't-burn-budget pattern). Capped at 3
+    // invocations as an engine-level belt regardless of the hook's own budget.
+    if (config.onFinalAnswer && finalAnswerChecks < 3) {
+      finalAnswerChecks++;
+      try {
+        const verdict = await config.onFinalAnswer(answer, steps);
+        if (!verdict.accept) {
+          console.log(`[ReAct] Step ${i + 1}: final answer rejected by checkpoint (${finalAnswerChecks}/3) — continuing`);
+          messages.push(msg);
+          messages.push({ role: 'user', content: verdict.feedback });
+          extraIterations += verdict.grantIterations ?? 4;
+          continue;
+        }
+      } catch (err) {
+        console.warn('[ReAct] Final-answer checkpoint errored (accepting answer):', err instanceof Error ? err.message : err);
+      }
+    }
+
     steps.push({ thought: '', finalAnswer: answer });
     const fileAppend = fileTokens.map(p => ` [FILE:${p}]`).join('');
     // Stream the final answer to user (answer already computed, no tool-call risk)
@@ -833,7 +854,17 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
       ? await client.chatStream(finalChatParams, onStream)
       : await client.chat(finalChatParams);
 
-    const answer = stripReActScaffolding(finalResponse.message?.content || '') || 'I was unable to complete the request within the allowed steps.';
+    let answer = stripReActScaffolding(finalResponse.message?.content || '') || 'I was unable to complete the request within the allowed steps.';
+    // At the cap the checkpoint cannot grant iterations — a rejection converts the
+    // synthesized answer into the hook's honest-failure form instead (no loops here).
+    if (config.onFinalAnswer) {
+      try {
+        const verdict = await config.onFinalAnswer(answer, steps);
+        if (!verdict.accept) answer = verdict.feedback;
+      } catch (err) {
+        console.warn('[ReAct] Final-answer checkpoint errored at cap (accepting synthesis):', err instanceof Error ? err.message : err);
+      }
+    }
     steps.push({ thought: '', finalAnswer: answer });
     return { answer: answer + fileAppend, steps, iterations: config.maxIterations, hitMaxIterations: true, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
   } catch {

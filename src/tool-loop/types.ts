@@ -36,6 +36,12 @@ export interface ReActConfig {
    *  models (their native knob; they have no off-mode). Unset = model default.
    *  Callers must only set this for thinking-capable models. */
   think?: boolean | 'low' | 'medium' | 'high';
+  /** Turn-stopping checkpoint (completion contracts): code inspects the final answer at
+   *  natural stop and at the iteration cap. Reject at natural stop → feedback injected as
+   *  a user message, loop continues on granted iterations (default 4); reject at cap →
+   *  the answer is REPLACED with the feedback (honest failure — no loops at the cap).
+   *  Engine caps invocations at 3 per run regardless of the hook's own budget. */
+  onFinalAnswer?: (answer: string, steps: ReActStep[]) => Promise<{ accept: true } | { accept: false; feedback: string; grantIterations?: number }>;
 }
 
 export type ParsedReActResponse =
