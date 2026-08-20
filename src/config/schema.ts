@@ -321,16 +321,6 @@ export const PiConfigSchema = z.object({
   }).default({}),
 });
 
-// Completion contracts (arena mode): checkable postconditions pre-registered before the
-// loop, code-verified at natural stop. The harness fix for unverified completion.
-export const ContractsConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  /** Natural-stop rejections before the loop accepts and the answer wraps honestly */
-  retries: z.number().default(2),
-  /** Extraction model override; defaults to the router model (fast, structured) */
-  model: z.string().optional(),
-});
-
 // Self-modification (Phase B): Pi implements changes to Invarail's OWN repo in isolated git
 // worktrees; merges are gate-checked and ALWAYS owner-confirmed via the pending-action ledger.
 export const SelfModConfigSchema = z.object({
@@ -539,7 +529,6 @@ export const InvarailConfigSchema = z.object({
   imageGen: ImageGenConfigSchema.default({}),
   pi: PiConfigSchema.default({}),
   selfMod: SelfModConfigSchema.default({}),
-  contracts: ContractsConfigSchema.default({}),
   voice: VoiceConfigSchema.default({}),
   heartbeat: HeartbeatConfigSchema.optional(),
 });

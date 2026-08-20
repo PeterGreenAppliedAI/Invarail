@@ -4,6 +4,17 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Completion Contracts — Built, Measured, KILLED Same Day (August 20 2026, evening)
+
+### The kill (Peter's call, correct)
+Contract coverage equals extraction recall, and extraction recall proved a lottery: 0-for-3 "not checkable" on blatantly checkable asks in the clean think=low run (including "write the number to revenue.txt"), spotty before that. **A gate that attaches probabilistically is not a gate** — it slides down the tier map to the prose judge's neighborhood while carrying real machinery. The rescue option (code-detected condition seeding — filename regexes, task verbs) was rejected on sight: "we'd have to create arbitrary rules just to keep up with the exhaustive list of potential tasks" — the skill-system/rule-mill disease, the exact taxonomy-sprawl this week has been melting. Disproven theory, recorded: model-extracted completion contracts cannot reliably attach on arbitrary asks; deterministic seeding is an unbounded rulebook. The concept only works where tasks CARRY their own oracles (code + tests = the merge gate; research claims + sources = verification) — you cannot bolt an oracle onto an oracle-less ask.
+
+### What was killed vs kept
+KILLED: dispatch wiring (arena runs ungated), contracts config block, quality-judge contract branch, DispatchResult.contract. KEPT: the engine's `onFinalAnswer` turn-stopping checkpoint (the SEAM is not a rule — zero cost unused, and real-oracle categories can plug in later), the contract module as eval-side library (the duel's third arm), the chatMaybeStructured think:false pin (correct for its measured class — param extraction; also suspected of worsening contract-extraction recall on qwen, which is now moot). The incident's ACTUAL fixes all stand and were the real medicine: exec code-param bug, NO-SHELL-OPERATORS tool description (eliminated the > redirect ritual from every subsequent run), long-run Discord notification, hitMax quality flagging. Still queued for the unverified-completion problem: Hermes-tier repetition/cost guards (same-tool + identical-result signatures — arg-matching provably misses escalation loops).
+
+### What the failed experiment taught (kept from the entry below)
+The guarantee tier map survives its author: prose judge < contracts < computed oracles < owner confirm — contracts just turned out to live closer to the judge than believed. Full build/measure record follows for archaeology.
+
 ## Completion Contracts — the Harness Fix, Built and Re-Measured (August 20 2026, same day)
 
 ### The incident that demanded it

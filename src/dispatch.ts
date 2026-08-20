@@ -162,9 +162,6 @@ export interface DispatchResult {
   /** Confirm-gate previews recorded during this dispatch — delivery surfaces
    *  attach confirm/always/deny buttons for the most recent one */
   pendingActions?: Array<{ id: string; tool: string }>;
-  /** Completion-contract verdict for arena runs — the world-checked ground truth the
-   *  quality judge must respect (a failed checkable contract is never GOOD) */
-  contract?: { checkable: boolean; pass: boolean; failed: string[] };
 }
 
 /**
@@ -680,22 +677,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
 
   // LLM-as-judge quality scoring for pipeline categories
   const QUALITY_CATEGORIES = new Set(['web_search', 'research', 'multi', 'exec', 'code_gen']);
-  // A FAILED checkable contract is ground truth — the prose judge is skipped (it graded a
-  // 200KB placeholder file GOOD on 2026-08-20 because it only ever read the answer text).
-  if (result.contract?.checkable && !result.contract.pass) {
-    console.log(`[Quality] ${effectiveCategory}: CONTRACT_FAILED (${result.contract.failed.length} unmet — prose judge skipped)`);
-    try {
-      const { appendFileSync, mkdirSync } = await import('node:fs');
-      const { join } = await import('node:path');
-      const qualityDir = join(process.cwd(), 'data', 'quality');
-      mkdirSync(qualityDir, { recursive: true });
-      appendFileSync(join(qualityDir, 'quality-scores.jsonl'), JSON.stringify({
-        timestamp: new Date().toISOString(), category: effectiveCategory, level: 'CONTRACT_FAILED',
-        contract: result.contract, hitMaxIterations: result.hitMaxIterations,
-        messagePreview: message.slice(0, 100), answerLength: result.answer.length,
-      }) + '\n');
-    } catch { /* best-effort logging */ }
-  } else if (QUALITY_CATEGORIES.has(effectiveCategory) && result.answer?.length > 100 && !params.cronMode) {
+  if (QUALITY_CATEGORIES.has(effectiveCategory) && result.answer?.length > 100 && !params.cronMode) {
     try {
       const qualityResponse = await client.chat({
         model: config.router?.model ?? 'phi4:14b',
@@ -725,7 +707,6 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
             scores,
             avg: Math.round(avg * 10) / 10,
             level,
-            ...(result.contract ? { contract: result.contract } : {}),
             ...(result.hitMaxIterations ? { hitMaxIterations: true } : {}),
             messagePreview: message.slice(0, 100),
             answerLength: result.answer.length,
@@ -1074,37 +1055,6 @@ RULES:
     }
   }
 
-  // Completion contract (arena mode only): pre-register checkable postconditions BEFORE
-  // the loop starts, gate the natural stop on them (DECISIONS "completion contracts").
-  // Extraction failure or an unverifiable ask → no gate; contracts never break dispatch.
-  let contract: import('./contracts/completion-contract.js').CompletionContract | undefined;
-  let contractDeps: Omit<import('./contracts/completion-contract.js').ContractCheckDeps, 'answer'> | undefined;
-  if (specialist.dispatchMode === 'arena' && config.contracts?.enabled !== false && !message.startsWith('[SYSTEM]')) {
-    try {
-      const { extractContract } = await import('./contracts/completion-contract.js');
-      contract = await extractContract(client, config.contracts?.model ?? config.router.model, message);
-      console.log(`[Contract] ${contract.checkable ? `${contract.postconditions.length} postcondition(s) registered` : 'not checkable — no gate'}`);
-      logMetric({
-        timestamp: new Date().toISOString(), type: 'completion_contract', category,
-        checkable: contract.checkable, conditions: contract.postconditions.length,
-      });
-      if (contract.checkable) {
-        const { TaskStore } = await import('./tasks/store.js');
-        const { FactStore } = await import('./memory/fact-store.js');
-        const { join } = await import('node:path');
-        contractDeps = {
-          workspacePath,
-          taskStore: new TaskStore(join(workspacePath, 'tasks.json'), join(workspacePath, 'TASKS.md')),
-          factStore: new FactStore(workspacePath),
-          senderId: toolContext.senderId,
-        };
-      }
-    } catch (err) {
-      console.warn('[Contract] Extraction failed — running ungated:', err instanceof Error ? err.message : err);
-      contract = undefined;
-    }
-  }
-  const { buildContractHook, checkContract, wrapAnswerHonestly } = await import('./contracts/completion-contract.js');
 
   const result = await runToolLoop({
     client,
@@ -1123,9 +1073,6 @@ RULES:
       contextSize: specialist.contextSize ?? config.session.contextSize,
       toolStyle: specialist.toolStyle,
       think: specialist.think,
-      ...(contract?.checkable && contractDeps
-        ? { onFinalAnswer: buildContractHook(contract, contractDeps, config.contracts?.retries ?? 2) }
-        : {}),
     },
     tools: toolDefs,
     executor,
@@ -1168,29 +1115,8 @@ RULES:
     });
   }
 
-  // Post-loop contract verdict: the world-checked ground truth. Covers the budget-
-  // exhausted natural stop (hook accepted; wrap here) — the cap path already carries
-  // the honest wrap from the engine.
-  let finalAnswer = result.answer;
-  let contractOutcome: DispatchResult['contract'];
-  if (contract?.checkable && contractDeps) {
-    const check = checkContract(contract, { ...contractDeps, answer: result.answer });
-    contractOutcome = { checkable: true, pass: check.pass, failed: check.failed.map(f => f.detail) };
-    console.log(`[Contract] Final verdict: ${check.pass ? 'SATISFIED' : `UNSATISFIED (${check.failed.length} unmet)`}`);
-    logMetric({
-      timestamp: new Date().toISOString(), type: 'completion_contract_result', category,
-      pass: check.pass, failed: contractOutcome.failed.slice(0, 5),
-      iterations: result.iterations, hitMaxIterations: result.hitMaxIterations,
-    });
-    if (!check.pass && !result.answer.includes('could not verify completion')) {
-      finalAnswer = wrapAnswerHonestly(result.answer, check.failed);
-    }
-  } else if (contract && !contract.checkable) {
-    contractOutcome = { checkable: false, pass: true, failed: [] };
-  }
-
   return {
-    answer: finalAnswer,
+    answer: result.answer,
     category,
     classification,
     iterations: result.iterations,
@@ -1201,7 +1127,6 @@ RULES:
       observation: s.observation,
     })),
     ...(recordedPending.length > 0 ? { pendingActions: recordedPending } : {}),
-    ...(contractOutcome ? { contract: contractOutcome } : {}),
   };
 }
 
