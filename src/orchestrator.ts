@@ -1767,8 +1767,25 @@ export class Orchestrator {
         if (streamMsg) {
           const media = extractMediaAttachments(result.answer);
           const chunks = splitFinalMessage(media.cleanText || result.answer, 2000);
-          // Always do final edit — stream preview has " ..." suffix that needs to be replaced
-          await streamMsg.edit(chunks[0]);
+          // Short runs: morph the stream bubble into the answer (nice, low-noise).
+          // Long runs: the user has stopped watching, and Discord does NOT notify on
+          // edits — a 30-step arena run delivered its answer as a silent edit of a
+          // status bubble (2026-08-20) and looked like no reply at all. Close the
+          // bubble and send the answer as a REAL message so it notifies.
+          const longRun = result.iterations > 4;
+          if (longRun) {
+            await streamMsg.edit('✅ Done — answer below.').catch(() => undefined);
+            const adapter = this.channelRegistry.get(msg.channel);
+            if (adapter) {
+              await adapter.send(
+                { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+                { text: chunks[0] },
+              );
+            }
+          } else {
+            // Always do final edit — stream preview has " ..." suffix that needs to be replaced
+            await streamMsg.edit(chunks[0]);
+          }
           if (chunks.length > 1) {
             for (let i = 1; i < chunks.length; i++) {
               const adapter = this.channelRegistry.get(msg.channel);
