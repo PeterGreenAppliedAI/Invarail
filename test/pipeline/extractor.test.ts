@@ -161,4 +161,14 @@ describe('array fields', () => {
     expect(call.format.properties.jobs.type).toBe('array');
     expect(call.format.properties.jobs.items.properties.category.enum).toEqual(['message', 'web_search']);
   });
+
+  it('structured calls pin think:false on think-capable models, omit it elsewhere (doctrine: structured stages never think)', async () => {
+    const capable = mockClient(['{"jobs": []}']);
+    await extractParams(capable, 'qwen3.8-27b', jobsSchema, 'anything');
+    expect((capable.chat as ReturnType<typeof vi.fn>).mock.calls[0][0].think).toBe(false);
+
+    const incapable = mockClient(['{"jobs": []}']);
+    await extractParams(incapable, 'phi4:14b', jobsSchema, 'anything');
+    expect((incapable.chat as ReturnType<typeof vi.fn>).mock.calls[0][0]).not.toHaveProperty('think');
+  });
 });

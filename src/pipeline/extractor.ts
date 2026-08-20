@@ -145,9 +145,14 @@ export async function chatMaybeStructured(
   maxTokens = 2048,
 ): Promise<string> {
   const options = { temperature: 0.1, num_predict: maxTokens };
+  // Structured stages never think (doctrine, measured 2026-08-16; re-confirmed 2026-08-20
+  // when contract extraction on thinking-default qwen/SGLang spent ~80s deliberating before
+  // one line of constrained JSON). Caps-gated: only sent where the toggle is real.
+  const thinkCap = capsFor(model).think;
+  const thinkParam = thinkCap === 'toggle' || thinkCap === 'full' ? { think: false as const } : {};
   if (structuredOutputsSupported && capsFor(model).supportsFormat) {
     try {
-      const response = await client.chat({ model, messages, format: jsonSchema, options });
+      const response = await client.chat({ model, messages, format: jsonSchema, options, ...thinkParam });
       return response.message?.content ?? '';
     } catch (err) {
       structuredOutputsSupported = false;
@@ -155,7 +160,7 @@ export async function chatMaybeStructured(
         err instanceof Error ? err.message : err);
     }
   }
-  const response = await client.chat({ model, messages, options });
+  const response = await client.chat({ model, messages, options, ...thinkParam });
   return response.message?.content ?? '';
 }
 
