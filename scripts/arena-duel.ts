@@ -39,6 +39,7 @@ import { createWebFetchTool } from '../src/tools/web-fetch.js';
 import type { InvarailTool, ToolExecutor, ToolContext } from '../src/tools/types.js';
 import type { PipelineContext, SubDispatchResult } from '../src/pipeline/types.js';
 import type { OllamaClient } from '../src/ollama/client.js';
+import { extractContract, buildContractHook, checkContract, wrapAnswerHonestly } from '../src/contracts/completion-contract.js';
 
 const MODEL = 'qwen3.8-27b';
 const OUT_DIR = `data/model-eval/arena-duel-${new Date().toISOString().slice(0, 10)}`;
@@ -163,6 +164,36 @@ const TASKS: DuelTask[] = [
     },
   },
   {
+    id: 'release-notes',
+    // The 2026-08-20 incident shape: long-horizon content composition into a file.
+    // Bare arena drifted into placeholder spam here; contracts must catch it.
+    prompt: 'Read releases.txt. Add a task to my task board to evaluate the new version (include the version number in the title). Then write notes/release-summary.md summarizing the actual changes listed.',
+    fixtures: ws => writeFileSync(join(ws, 'releases.txt'), [
+      'v0.6.2 — 2026-08-18',
+      '- Rust frontend rework: network ingress to tokenized handoff moved out of Python',
+      '- MTP speculative decoding enabled by default (3 steps)',
+      '- KV cache compression for long-context batches',
+      '- Fixed a deadlock in continuous batching under abort storms',
+    ].join('\n') + '\n'),
+    reference: (ws, store) => {
+      store.add({ title: 'Evaluate v0.6.2' });
+      mkdirSync(join(ws, 'notes'), { recursive: true });
+      writeFileSync(join(ws, 'notes', 'release-summary.md'), '# v0.6.2\n\nRust frontend rework moves ingress out of Python. Speculative decoding now default. KV cache compression added; batching deadlock fixed.\n');
+    },
+    check: (ws, store) => {
+      const task = store.list().find(t => /0\.6\.2/.test(t.title));
+      const note = read(join(ws, 'notes', 'release-summary.md'));
+      const phrases = [/rust\s+frontend/i, /speculative\s+decoding/i, /kv\s+cache/i, /deadlock/i];
+      const contentHits = phrases.filter(p => p.test(note)).length;
+      const placeholderish = note.length > 100 && /(.)\1{50,}/.test(note);
+      const ok = !!task && contentHits >= 2 && !placeholderish;
+      return {
+        pass: ok,
+        detail: ok ? `task + note with ${contentHits}/4 change phrases` : `task: ${!!task}, phrases: ${contentHits}/4, placeholder: ${placeholderish}, noteLen: ${note.length}`,
+      };
+    },
+  },
+  {
     id: 'web-node-year',
     web: true,
     prompt: 'Find the year Node.js was first released (search the web if needed) and write just the year to node-year.txt.',
@@ -248,8 +279,18 @@ interface ArmResult {
   error?: string;
 }
 
-async function runArena(client: OllamaClient, env: RunEnv, task: DuelTask): Promise<Omit<ArmResult, 'pass' | 'detail'>> {
+async function runArena(client: OllamaClient, env: RunEnv, task: DuelTask, contracted: boolean): Promise<Omit<ArmResult, 'pass' | 'detail'>> {
   const start = Date.now();
+
+  // Contracted arm mirrors production dispatch: real extraction, checkpoint hook,
+  // post-loop honest wrap. Same machinery as src/dispatch.ts arena wiring.
+  let contract: Awaited<ReturnType<typeof extractContract>> | undefined;
+  const contractDeps = { workspacePath: env.ws, taskStore: env.store, senderId: 'arena-duel' };
+  if (contracted) {
+    contract = await extractContract(client, MODEL, task.prompt);
+    console.log(`[Contract] ${contract.checkable ? `${contract.postconditions.length} postcondition(s)` : 'not checkable'}`);
+  }
+
   const result = await runToolLoop({
     client,
     config: {
@@ -261,12 +302,20 @@ async function runArena(client: OllamaClient, env: RunEnv, task: DuelTask): Prom
       systemPrompt: ARENA_PROMPT(env.tools),
       toolStyle: 'native',
       think: THINK,
+      ...(contract?.checkable ? { onFinalAnswer: buildContractHook(contract, contractDeps, 2) } : {}),
     },
     tools: env.tools,
     executor: env.executor,
     toolContext: env.toolContext,
     userMessage: task.prompt,
   });
+  if (contract?.checkable) {
+    const check = checkContract(contract, { ...contractDeps, answer: result.answer });
+    if (!check.pass && !result.answer.includes('could not verify completion')) {
+      result.answer = wrapAnswerHonestly(result.answer, check.failed);
+    }
+    console.log(`[Contract] Final: ${check.pass ? 'SATISFIED' : 'UNSATISFIED'}`);
+  }
   return {
     seconds: (Date.now() - start) / 1000,
     llmCalls: result.iterations,
@@ -367,7 +416,7 @@ async function main(): Promise<void> {
 
   const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
   mkdirSync(OUT_DIR, { recursive: true });
-  const arms = ARM_ARG ? [ARM_ARG] : ['pipeline', 'arena'];
+  const arms = ARM_ARG ? [ARM_ARG] : ['pipeline', 'arena', 'arena-contracts'];
   const results: Array<Record<string, unknown>> = [];
 
   const tasks = TASK_ARG ? TASKS.filter(t => t.id === TASK_ARG) : TASKS;
@@ -379,7 +428,9 @@ async function main(): Promise<void> {
       let telemetry: Omit<ArmResult, 'pass' | 'detail'>;
       let error: string | undefined;
       try {
-        telemetry = arm === 'arena' ? await runArena(client, env, task) : await runPipelineArm(client, env, task);
+        telemetry = arm === 'pipeline'
+          ? await runPipelineArm(client, env, task)
+          : await runArena(client, env, task, arm === 'arena-contracts');
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
         telemetry = { seconds: 0, llmCalls: 0, toolCalls: 0, completionTokens: 0 };
