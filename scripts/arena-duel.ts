@@ -18,7 +18,7 @@
  *   npx tsx scripts/arena-duel.ts                   # run both arms, think:false
  *   npx tsx scripts/arena-duel.ts --arm=arena --think=medium   # single arm, effort level
  */
-import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadConfig } from '../src/config/loader.js';
@@ -33,6 +33,7 @@ import { createReadFileTool } from '../src/tools/read-file.js';
 import { createWriteFileTool } from '../src/tools/write-file.js';
 import { createExecTool } from '../src/tools/exec.js';
 import { createMemorySaveTool } from '../src/tools/memory-save.js';
+import { FactStore } from '../src/memory/fact-store.js';
 import { createWebSearchTool } from '../src/tools/web-search.js';
 import { createWebFetchTool } from '../src/tools/web-fetch.js';
 import type { InvarailTool, ToolExecutor, ToolContext } from '../src/tools/types.js';
@@ -42,6 +43,7 @@ import type { OllamaClient } from '../src/ollama/client.js';
 const MODEL = 'qwen3.8-27b';
 const OUT_DIR = `data/model-eval/arena-duel-${new Date().toISOString().slice(0, 10)}`;
 const ARM_ARG = process.argv.find(a => a.startsWith('--arm='))?.split('=')[1];
+const TASK_ARG = process.argv.find(a => a.startsWith('--task='))?.split('=')[1];
 const THINK_ARG = process.argv.find(a => a.startsWith('--think='))?.split('=')[1];
 const THINK: boolean | 'low' | 'medium' | 'high' =
   THINK_ARG === 'low' || THINK_ARG === 'medium' || THINK_ARG === 'high' ? THINK_ARG : false;
@@ -131,15 +133,33 @@ const TASKS: DuelTask[] = [
   {
     id: 'memory-then-file',
     prompt: 'Save to memory that the deployment freeze starts 2026-09-01. Then create freeze-notice.txt containing a one-line reminder with that date.',
-    reference: ws => {
-      writeFileSync(join(ws, 'MEMORY.md'), '- Deployment freeze starts 2026-09-01\n');
+    // Reference exercises the REAL tools (not direct file writes) — the first duel run
+    // failed both arms on a tool-wiring bug the file-writing reference couldn't see.
+    reference: async (ws, store) => {
+      void store;
+      const memTool = createMemorySaveTool(ws, new FactStore(ws), undefined);
+      const ctx = { agentId: 'arena-duel', sessionKey: 'ref', workspacePath: ws, senderId: 'arena-duel' } as ToolContext;
+      const out = await memTool.execute({ content: 'Deployment freeze starts 2026-09-01', category: 'decision' }, ctx);
+      if (out.startsWith('Error')) throw new Error(`reference memory_save failed: ${out}`);
       writeFileSync(join(ws, 'freeze-notice.txt'), 'Deployment freeze starts 2026-09-01.\n');
     },
     check: ws => {
-      const mem = read(join(ws, 'MEMORY.md'));
+      // FactStore layout is per-sender (memory/<senderId>/facts|index/...) — walk the whole
+      // memory/ tree rather than hardcoding the nesting (that guess failed twice already).
+      const walk = (dir: string): string => {
+        let acc = '';
+        try {
+          for (const f of readdirSync(dir, { withFileTypes: true })) {
+            const p = join(dir, f.name);
+            acc += f.isDirectory() ? walk(p) : '\n' + read(p);
+          }
+        } catch { /* absent */ }
+        return acc;
+      };
+      const factFiles = walk(join(ws, 'memory'));
       const note = read(join(ws, 'freeze-notice.txt'));
-      const ok = /2026-09-01/.test(mem) && /2026-09-01/.test(note);
-      return { pass: ok, detail: ok ? 'memory + file both dated' : `MEMORY has date: ${/2026-09-01/.test(mem)}, notice has date: ${/2026-09-01/.test(note)}` };
+      const ok = /2026-09-01/.test(factFiles) && /2026-09-01/.test(note);
+      return { pass: ok, detail: ok ? 'fact stored + file dated' : `fact stored: ${/2026-09-01/.test(factFiles)}, notice dated: ${/2026-09-01/.test(note)}` };
     },
   },
   {
@@ -177,7 +197,10 @@ function makeEnv(config: ReturnType<typeof loadConfig>, task: DuelTask, runId: s
     createReadFileTool(),
     createWriteFileTool(),
     createExecTool(config.tools?.exec, undefined),
-    createMemorySaveTool(ws, undefined, undefined),
+    // Real FactStore per run — without it the tool errors "memory not initialized"
+    // (first duel run failed BOTH arms on this; the selftest missed it because
+    // reference performers write files directly instead of exercising the tools)
+    createMemorySaveTool(ws, new FactStore(ws), undefined),
   ];
   if (task.web) {
     tools.push(createWebSearchTool(config.tools?.web?.search));
@@ -347,7 +370,8 @@ async function main(): Promise<void> {
   const arms = ARM_ARG ? [ARM_ARG] : ['pipeline', 'arena'];
   const results: Array<Record<string, unknown>> = [];
 
-  for (const task of TASKS) {
+  const tasks = TASK_ARG ? TASKS.filter(t => t.id === TASK_ARG) : TASKS;
+  for (const task of tasks) {
     for (const arm of arms) {
       const runId = `${arm}-${task.id}`;
       const env = makeEnv(config, task, runId);
