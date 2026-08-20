@@ -4,6 +4,24 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Arena Duel — the Pipeline Thesis, Measured and Retired (August 20 2026)
+
+### The question
+Peter, after the Pi/dsh study: "I was optimizing for yesterday's model, not tomorrow's — the 27B Qwen model is what has shattered my thesis." The 2025 thesis: 7-30B models can't drive loops, so deterministic pipelines (router → plan → reflect → foreman-managed steps) are structurally necessary. Both open harnesses studied (DeepSeek Harness "dsh" and Pi) independently converged on the opposite: no router, one loop, natural stop, guards as hooks around the loop — control flow belongs to the model, authority belongs to code.
+
+### The measurement (scripts/arena-duel.ts, artifacts in data/model-eval/arena-duel-2026-08-20/)
+Same model (qwen3.8-27b, think:false both arms), same tools, same 7 code-checkable multi-step tasks (files, task board, exec, memory, one budgeted web task), acceptance suite selftest-validated before any model call: **pipeline 7/7 in 372s / 77 llm calls / 3,084 ctok — arena 7/7 in 79s / 43 llm calls / 2,215 ctok.** Equal correctness; the plan pipeline's decomposition+reflection+foreman machinery was pure overhead (~4.7× wall clock) at 2026-27B capability. Also observed: both arms degraded gracefully and honestly when a harness bug broke a tool — retried, fell back, reported the caveat.
+
+### Instrument lessons (paid same day)
+Selftest references must exercise the REAL TOOLS, not write expected files directly — a tool-wiring bug failed both arms invisibly until the reference called the tool (which then also caught two wrong path guesses in the check). Scope caveat, stated honestly: 7 moderate-horizon tasks; long-horizon/adversarial task classes unmeasured — extend the battery before melting anything that guards them.
+
+### What this licenses (the melt, evidence-driven)
+- **Arena dispatch mode**: open tool-loop with natural-stop semantics as the default for multi-step work; the plan pipeline retires from the `multi` category once an arena mode ships behind the same security layers.
+- **Pipelines-as-guarantee survive as hooks**: evidence gates, verification, budgets, code-owned rendering — dsh's shape (pre/post-execute guards, turn-stopping checkpoint) maps cleanly onto the existing 6-layer gate stack.
+- **Pipelines-as-crutch melt**: scripted decomposition, llm_branch enums, reflect stages — accommodations for models that no longer need accommodating.
+- Parked: dsh's code-as-orchestration (`run_code`) as a future eval arm; log-projection context (big refactor, ours works).
+Doctrine, final form: capability-shaped structure rots at model-release cadence; trust-shaped structure appreciates. Build the arena walls in code, and let whatever model is current do the walking.
+
 ## Local-First Gate Needs a Floor, Not a Count — Muse Glimmer Class, Second Strike (August 19 2026)
 
 First production request after go-live: "research 10 NYSE stocks with volatility above 15" → all 6 facets reported "4 local-index hits — skipping web search," sources were NVIDIA/GLM/arxiv AI articles, gap_check waved it through, report was garbage. Root cause: local_search's embedding floor was 0.35 while the memory system's MEASURED relevance floor for the same qwen3-embedding model is 0.52 — KNN always returns nearest neighbors, and at 0.35 "nearest" still passes for an off-domain query, so the research pipeline's ≥2-hit gate (research.ts:203) skipped the web on pure adjacency. Same failure shape as Muse Glimmer (2026-08-15): that fix hardened absence-claims and synthesis provenance but left the GATE hit-count-based. **First fix attempt (94e42af) FAILED live**: borrowed the memory system's 0.52 floor — stock queries still scored 0.53-0.59 against AI prose. Disproven theory: calibrated floors transfer across corpora. They don't — text distribution shifts the whole score band. **Real fix (8292e87): MEASURED on the actual 2094-chunk webindex** (scripts/floor-measure.mts, kept as the calibration probe): off-domain queries top out at 0.59, on-domain start at 0.70 → floor 0.65 splits the band (and independently matches the skill system's measured 0.65 on the same embed model). Below-floor queries return the explicit "No local index results → use web_search" message with no URLs, so the ≥2-hit gate structurally cannot fire on garbage. Doctrine, sharpened: **scoring orders, the floor rejects — and floors are per-corpus, measured, never borrowed.** Re-measure on embed-model or seed-list changes. (Deliberately fixed directly, not via !improve — Peter: not ready to run fixes through Pi yet.)
