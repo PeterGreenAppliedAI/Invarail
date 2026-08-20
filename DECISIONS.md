@@ -4,6 +4,27 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Completion Contracts — the Harness Fix, Built and Re-Measured (August 20 2026, same day)
+
+### The incident that demanded it
+Arena's first production run: 30/30 iterations, 26 consecutive exec calls escalating a placeholder write to 'a'×200000, quality judge scored it GOOD 5/5/5 (it only ever read the answer prose), and the final answer arrived as a silent Discord edit nobody saw. Four stacked defects; the structural one, per Peter's push ("we are coding to fix the ask, not fixing the harness"): **the arena had walls but no exit criteria** — completion happened when the model stopped talking. Cross-harness study confirmed the fix-forward pattern (Hermes ships guards into the live loop incident-by-incident; Prime gates completion on artifact verification; dsh exposes checkpoint seams; Pi delegates to a human) — nobody un-ships the loop. Arena stayed on.
+
+### What shipped (1d92ea5..d5b8010 + fixes ca73ba4, 32f972f)
+- **Completion contracts**: checkable postconditions (closed vocabulary: file_exists/file_contains/task_exists/fact_saved/answer_mentions) PRE-REGISTERED before the loop by a fast extraction call — the model states the contract before it can game it — then CODE-verified against the world at natural stop. Unverifiable asks = no gate (degrade honestly). Extraction failure = no gate (contracts never break dispatch).
+- **onFinalAnswer turn-stopping checkpoint** in the engine (dsh's shape — guarantees-as-hooks, cut one): phase-aware — natural-stop rejects inject model-directed feedback and continue on granted iterations (repairs-don't-burn-budget); cap rejects REPLACE the answer with user-directed honesty. Budget 2 rejections; engine belt 3; hook errors accept (fail-open for the loop, the check is advisory-on-error).
+- **Grounded quality judge**: a FAILED checkable contract skips the prose judge entirely and logs CONTRACT_FAILED — never again GOOD-on-garbage. Passing rows carry the contract verdict.
+- En route: exec code-param bug (tmp path double-resolved against relative workspace — THE incident trigger), long-run answers now send as real Discord messages (edits never notify), exec description now warns shell operators don't work (both duel arms fell into `> file` every single run).
+
+### The re-measure (three arms, 8 tasks incl. the incident shape; artifacts data/model-eval/arena-duel-2026-08-20/)
+**pipeline 8/8, 407s, 78 llm calls, 3,548 ctok · arena 7/8, 83s, 41, 2,339 · arena+contracts 8/8, 346s, 41, 2,647.** Arena's single failure (fib off-by-one, model returned b for a) re-ran 3/3 PASS — pure sampling variance, confirmed as Peter predicted. Contracts: correct coverage on real tasks (2-4 conditions), ZERO false positives, zero additional loop calls; wall-clock overhead is duel-inflated (extraction on qwen3.8 ≈ 20-70s/task; production extracts on phi4 in seconds). The incident-shape task passed even bare — the exec fix removed the drift's entry ramp; the catch behavior is pinned by unit tests and the battery row keeps it honest forever.
+Caveats, recorded: one under-extraction observed (a clearly file-shaped ask judged "not checkable" — extraction prompt wants few-shot sharpening); duel's script-side subDispatch doesn't write .plan-artifacts (mild anti-pipeline fidelity gap on one task — it passed anyway, after burning a structurally-redundant second Brave query); reflect stage measured at 10-52s/task for near-zero observed value.
+
+### The guarantee tier map (honest limits)
+**Contracts verify the world matches the ask's SHAPE** (files exist, content patterns present, tasks/facts recorded) — they close the placeholder-garbage class. **They cannot verify content TRUTH** the ask doesn't state (fib(20)=6765): that tier needs computed oracles — tests, re-derivation — which is why the merge gate runs suites and why coding tasks (Pi's world) are the best-guarded category. Tiering: prose judge < contracts < computed oracles < owner confirm. Route asks accordingly as the melt proceeds.
+
+### Verdict
+Arena + contracts = correctness parity with the pipeline at 53% of the LLM calls, with honesty guarantees the pipeline never had. The melt holds; production is wired (contracts activate for arena dispatches on next restart). Follow-ups queued: extraction few-shot sharpening, repetition guard as cost containment (drift still wastes granted iterations before the gate catches it), N=3 battery protocol for any future close call.
+
 ## The Arena Duel — the Pipeline Thesis, Measured and Retired (August 20 2026)
 
 ### The question
