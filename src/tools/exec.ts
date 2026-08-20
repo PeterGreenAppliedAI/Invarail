@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { InvarailTool, ToolContext } from './types.js';
 import type { ExecConfig } from '../config/types.js';
@@ -69,12 +69,16 @@ export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBacken
       // Run from workspace directory so exec and write_file share the same cwd
       const cwd = ctx.workspacePath ?? process.cwd();
 
-      // Inline code support: write to temp file, execute, clean up
+      // Inline code support: write to temp file, execute, clean up.
+      // The temp path MUST be absolute: workspacePath is often RELATIVE, and passing a
+      // relative arg to a child whose cwd is already that directory double-resolves it
+      // (python: "can't open file" — found live 2026-08-20 when the arena's exec-code
+      // calls all failed and pushed the model into -c quoting hell).
       const code = params.code as string | undefined;
       let tmpFile: string | undefined;
       if (code) {
         const ext = command === 'node' ? '.js' : '.py';
-        tmpFile = join(cwd, `_tmp_${randomUUID().slice(0, 8)}${ext}`);
+        tmpFile = resolve(cwd, `_tmp_${randomUUID().slice(0, 8)}${ext}`);
         writeFileSync(tmpFile, code);
         args = [tmpFile];
       }
