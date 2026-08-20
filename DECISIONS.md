@@ -15,6 +15,9 @@ KILLED: dispatch wiring (arena runs ungated), contracts config block, quality-ju
 ### What the failed experiment taught (kept from the entry below)
 The guarantee tier map survives its author: prose judge < contracts < computed oracles < owner confirm — contracts just turned out to live closer to the judge than believed. Full build/measure record follows for archaeology.
 
+### The think=low board (clean run, post-fixes — the day's closing measurement)
+**pipeline 8/8, 506s, 62 calls, 4,389 ctok · arena 8/8, 150s, 35, 4,609 · arena-contracts 8/8, 115s, 31, 3,023. ZERO failures in 24 runs** — Peter's prediction ("I don't think it would have any failures") exact: low effort suppresses the sampling-slip class entirely. The pipeline gap WIDENED at think=low (3.4-4.4×) — deliberation cost scales with call count, and the scripted architecture makes ~2× the calls; its reflect stage reproducibly fixates on the same phantom concerns (trailing-newline anxiety, twice, independently) at 111-133s a run. The killed contracts arm topping every column is the kill illustrated, not refuted: most extractions attached no gate, so it ran as bare arena with sampling luck. Also confirmed en route: the NO-SHELL-OPERATORS exec description eliminated the > redirect ritual from every post-fix run; think=low batches parallel tool calls (3 task_adds in one completion). **Production tuple settled: arena mode, think per request-class — which is the day's actual takeaway (Peter): effort must be togglable per REQUEST.** Design agreed: `!think <level>` prefix (code gate, no taxonomy) → thinkOverride through dispatch → effort recorded in the routing tuples; per-category defaults later via config-overlay proposals when n is meaningful.
+
 ## Completion Contracts — the Harness Fix, Built and Re-Measured (August 20 2026, same day)
 
 ### The incident that demanded it
