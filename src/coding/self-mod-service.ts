@@ -217,6 +217,10 @@ export class SelfModService {
         };
       }
 
+      // 12h TTL (not the 10-min interactive default): a gate-passed merge doesn't rot on
+      // a clock — the headSha re-verification in executeMerge is the staleness guard, and
+      // the 10-min window expired under real usage four separate times (owner reads gate
+      // results, asks questions, life happens).
       const action = this.pending.record({
         tool: 'self_merge',
         params: { slug, branch: active.branch, baseSha: active.baseSha, headSha: gate.headSha },
@@ -225,7 +229,7 @@ export class SelfModService {
         agentId: 'main',
         sessionKey: `selfmod:${slug}`,
         category: 'code',
-      });
+      }, 12 * 60 * 60 * 1000);
       logAutonomousAction({
         action: 'self_mod_proposed', tier: 'propose_confirm', source: 'user_command',
         reversible: true, outcome: 'proposed', detail: slug, resource: active.branch,
