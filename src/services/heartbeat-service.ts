@@ -32,6 +32,8 @@ export interface HeartbeatDeps {
   cronService?: CronService;
   /** Vault reindex target — shared EmbeddingStore from tool registration */
   embeddingStore?: EmbeddingStore;
+  /** Present when selfMod is enabled — gates the self-improvement proposal step */
+  selfModService?: import('../coding/self-mod-service.js').SelfModService;
   /** Extract facts from a transcript — delegates to the orchestrator's extraction logic */
   extractFacts: (
     transcript: any[],
@@ -204,6 +206,51 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
         }
       } catch (err) {
         console.warn('[Heartbeat] Lesson synthesis failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Self-improvement proposals (opt-in): code-detected recurring tool failures →
+    // model-phrased !improve spec → pending-action ledger + this report. Confirming runs
+    // the EXISTING self-mod rail (worktree → gates → separate merge confirm). Changes who
+    // INITIATES, never what the walls permit. Failures here never break the heartbeat.
+    let proposalSummary = '';
+    if (config.heartbeat?.selfImprovement?.enabled && config.selfMod?.enabled && deps.selfModService && config.heartbeat.delivery) {
+      try {
+        const { selectCandidates, draftProposal, ProposalHistory } = await import('../coding/improvement-proposals.js');
+        const { pendingActions } = await import('../security/pending-actions.js');
+        const { logAutonomousAction } = await import('../metrics.js');
+        const { resolvePrincipal } = await import('../identity/principal.js');
+        const si = config.heartbeat.selfImprovement;
+        const history = new ProposalHistory();
+        const absorbed = history.absorbDenialsFromMetrics();
+        if (absorbed > 0) console.log(`[Heartbeat] Marked ${absorbed} self-improvement proposal(s) denied`);
+
+        const candidates = selectCandidates({ workspacePath, minOccurrences: si.minOccurrences })
+          .filter(c => history.eligible(c.signature, si.cooldownDays));
+        if (candidates.length > 0) {
+          const draft = await draftProposal(client, config.memory?.extractionModel ?? config.router.model, candidates[0]);
+          if (draft) {
+            const principal = resolvePrincipal(config.ownerId, config) ?? config.ownerId ?? 'owner';
+            const action = pendingActions.record({
+              tool: 'self_improve',
+              params: {
+                spec: draft.spec, signature: draft.signature,
+                notifyChannel: config.heartbeat.delivery.channel, notifyTarget: config.heartbeat.delivery.target,
+              },
+              sender: principal,
+              channel: config.heartbeat.delivery.channel,
+              agentId: config.agents.default,
+              sessionKey: 'heartbeat:self-improve',
+              category: 'code',
+            }, 12 * 60 * 60 * 1000);  // 12h — the briefing-proposal TTL precedent
+            history.append({ signature: draft.signature, spec: draft.spec, proposedAt: new Date().toISOString(), outcome: 'proposed', pendingId: action.id });
+            logAutonomousAction({ action: 'self_improve_proposed', tier: 'propose_confirm', source: 'heartbeat', reversible: true, outcome: 'proposed', detail: draft.signature });
+            proposalSummary = `🔧 **Self-improvement proposal**: ${draft.spec.slice(0, 200)}\n(evidence: \`${draft.tool}\` failed ${draft.count}× — "${draft.error.slice(0, 80)}")\nReply \`confirm ${action.id}\` to let Pi attempt it in an isolated worktree, or \`deny ${action.id}\` to reject it permanently.`;
+            console.log(`[Heartbeat] Self-improvement proposed (${action.id}): ${draft.signature}`);
+          }
+        }
+      } catch (err) {
+        console.warn('[Heartbeat] Self-improvement proposal step failed:', err instanceof Error ? err.message : err);
       }
     }
 
@@ -595,6 +642,9 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
       }
       if (experienceSummary) {
         reportParts.push(experienceSummary);
+      }
+      if (proposalSummary) {
+        reportParts.push(proposalSummary);
       }
 
       let reportText = reportParts.join('\n\n');

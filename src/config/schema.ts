@@ -423,6 +423,15 @@ export const HeartbeatConfigSchema = z.object({
     channel: z.string().default('discord'),
     target: z.string(), // Discord channel ID or user ID for DMs
   }),
+  /** Self-improvement proposals (OPT-IN — a new autonomy surface enters the ladder
+   *  disabled): recurring code-detected tool failures become drafted !improve specs on
+   *  the pending-action ledger. Confirming runs the existing self-mod rail; denying is
+   *  permanent for that failure signature. Requires selfMod.enabled. */
+  selfImprovement: z.object({
+    enabled: z.boolean().default(false),
+    minOccurrences: z.number().default(3),
+    cooldownDays: z.number().default(7),
+  }).default({}),
 });
 
 /** Briefing reasoning config. Timing is fixed (8am/1:15pm/5pm); model is configurable. */

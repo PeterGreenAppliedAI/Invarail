@@ -376,6 +376,7 @@ export class Orchestrator {
       taskStore: this.taskStore,
       cronService: this.cronService,
       embeddingStore: this.embeddingStore,
+      selfModService: this.selfModService,
       extractFacts: this.extractFacts.bind(this),
       reviewTranscripts: this.reviewTranscripts.bind(this),
       promoteRecurringLearnings: this.promoteRecurringLearnings.bind(this),
