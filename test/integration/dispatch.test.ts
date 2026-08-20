@@ -405,3 +405,81 @@ describe('arena dispatch mode (DECISIONS 2026-08-20: the arena duel)', () => {
     expect(() => SpecialistConfigSchema.parse({ model: 'm', dispatchMode: 'freeform' })).toThrow();
   });
 });
+
+describe('completion contracts on arena dispatches', () => {
+  function contractClient(contractJson: unknown, specialistAnswer: string): OllamaClient {
+    return {
+      generate: vi.fn().mockResolvedValue({ response: 'multi' }),
+      chat: vi.fn().mockImplementation(async (params: { messages: Array<{ role: string; content: string }> }) => {
+        const system = params.messages.find(m => m.role === 'system')?.content ?? '';
+        if (system.includes('VERIFIABLE completion conditions')) {
+          return { message: { role: 'assistant', content: JSON.stringify(contractJson) } };
+        }
+        return { message: { role: 'assistant', content: specialistAnswer, tool_calls: null } };
+      }),
+      listModels: vi.fn().mockResolvedValue([]),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    } as unknown as OllamaClient;
+  }
+
+  function arenaConfig() {
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.multi = {
+      model: 'test-model', maxTokens: 1024, temperature: 0.3, maxIterations: 5,
+      tools: ['read_file'], dispatchMode: 'arena',
+    } as InvarailConfig['specialists'][string];
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'read_file', description: 'Read', parameterDescription: 'path',
+      parameters: { type: 'object', properties: { path: { type: 'string', description: 'p' } }, required: ['path'] },
+      category: 'exec', execute: async () => 'contents',
+    });
+    return { config, registry };
+  }
+
+  it('unmet checkable contract wraps the answer honestly and surfaces on the result', async () => {
+    const client = contractClient(
+      { checkable: true, postconditions: [{ kind: 'file_exists', path: 'definitely-not-created-xyz.txt' }] },
+      'I finished everything, great success.',
+    );
+    const { config, registry } = arenaConfig();
+    const result = await dispatchMessage({
+      client, registry, config,
+      message: 'create the xyz file please',
+      overrideCategory: 'multi',
+    });
+    expect(result.contract?.checkable).toBe(true);
+    expect(result.contract?.pass).toBe(false);
+    expect(result.answer).toContain('could not verify completion');
+    expect(result.answer).toContain('great success'); // original work preserved inside the wrap
+  });
+
+  it('satisfied answer_mentions contract passes clean', async () => {
+    const client = contractClient(
+      { checkable: true, postconditions: [{ kind: 'answer_mentions', pattern: 'v0.5.17' }] },
+      'The latest release is v0.5.17.',
+    );
+    const { config, registry } = arenaConfig();
+    const result = await dispatchMessage({
+      client, registry, config,
+      message: 'what is the latest version?',
+      overrideCategory: 'multi',
+    });
+    expect(result.contract?.pass).toBe(true);
+    expect(result.answer).not.toContain('could not verify');
+  });
+
+  it('non-arena dispatches never attempt contract extraction', async () => {
+    const client = contractClient({ checkable: true, postconditions: [] }, 'plain answer');
+    const { config, registry } = arenaConfig();
+    (config.specialists.multi as { dispatchMode?: string }).dispatchMode = undefined;
+    config.specialists.web_search = {
+      model: 'test-model', maxTokens: 1024, temperature: 0.3, maxIterations: 5, tools: ['read_file'],
+    } as InvarailConfig['specialists'][string];
+    await dispatchMessage({ client, registry, config, message: 'find stuff', overrideCategory: 'web_search' });
+    const chatMock = (client.chat as ReturnType<typeof vi.fn>);
+    const extractionCalls = chatMock.mock.calls.filter((c: unknown[]) =>
+      ((c[0] as { messages: Array<{ role: string; content: string }> }).messages.find(m => m.role === 'system')?.content ?? '').includes('VERIFIABLE completion conditions'));
+    expect(extractionCalls).toHaveLength(0);
+  });
+});

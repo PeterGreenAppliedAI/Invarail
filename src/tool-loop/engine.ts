@@ -811,7 +811,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     if (config.onFinalAnswer && finalAnswerChecks < 3) {
       finalAnswerChecks++;
       try {
-        const verdict = await config.onFinalAnswer(answer, steps);
+        const verdict = await config.onFinalAnswer(answer, steps, 'natural');
         if (!verdict.accept) {
           console.log(`[ReAct] Step ${i + 1}: final answer rejected by checkpoint (${finalAnswerChecks}/3) — continuing`);
           messages.push(msg);
@@ -859,7 +859,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     // synthesized answer into the hook's honest-failure form instead (no loops here).
     if (config.onFinalAnswer) {
       try {
-        const verdict = await config.onFinalAnswer(answer, steps);
+        const verdict = await config.onFinalAnswer(answer, steps, 'cap');
         if (!verdict.accept) answer = verdict.feedback;
       } catch (err) {
         console.warn('[ReAct] Final-answer checkpoint errored at cap (accepting synthesis):', err instanceof Error ? err.message : err);

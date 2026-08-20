@@ -189,6 +189,38 @@ export function contractFeedback(failed: ConditionResult[]): string {
   ].join('\n');
 }
 
+/**
+ * Build the onFinalAnswer hook for a run (shared by dispatch and the arena duel).
+ * Rejection budget: while rejections remain, a failed check sends the model back with the
+ * deficit; once exhausted, the hook ACCEPTS and the caller's post-loop re-check applies
+ * wrapAnswerHonestly. At the iteration cap the engine cannot grant iterations, so the
+ * feedback IS the honest wrap (the engine replaces the answer with it).
+ */
+export function buildContractHook(
+  contract: CompletionContract,
+  deps: Omit<ContractCheckDeps, 'answer'>,
+  budget = 2,
+): (answer: string, steps: unknown, phase: 'natural' | 'cap') => Promise<{ accept: true } | { accept: false; feedback: string; grantIterations?: number }> {
+  let rejections = 0;
+  return async (answer, _steps, phase) => {
+    const result = checkContract(contract, { ...deps, answer });
+    if (result.pass) return { accept: true };
+    // At the cap the engine cannot grant iterations — a reject REPLACES the answer, so the
+    // feedback must be user-facing honesty, never model-directed instructions.
+    if (phase === 'cap') {
+      return { accept: false, feedback: wrapAnswerHonestly(answer, result.failed) };
+    }
+    if (rejections < budget) {
+      rejections++;
+      console.log(`[Contract] Rejection ${rejections}/${budget}: ${result.failed.map(f => f.detail).join('; ').slice(0, 200)}`);
+      return { accept: false, feedback: contractFeedback(result.failed), grantIterations: 4 };
+    }
+    // Budget exhausted at a natural stop: accept — the caller's post-loop re-check applies
+    // wrapAnswerHonestly to whatever the model last said.
+    return { accept: true };
+  };
+}
+
 export function wrapAnswerHonestly(answer: string, failed: ConditionResult[]): string {
   return [
     '⚠️ I could not verify completion of this task. Unmet:',

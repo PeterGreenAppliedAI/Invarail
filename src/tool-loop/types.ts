@@ -41,7 +41,7 @@ export interface ReActConfig {
    *  a user message, loop continues on granted iterations (default 4); reject at cap →
    *  the answer is REPLACED with the feedback (honest failure — no loops at the cap).
    *  Engine caps invocations at 3 per run regardless of the hook's own budget. */
-  onFinalAnswer?: (answer: string, steps: ReActStep[]) => Promise<{ accept: true } | { accept: false; feedback: string; grantIterations?: number }>;
+  onFinalAnswer?: (answer: string, steps: ReActStep[], phase: 'natural' | 'cap') => Promise<{ accept: true } | { accept: false; feedback: string; grantIterations?: number }>;
 }
 
 export type ParsedReActResponse =
