@@ -180,7 +180,7 @@ describe('parseReActResponse', () => {
     }
   });
 
-  it('parses Qwen/Hermes <tool_call><function=name> narrated as text (live 2026-08-21 shape)', () => {
+  it('parses Qwen-template <tool_call><function=name> narrated as text (live 2026-08-21 shape)', () => {
     const text = '<tool_call>\n<function=cronjobs_list>\n</function>\n</tool_call>';
     const result = parseReActResponse(text);
     expect(result.type).toBe('action');
@@ -210,7 +210,7 @@ describe('parseReActResponse', () => {
     }
   });
 
-  it('parses Hermes JSON <tool_call>{"name",...}</tool_call>', () => {
+  it('parses Qwen JSON-form <tool_call>{"name",...}</tool_call>', () => {
     const text = 'Let me check.\n<tool_call>{"name": "cron_list", "arguments": {"status": "active"}}</tool_call>';
     const result = parseReActResponse(text);
     expect(result.type).toBe('action');

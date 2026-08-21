@@ -39,8 +39,10 @@ export function parseReActResponse(text: string): ParsedReActResponse {
   //   MiniMax/Anthropic: <minimax:tool_call><invoke name="document"><parameter name="action">create</parameter></invoke>
   //   DeepSeek:          <｜DSML｜invoke name="t"><｜DSML｜parameter name="x" string="true">v</｜DSML｜parameter></｜DSML｜invoke>
   //                      (the ｜DSML｜ markers are stripped above)
-  //   Qwen/Hermes:       <tool_call><function=cronjobs_list></function></tool_call>
-  //                      (body may be empty, a JSON object, or <parameter=key>value</parameter> pairs;
+  //   Qwen template:     <tool_call><function=cronjobs_list></function></tool_call>
+  //                      (the <tool_call> syntax originates from Hermes; Qwen's chat template adopted
+  //                      it, so this is what OUR models leak when they narrate instead of calling.
+  //                      Body may be empty, a JSON object, or <parameter=key>value</parameter> pairs;
   //                      seen live 2026-08-21 narrated verbatim into a Discord DM)
   const fnMatch = cleanText.match(/<function=([\w.-]+)>([\s\S]*?)<\/function>/i);
   if (fnMatch) {
@@ -57,7 +59,8 @@ export function parseReActResponse(text: string): ParsedReActResponse {
     return { type: 'action', thought, tool, params, raw: cleanText };
   }
 
-  //   Hermes JSON:       <tool_call>{"name": "web_search", "arguments": {"query": "..."}}</tool_call>
+  //   Qwen JSON form:    <tool_call>{"name": "web_search", "arguments": {"query": "..."}}</tool_call>
+  //                      (the standard emission shape of Qwen 2.5/3 templates — the likeliest next leak)
   const tcJsonMatch = cleanText.match(/<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/i);
   if (tcJsonMatch) {
     try {
