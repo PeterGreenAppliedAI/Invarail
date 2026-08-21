@@ -432,6 +432,11 @@ const TOOL_RESULT_LIMITS: Record<string, number> = {
   web_fetch: 12_000,
   docs_search: 8_000,
   code_session: 8_000,
+  // The same re-call trap that hit `reason` hit file work (2026-08-21): a 3.1KB file
+  // vs the 2K cap sent a 30-step run into slice-by-slice reconstruction. Reading
+  // content IS these tools' purpose — give them room.
+  read_file: 8_000,
+  exec: 8_000,
 };
 
 /**
@@ -746,7 +751,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
           ?? MAX_TOOL_RESULT_CHARS;
         if (observation.length > effectiveLimit) {
           const original = observation.length;
-          observation = observation.slice(0, effectiveLimit) + `\n... [truncated from ${original} chars]`;
+          observation = observation.slice(0, effectiveLimit) + `\n... [truncated from ${original} chars. Do NOT re-read the rest in slices — work with what you have, or use a tool that takes a file PATH (e.g. document convert) instead of content]`;
           console.log(`[ReAct] Tool "${toolName}" output truncated: ${original} → ${effectiveLimit} chars`);
         }
 
