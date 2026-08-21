@@ -546,7 +546,11 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   // 4a2. Conversational guard — lightweight version (June 2026)
   // Only guards short ambiguous messages (<30 chars, no verb) mid-conversation.
   // Long or explicit messages trust the router. No keyword matching — just length + context.
-  if (effectiveCategory !== 'chat' && !params.cronMode && !params._reRouted && !params.overrideCategory && params.sourceContext?.channel !== 'console') {
+  // Sticky classifications are EXEMPT (2026-08-21): sticky already IS the context signal —
+  // a short "Yes" answering a specialist's own follow-up question ("run it now?") must
+  // return to that specialist, not get hijacked to toolless chat. The guard exists to
+  // catch the MODEL router misfiring on ambiguous shorts, not to override continuity.
+  if (effectiveCategory !== 'chat' && classification.confidence !== 'sticky' && !params.cronMode && !params._reRouted && !params.overrideCategory && params.sourceContext?.channel !== 'console') {
     if (sessionState && sessionState.turnCount > 0 && message.trim().length < 30) {
       console.log(`[Dispatch] Conversational guard: ${effectiveCategory} → chat (short ambiguous message, turn ${sessionState.turnCount})`);
       effectiveCategory = 'chat';

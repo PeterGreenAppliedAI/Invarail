@@ -1724,15 +1724,21 @@ export class Orchestrator {
           lastEditAt = now;
 
           try {
+            // Stream previews show raw model output — scrub thinking AND narrated
+            // tool-call markup before it hits the channel (a raw <tool_call> block
+            // reached a Discord DM via this path, 2026-08-21). Empty after scrub =
+            // nothing worth previewing yet; skip this tick.
+            const scrubbed = stripThinkingTags(streamBuffer);
+            if (!scrubbed) return;
             if (!streamMsg) {
               const adapter = this.channelRegistry.get(msg.channel);
               if (adapter && 'getClient' in adapter) {
                 const client = (adapter as any).getClient();
                 const ch = await client?.channels.fetch(msg.channelId);
                 if (ch && 'send' in ch) {
-                  const initContent = streamBuffer.length > 1990
-                    ? streamBuffer.slice(0, 1990) + ' ...'
-                    : streamBuffer + ' ...';
+                  const initContent = scrubbed.length > 1990
+                    ? scrubbed.slice(0, 1990) + ' ...'
+                    : scrubbed + ' ...';
                   streamMsg = await (ch as any).send({
                     content: initContent,
                     reply: { messageReference: msg.id },
@@ -1741,9 +1747,9 @@ export class Orchestrator {
               }
             } else {
               // Discord message limit is 2000 chars — truncate stream preview
-              const preview = streamBuffer.length > 1990
-                ? streamBuffer.slice(0, 1990) + ' ...'
-                : streamBuffer + ' ...';
+              const preview = scrubbed.length > 1990
+                ? scrubbed.slice(0, 1990) + ' ...'
+                : scrubbed + ' ...';
               await streamMsg.edit(preview);
             }
           } catch (err) {
@@ -1768,6 +1774,10 @@ export class Orchestrator {
         if (streamMsg) {
           const media = extractMediaAttachments(result.answer);
           const chunks = splitFinalMessage(media.cleanText || result.answer, 2000);
+          // The delivery backstop can scrub an answer to nothing (e.g. a bare-chat model
+          // that emitted only tool-call markup). Discord rejects empty sends/edits —
+          // deliver an honest fallback instead of crashing the whole handler (2026-08-21).
+          if (!chunks[0]?.trim()) chunks[0] = '⚠️ I produced no usable answer for that — please try again.';
           // Short runs: morph the stream bubble into the answer (nice, low-noise).
           // Long runs: the user has stopped watching, and Discord does NOT notify on
           // edits — a 30-step arena run delivered its answer as a silent edit of a
