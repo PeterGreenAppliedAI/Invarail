@@ -4,6 +4,32 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Self-Improvement Proposals — the Noticing Becomes Autonomous (August 20 2026, SHIPPED + LIVE-DRILLED)
+
+### The decision
+The heartbeat now initiates code improvements from its own failure evidence — the last hand-executed loop of the substrate story automated. The night's three tool-layer fixes (shell-op description, path clarity, exec temp path) were all the same mechanical cycle: recurring failure signature in the error store → minimal code change → validated next run. SIP automates *initiation only*: CODE detects recurrence (`selectCandidates`, `${tool}:${error.slice(0,60)}` grouping, ≥3 occurrences — the promoteRecurringLearnings selector), the MODEL only phrases the `!improve` spec (one grammar-constrained call, discard if the spec never names the failing tool), the OWNER confirms on the pending-action ledger, and the EXISTING self-mod rail does everything else (Pi worktree → merge gates → second confirm → supervised deploy). Nothing about the walls changed; what changed is who knocks. Peter's framing: "take the guard rails off and let it kind of thrash around" — but thrash INSIDE the ladder: two owner gates, opt-in config (`heartbeat.selfImprovement.enabled` default false), max 1 proposal/cycle, denied = permanent.
+
+### What shipped (051b6f9, d2f70fb, 5684c39, bc694f5, 1ef968c)
+- `src/coding/improvement-proposals.ts` — selection (pure code), `ProposalHistory` (append-only JSONL, last-write-wins; denied=never, else cooldown; metrics-cursor denial absorption), drafting (chatMaybeStructured, think-pinned). PROTECTED PATH.
+- `src/tools/self-improve.ts` — ledger-only tool: model-invisible (no specialist list), grant-ineligible (no targetArgs — "always" can never mint self-improvement autonomy), fire-and-report into `selfModService.propose`. PROTECTED PATH.
+- Heartbeat step: absorb denials → select → draft → record on ledger (12h TTL, prep-proposal precedent) → report line with `confirm <id>`.
+- Structural principle held from Phase B: the proposal generator shapes what enters the ladder, so it must never be self-modifiable below Tier 3 — a process must not rewrite the mechanism granting its authority.
+
+### The live drill (fresh clone, 1-min heartbeat, web channel, drill_memory graph — Phase B pattern)
+Full loop, both gates, both verdicts:
+- **Confirm path:** 4 seeded web_fetch 403s → heartbeat proposed "add a default User-Agent header" → confirm → Pi implemented in a worktree (commit touched web-fetch.ts, schema.ts [Tier 3 — gate escalated correctly], config example, 65 test lines; **used memory_search organically** for prior experience) → gate passed (tsc 5s, vitest 6s) → self_merge confirm → supervised deploy healthy → User-Agent live in the drill's code. Round 1 taught: 600s session budget starves real self-mod (25 turns, zero writes, gate correctly failed the empty diff) → **prod recommendation: `selfMod.sessionTimeoutMs: 1200000`**. Round 2 succeeded in 682s.
+- **Deny path:** 4 seeded browser timeouts → proposed retry/backoff → denied → absorbed → never re-proposed across cycles with evidence still present.
+
+### Two real bugs the drill caught (this is why drills exist)
+1. **self_merge TTL, fourth strike (bc694f5):** gate verdicts expired on the 10-min ledger default four separate times under real usage — a human reviewing a merge is minutes-to-hours, not a send-message confirm. Now 12h; headSha re-verification is the real staleness guard.
+2. **"Denied is permanent" was unenforceable (1ef968c):** the denial metric's `detail` was params-JSON sliced at 120 chars — a long spec ate the whole window, so neither pendingId nor signature ever appeared and `absorbDenialsFromMetrics` could never match. Compounding: the pre-fix scan advanced the cursor past the unmatched row, burning it. Fix: **the pending id LEADS the denial detail** (confirm-handler), plus a spec-prefix fallback matcher for legacy rows. Lesson, generalized: *a permanence guarantee that depends on substring luck in a truncated log line is not a guarantee — bind consumers to stable ids, and never advance a cursor past evidence you couldn't disposition (verified live after a cursor reset: "Marked 1 self-improvement proposal(s) denied").*
+
+### Log-forensics footnote
+A scary drill-log line ("Self-improvement attempt failed: worktree exploded") was the gate's vitest pass echoing our own test mock stderr into the supervisor log. Deploy-gate test output interleaves with production logs — read anomalies with `grep -a -B/-A` context before believing them.
+
+### Status
+Merged, 841 tests green. Production go-live is a deliberate flip: `heartbeat.selfImprovement.enabled: true` + `selfMod.sessionTimeoutMs: 1200000` — not yet done. Out of scope, forever until the ladder's track record argues otherwise: auto-confirmation of any tier.
+
 ## Completion Contracts — Built, Measured, KILLED Same Day (August 20 2026, evening)
 
 ### The kill (Peter's call, correct)
