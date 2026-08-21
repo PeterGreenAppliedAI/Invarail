@@ -358,15 +358,19 @@ function stripReActScaffolding(text: string): string {
  * DriftTracker — detects when the model is spinning without progress.
  * Tracks response lengths, repeated tool calls, and hedging language.
  */
-class DriftTracker {
+export class DriftTracker {
   private responseLengths: number[] = [];
   private lastToolSigs: string[] = [];
   private hedgingCount = 0;
+  private sameToolStreak = 0;
+  private lastTool = '';
 
   private static readonly HEDGING = /\b(I think|perhaps|maybe|I believe|let me try|I'm not sure|it seems|I'll try)\b/gi;
   private static readonly RESTATING = /\b(you asked|your question|the original|going back to|as I mentioned)\b/i;
+  /** Same tool this many times in a row (params varying) = grinding, not progressing. */
+  private static readonly STREAK_LIMIT = 5;
 
-  checkDrift(response: string, toolCall?: { tool: string; params: Record<string, unknown> }): 'none' | 'growing' | 'repeating' | 'hedging' {
+  checkDrift(response: string, toolCall?: { tool: string; params: Record<string, unknown> }): 'none' | 'growing' | 'repeating' | 'hedging' | 'streak' {
     // Track response lengths
     this.responseLengths.push(response.length);
     if (this.responseLengths.length > 3) this.responseLengths.shift();
@@ -381,6 +385,16 @@ class DriftTracker {
       if (this.lastToolSigs.length >= 2 &&
           this.lastToolSigs[this.lastToolSigs.length - 1] === this.lastToolSigs[this.lastToolSigs.length - 2]) {
         return 'repeating';
+      }
+
+      // Streak: same TOOL with varying params, over and over — the exec-slicing class
+      // (a 30-step run spent 25 steps reading one file in 200-char python slices,
+      // 2026-08-21). Params differ each call, so 'repeating' never fires.
+      this.sameToolStreak = toolCall.tool === this.lastTool ? this.sameToolStreak + 1 : 1;
+      this.lastTool = toolCall.tool;
+      if (this.sameToolStreak >= DriftTracker.STREAK_LIMIT) {
+        this.sameToolStreak = 0; // reset so a persisting streak can re-trigger only after another full run
+        return 'streak';
       }
     }
 
@@ -577,8 +591,8 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
         ? { tool: toolCalls![0].function.name, params: toolCalls![0].function.arguments ?? {} }
         : undefined;
       const drift = driftTracker.checkDrift(msg.content || '', toolCallInfo);
-      // In browser control mode, only catch repeating tool calls — let growing answers through
-      const shouldRepair = drift !== 'none' && (!config.skipDriftDetection || drift === 'repeating');
+      // In browser control mode, only catch repeating/streak tool calls — let growing answers through
+      const shouldRepair = drift !== 'none' && (!config.skipDriftDetection || drift === 'repeating' || drift === 'streak');
       if (shouldRepair) {
         driftRepairAttempted = true;
         extraIterations++;
@@ -588,6 +602,8 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
           role: 'user',
           content: drift === 'repeating'
             ? `STOP. You are repeating the same action. Do NOT call the same tool with the same parameters again. Either try a completely different approach or provide your final answer with the data you already have.`
+            : drift === 'streak'
+            ? `STOP AND RECONSIDER. You have called the same tool 5 times in a row with varying parameters — you are grinding, not progressing. Original request: "${userMessage}". Re-read your available tool descriptions: is there a DIFFERENT tool that accomplishes the goal in one step? If yes, call it now. If you already have enough information, give your final answer.`
             : `You appear to be ${drift === 'hedging' ? 'hedging instead of acting' : 'generating longer responses without progress'}. `
               + `Original request: "${userMessage}". `
               + `Progress: ${steps.length} tool calls completed. Focus on the next concrete action to answer the request, or provide your final answer if you have enough information.`,

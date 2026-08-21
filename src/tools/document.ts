@@ -68,18 +68,18 @@ export function createDocumentTool(): InvarailTool {
     description: `Create and convert documents using LibreOffice. Supports PDF, DOCX, XLSX, PPTX, HTML, CSV, and more.
 
 Actions:
-- "create": Write content to a temp file, then convert to the target format. Good for generating reports, spreadsheets, formatted docs.
-- "convert": Convert an existing file to a different format.
+- "convert": An existing file (HTML, MD, DOCX, ...) becomes the target format in ONE call from just its path — document[{action: "convert", inputPath: "file.html", format: "pdf"}]. Do NOT read the file first; conversion never needs the content.
+- "create": Write NEW content to a file in the target format. Good for generating reports, spreadsheets, formatted docs.
 
 Supported formats: ${SUPPORTED_FORMATS.join(', ')}.
 
-WHEN TO USE: User asks for a PDF, DOCX, spreadsheet, Word doc, slide deck, or any formatted file output.
+WHEN TO USE: User asks for a PDF, DOCX, spreadsheet, Word doc, slide deck, or any formatted file output. If the source file already exists, ALWAYS use "convert" with inputPath — never re-read or re-type its content.
 DO NOT: Use exec to install pandoc/wkhtmltopdf. Do not use write_file to create PDFs. This tool handles all document conversion.
 
 Common chains:
-- PDF report: write MARKDOWN content → document[{action: "create", content: "# Title\\n\\n## Section\\n\\n- item", format: "pdf", filename: "name"}]
-- Spreadsheet: write CSV content → document[{action: "create", content: "col1,col2\\nval1,val2", format: "xlsx"}]
-- Convert existing file: document[{action: "convert", inputPath: "file.html", format: "pdf"}]`,
+- Existing file → PDF: document[{action: "convert", inputPath: "file.html", format: "pdf"}] (one call, no reading)
+- PDF report from scratch: write MARKDOWN content → document[{action: "create", content: "# Title\\n\\n## Section\\n\\n- item", format: "pdf", filename: "name"}]
+- Spreadsheet: write CSV content → document[{action: "create", content: "col1,col2\\nval1,val2", format: "xlsx"}]`,
     parameterDescription: `action (required): "create" or "convert".
 content (for create): The document content. Write MARKDOWN for documents (headings, lists, tables, links — professional styling is applied automatically; do NOT write HTML or CSS). Use CSV for spreadsheets.
 inputPath (for convert): Path to the file to convert (relative to workspace or absolute).

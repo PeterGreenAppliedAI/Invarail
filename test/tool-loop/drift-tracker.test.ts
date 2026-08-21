@@ -1,46 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-// DriftTracker is private to engine.ts — test the behavior via exported signals
-// We replicate the logic here for unit testing since we can't import a private class
-
-class DriftTracker {
-  private responseLengths: number[] = [];
-  private lastToolSigs: string[] = [];
-  private hedgingCount = 0;
-
-  private static readonly HEDGING = /\b(I think|perhaps|maybe|I believe|let me try|I'm not sure|it seems|I'll try)\b/gi;
-  private static readonly RESTATING = /\b(you asked|your question|the original|going back to|as I mentioned)\b/i;
-
-  checkDrift(response: string, toolCall?: { tool: string; params: Record<string, unknown> }): 'none' | 'growing' | 'repeating' | 'hedging' {
-    this.responseLengths.push(response.length);
-    if (this.responseLengths.length > 3) this.responseLengths.shift();
-
-    if (toolCall) {
-      const sig = toolCall.tool + ':' + JSON.stringify(toolCall.params);
-      this.lastToolSigs.push(sig);
-      if (this.lastToolSigs.length > 3) this.lastToolSigs.shift();
-
-      if (this.lastToolSigs.length >= 2 &&
-          this.lastToolSigs[this.lastToolSigs.length - 1] === this.lastToolSigs[this.lastToolSigs.length - 2]) {
-        return 'repeating';
-      }
-    }
-
-    const hedges = response.match(DriftTracker.HEDGING);
-    if (hedges) this.hedgingCount += hedges.length;
-    if (DriftTracker.RESTATING.test(response)) this.hedgingCount++;
-    if (this.hedgingCount >= 4) return 'hedging';
-
-    if (this.responseLengths.length >= 3) {
-      const [a, b, c] = this.responseLengths;
-      if (c > a * 1.5 && c > b * 1.5 && !toolCall) {
-        return 'growing';
-      }
-    }
-
-    return 'none';
-  }
-}
+import { DriftTracker } from '../../src/tool-loop/engine.js';
 
 describe('DriftTracker', () => {
   it('detects repeating tool calls', () => {
@@ -57,6 +16,23 @@ describe('DriftTracker', () => {
     expect(tracker.checkDrift('step 1', { tool: 'web_search', params: { query: 'a' } })).toBe('none');
     expect(tracker.checkDrift('step 2', { tool: 'web_search', params: { query: 'b' } })).toBe('none');
     expect(tracker.checkDrift('step 3', { tool: 'web_fetch', params: { url: 'x' } })).toBe('none');
+  });
+
+  it('detects a same-tool streak with varying params (the exec-slicing class)', () => {
+    const tracker = new DriftTracker();
+    for (let i = 0; i < 4; i++) {
+      expect(tracker.checkDrift(`step ${i}`, { tool: 'exec', params: { code: `slice ${i}` } })).toBe('none');
+    }
+    expect(tracker.checkDrift('step 5', { tool: 'exec', params: { code: 'slice 5' } })).toBe('streak');
+  });
+
+  it('a different tool resets the streak', () => {
+    const tracker = new DriftTracker();
+    for (let i = 0; i < 4; i++) {
+      tracker.checkDrift(`step ${i}`, { tool: 'exec', params: { code: `s${i}` } });
+    }
+    expect(tracker.checkDrift('break', { tool: 'read_file', params: { path: 'x' } })).toBe('none');
+    expect(tracker.checkDrift('resume', { tool: 'exec', params: { code: 'again' } })).toBe('none');
   });
 
   it('detects hedging language', () => {
