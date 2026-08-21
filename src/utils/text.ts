@@ -11,6 +11,10 @@ export function stripThinkingTags(text: string): string {
     .replace(/<\/?think>/g, '')
     .replace(/<\|channel>thought\n[\s\S]*?<channel\|>/g, '')
     .replace(/<\|channel>thought[\s\S]*$/g, '')
+    // Residual narrated tool-call markup (Qwen/Hermes dialects) must never reach a
+    // channel — the parser executes these when it can; this is the delivery backstop.
+    .replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/gi, '')
+    .replace(/<function=[\w.-]+>[\s\S]*?(<\/function>|$)/gi, '')
     .trim();
 }
 

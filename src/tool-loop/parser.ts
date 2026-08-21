@@ -39,6 +39,38 @@ export function parseReActResponse(text: string): ParsedReActResponse {
   //   MiniMax/Anthropic: <minimax:tool_call><invoke name="document"><parameter name="action">create</parameter></invoke>
   //   DeepSeek:          <｜DSML｜invoke name="t"><｜DSML｜parameter name="x" string="true">v</｜DSML｜parameter></｜DSML｜invoke>
   //                      (the ｜DSML｜ markers are stripped above)
+  //   Qwen/Hermes:       <tool_call><function=cronjobs_list></function></tool_call>
+  //                      (body may be empty, a JSON object, or <parameter=key>value</parameter> pairs;
+  //                      seen live 2026-08-21 narrated verbatim into a Discord DM)
+  const fnMatch = cleanText.match(/<function=([\w.-]+)>([\s\S]*?)<\/function>/i);
+  if (fnMatch) {
+    const tool = fnMatch[1];
+    const params: Record<string, unknown> = {};
+    const pRe = /<parameter=([\w.-]+)>([\s\S]*?)<\/parameter>/gi;
+    let pm: RegExpExecArray | null;
+    let sawXmlParam = false;
+    while ((pm = pRe.exec(fnMatch[2])) !== null) {
+      sawXmlParam = true;
+      params[pm[1]] = coerceParamValue(pm[2]);
+    }
+    if (!sawXmlParam) Object.assign(params, extractJsonParams(fnMatch[2]));
+    return { type: 'action', thought, tool, params, raw: cleanText };
+  }
+
+  //   Hermes JSON:       <tool_call>{"name": "web_search", "arguments": {"query": "..."}}</tool_call>
+  const tcJsonMatch = cleanText.match(/<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/i);
+  if (tcJsonMatch) {
+    try {
+      const parsed = JSON5.parse(tcJsonMatch[1]) as { name?: unknown; arguments?: unknown };
+      if (typeof parsed.name === 'string') {
+        const args = parsed.arguments;
+        const params = typeof args === 'object' && args !== null ? args as Record<string, unknown>
+          : typeof args === 'string' ? extractJsonParams(args) : {};
+        return { type: 'action', thought, tool: parsed.name, params, raw: cleanText };
+      }
+    } catch { /* not a tool-call JSON — fall through */ }
+  }
+
   const invokeMatch = cleanText.match(/<invoke\s+name="([^"]+)"\s*>([\s\S]*?)<\/invoke>/i);
   if (invokeMatch) {
     const tool = invokeMatch[1];

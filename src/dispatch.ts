@@ -16,6 +16,7 @@ import {
   serializeStatePreamble,
   SEMANTIC_INTERVAL,
 } from './sessions/state-tracker.js';
+import { stripThinkingTags } from './utils/text.js';
 import { resolveWorkspacePath } from './agents/scope.js';
 import { buildWorkspaceContext, type WorkspaceCategory } from './agents/workspace.js';
 import { logDispatch, logRouterClassification, logAutonomousAction, logReviewNote, logMetric } from './metrics.js';
@@ -165,22 +166,12 @@ export interface DispatchResult {
 }
 
 /**
- * Strip thinking blocks from model output for display/channel delivery.
- * Handles:
- *   - Qwen-style: <think>...</think>
- *   - Gemma 4-style: <|channel>thought\n...<channel|>
- *   - Orphaned close tags, stray unclosed tags
+ * Strip thinking blocks (and residual narrated tool-call markup) from model
+ * output for display/channel delivery. Delegates to the shared util so the
+ * delivery backstop and transcript/extraction boundaries stay in lockstep.
  */
 function stripThinking(text: string): string {
-  return text
-    // Qwen-style thinking
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .replace(/^[\s\S]{0,500}?<\/think>/g, '')
-    .replace(/<\/?think>/g, '')
-    // Gemma 4-style thinking
-    .replace(/<\|channel>thought\n[\s\S]*?<channel\|>/g, '')
-    .replace(/<\|channel>thought[\s\S]*$/g, '') // unclosed gemma think block
-    .trim();
+  return stripThinkingTags(text);
 }
 
 function resolveChannelSecurity(

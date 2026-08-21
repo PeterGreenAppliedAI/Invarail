@@ -179,4 +179,44 @@ describe('parseReActResponse', () => {
       expect(result.params.url).toBe('https://www.facebook.com/');
     }
   });
+
+  it('parses Qwen/Hermes <tool_call><function=name> narrated as text (live 2026-08-21 shape)', () => {
+    const text = '<tool_call>\n<function=cronjobs_list>\n</function>\n</tool_call>';
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.tool).toBe('cronjobs_list');
+      expect(result.params).toEqual({});
+    }
+  });
+
+  it('parses <function=name> with <parameter=key> args', () => {
+    const text = '<tool_call><function=web_search><parameter=query>GLP1 friendly meals</parameter></function></tool_call>';
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.tool).toBe('web_search');
+      expect(result.params.query).toBe('GLP1 friendly meals');
+    }
+  });
+
+  it('parses <function=name> with a JSON body', () => {
+    const text = '<function=web_search>{"query": "test"}</function>';
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.tool).toBe('web_search');
+      expect(result.params.query).toBe('test');
+    }
+  });
+
+  it('parses Hermes JSON <tool_call>{"name",...}</tool_call>', () => {
+    const text = 'Let me check.\n<tool_call>{"name": "cron_list", "arguments": {"status": "active"}}</tool_call>';
+    const result = parseReActResponse(text);
+    expect(result.type).toBe('action');
+    if (result.type === 'action') {
+      expect(result.tool).toBe('cron_list');
+      expect(result.params.status).toBe('active');
+    }
+  });
 });
