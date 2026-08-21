@@ -4,6 +4,21 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Arena Fleet-Wide — Every Conversational Pipeline Melts (August 21 2026, Peter's call: "Arena is the new default")
+
+### The trigger (live, production)
+A user asked to "alter the meal plan to accommodate heart health and GLP1." The cron pipeline's `extract_edit` stage got ONE shot at resolving "the meal plan" to a job id from isolated context — it latched onto the assistant's prior phrasing ("job scheduled for Fridays at 20:30") as the job name, `cron_edit` matched nothing, and the user got a job-list error. The model that could trivially resolve it (cron_list → see id → cron_edit) never got the chance: the pipeline feeds exactly one extraction slot and no loop, and pipeline isolation withheld the very context that held the answer. Same disease the arena duel diagnosed for `multi` — choreography where the task carries no oracle. (Same night, same channel: a narrated Qwen-template tool call reached Discord verbatim — fixed separately in the parser + delivery backstop, 829e771.)
+
+### The flip (config-not-code, one restart)
+`dispatchMode: "arena"` on web_search, memory, exec, cron, message, code_gen, task (multi already arena). `pipeline:` fields left in place — reverting any specialist is deleting one line. Iteration budgets widened where pipeline-sized (cron 3→10, message 3→5, code_gen 3→5); `message` and `code_gen` gained minimal system prompts (the pipeline used to do their thinking). Same six security layers, same confirm ledger, croner validation and cronMode stripping live in the tools — the safety never was the choreography.
+
+### The carve-outs (Peter: "research pipelined is fine")
+- **research** stays pipelined: its stages are an ORACLE (claim extraction → cited-source check → Tier-1 cross-check → deterministic render), not choreography. The doctrine line survives contact: pipelines earn their keep only where the task carries its own verification.
+- **heartbeat** untouched: system maintenance on a schedule, not a dispatch category.
+
+### Status
+Live after restart. Fix-forward like the multi flip: evals compare, production is truth — the live log is the eval now.
+
 ## Self-Improvement Proposals — the Noticing Becomes Autonomous (August 20 2026, SHIPPED + LIVE-DRILLED)
 
 ### The decision
