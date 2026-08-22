@@ -4,6 +4,22 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The First Closed Loop — Production Self-Improvement, End to End (August 22 2026, MILESTONE)
+
+### What happened (one day, in order)
+1. **SIP go-live** (config flip: `heartbeat.selfImprovement.enabled` + `selfMod` block, drill-validated timeouts). First heartbeat after restart: code detected `document` failing 4× ("Conversion produced no output file"), drafted the spec, ledgered it (`ce77ec57`), delivered with evidence. Five later cycles correctly stayed silent.
+2. **Owner confirmed** → Pi implemented in a worktree: new `CONVERSION_ERROR` code + factory (CLAUDE.md error list updated — by Pi, correctly), `describeExecFailure` (exit/signal/stderr extraction), call-time `getSofficePath()` for testability, 98 test lines. Genuinely good work.
+3. **Gate FAILED — and the gate was right, the oracle was lying.** Two prep-context tests failed on an untouched main: July 8 fixtures aged out of `ANSWERED_RETENTION` (45d) at exactly Aug 22, mid-day, between a 2am green run and the 2:38pm gate. SECOND firing of the fixture-rot class the `load()` comment already documented. Fixed by threading fixture dates through the last wall-clock call sites (79ecc40). Lesson, hard-earned: **a time-dependent test suite is a lying oracle, and the merge gate inherits every lie.**
+4. **`!improve retry` built** (c23a5c8) — the missing rung between "gate failed" and "redo from scratch": rebase the kept worktree onto current main, move `baseSha` with it (else the three-dot diff blames main's new commits — wrong tier, false protected-path hits), re-gate, mint the normal `self_merge` pending. Conflicts → honest report, worktree kept.
+5. **Retry live**: rebase → gate PASS → `confirm 48f03018` → merged `886c7da` → supervised restart, health-checked, rollback anchor recorded → healthy. Experience `exp_mt4r12c3_sab30` in FalkorDB. Worktree state cleared.
+
+### Why this is the milestone
+Every autonomy component built since Phase A fired in one production sequence: error store → heartbeat proposal → ledger confirm #1 → Pi worktree → merge gate → ledger confirm #2 → supervised deploy → graph provenance. The owner's total involvement: two "confirm" replies and one "go ahead." The system noticed its own recurring failure, proposed the fix, wrote it, survived a false gate verdict, and shipped — inside walls that never moved.
+
+### Operational notes
+- The supervisor self-copies to a temp path on start (protection against a merge rewriting the running script) — process checks must match `invarail-supervisor.*`, not `supervisor.sh` (a false "supervisor not running" alarm was raised off the wrong grep).
+- Gate-failure messages now advertise the retry rung.
+
 ## Arena Fleet-Wide — Every Conversational Pipeline Melts (August 21 2026, Peter's call: "Arena is the new default")
 
 ### The trigger (live, production)
