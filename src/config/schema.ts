@@ -311,6 +311,9 @@ export const PiConfigSchema = z.object({
   tools: z.array(z.string()).default(['read', 'write', 'edit', 'ls', 'grep', 'find', 'bash']),
   timeout: z.number().default(600000),          // 10 min per build invocation
   maxFixIterations: z.number().default(3),      // outer loop: build → test → fix, bounded
+  // Reasoning effort for Pi's model. 'medium' matches the SDK default we were silently
+  // getting — now explicit in config and recorded on every pi_session metric.
+  thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('medium'),
   git: z.object({
     // Local commit is autonomous (reversible, internal). Remote push is OPT-IN (visible to
     // others, harder to reverse) — off by default so an experimental loop can't publish under

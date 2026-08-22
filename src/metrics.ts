@@ -185,6 +185,8 @@ export function logPiSessionEvent(data: {
 export function logPiSession(data: {
   slug: string;
   model: string;
+  /** Reasoning effort the session ran at — routing-tuple dimension alongside model */
+  thinkingLevel?: string;
   /** Routing-tuple dimension (self_mod | code_gen) — recorded from day one, routed on
    *  only when n is meaningful (config-overlay proposals, never silent behavior shifts) */
   taskCategory?: string;

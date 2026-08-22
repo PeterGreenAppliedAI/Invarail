@@ -123,6 +123,7 @@ export class PiCodingAdapter {
     const { session } = await createAgentSession({
       cwd: req.cwd,
       model,
+      thinkingLevel: this.config.thinkingLevel,
       tools: [...this.config.tools, ...(customTools.length ? ['memory_search'] : [])],
       authStorage,
       modelRegistry,
@@ -219,6 +220,7 @@ export class PiCodingAdapter {
     logPiSession({
       slug,
       model: modelRef,
+      thinkingLevel: this.config.thinkingLevel,
       ...(req.taskCategory ? { taskCategory: req.taskCategory } : {}),
       sessionId,
       sessionFile: result.sessionFile,
