@@ -15,7 +15,8 @@ export type ErrorCode =
   | 'PIPELINE_STAGE_ERROR'
   | 'PIPELINE_EXTRACT_FAILURE'
   | 'MCP_SERVER_ERROR'
-  | 'SELF_MOD_ERROR';
+  | 'SELF_MOD_ERROR'
+  | 'CONVERSION_ERROR';
 
 export class InvarailError extends Error {
   constructor(
@@ -98,4 +99,9 @@ export function mcpServerError(server: string, cause: unknown): InvarailError {
 
 export function selfModError(details: string, cause?: unknown): InvarailError {
   return new InvarailError('SELF_MOD_ERROR', `Self-modification: ${details}`, cause);
+}
+
+export function conversionError(inputPath: string, format: string, cause?: unknown): InvarailError {
+  const detail = cause instanceof Error ? cause.message : cause != null ? String(cause) : 'no output file was produced';
+  return new InvarailError('CONVERSION_ERROR', `Conversion of "${inputPath}" to ${format} failed: ${detail}`, cause);
 }
