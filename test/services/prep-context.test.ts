@@ -53,7 +53,10 @@ describe('PrepContextStore — recurring carryover (the Val case)', () => {
     ask(val);
     store.recordAnswer(eventKeyFor(val.title, val.start), 'Always podcast/Domo talk', NOW);
 
-    const carried = store.contextFor(valNextWeek.title, valNextWeek.start);
+    // Fixed `now` — omitting it uses the wall clock, and the July 8 fixture ages out
+    // of ANSWERED_RETENTION (45d) on Aug 22. Second time this class of rot fired
+    // (see the load() comment): every store call in tests MUST pass a fixture date.
+    const carried = store.contextFor(valNextWeek.title, valNextWeek.start, new Date('2026-07-15T12:00:00.000Z'));
     expect(carried?.answer).toBe('Always podcast/Domo talk');
     expect(store.shouldAsk(valNextWeek.title, valNextWeek.start, TZ, new Date('2026-07-15T12:00:00.000Z'))).toBe(false);
   });
@@ -61,7 +64,7 @@ describe('PrepContextStore — recurring carryover (the Val case)', () => {
   it('one-shot context does NOT leak to different titles', () => {
     ask(david);
     store.recordAnswer(eventKeyFor(david.title, david.start), 'Podcast guest', NOW);
-    expect(store.contextFor('Completely different meeting', valNextWeek.start)?.answer).toBeUndefined();
+    expect(store.contextFor('Completely different meeting', valNextWeek.start, NOW)?.answer).toBeUndefined();
   });
 });
 
@@ -80,7 +83,7 @@ describe('captureBriefingAnswer', () => {
       now: NOW,
     });
     expect(ok).toBe(true);
-    expect(store.contextFor(david.title, david.start)?.answer).toContain('Riverside link');
+    expect(store.contextFor(david.title, david.start, NOW)?.answer).toContain('Riverside link');
   });
 
   it('question: 0 (no match) records nothing', async () => {
@@ -93,7 +96,7 @@ describe('captureBriefingAnswer', () => {
       now: NOW,
     });
     expect(ok).toBe(false);
-    expect(store.contextFor(david.title, david.start)?.answer).toBeUndefined();
+    expect(store.contextFor(david.title, david.start, NOW)?.answer).toBeUndefined();
   });
 
   it('no open questions → no model call', async () => {
