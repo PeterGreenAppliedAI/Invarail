@@ -50,8 +50,8 @@ export function createPiBuildTool(config: PiConfig, adapter?: PiCodingAdapter, m
   const pi = adapter ?? new PiCodingAdapter(config);
   return {
     name: 'pi_build',
-    description: `Build code with the Pi coding agent. Pi reads, writes, and edits files in an isolated project directory to implement the requested feature or project.
-WHEN TO USE: User asks to build, scaffold, implement, or write code for a project or feature.
+    description: `Build code with the Pi coding agent. Pi reads, writes, and edits files in a project directory to implement the requested feature or project.
+WHEN TO USE: (1) User asks to build, scaffold, implement, or write code for a project or feature. (2) Multi-step file/data processing on EXISTING files — pass projectDir with the directory containing them and describe the FULL goal in one prompt. ONE pi_build call replaces a long chain of exec/read/write calls; prefer it whenever a task needs more than ~3 file operations.
 Returns the project directory and a list of files created.`,
     parameterDescription: 'prompt (required): what to build. projectName (optional): name for a new project. projectDir + sessionId (optional): an existing project to modify/fix.',
     parameters: {
