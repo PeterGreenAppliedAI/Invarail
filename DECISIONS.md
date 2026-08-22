@@ -4,6 +4,20 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Harness Duel — dsh vs Our Arena, Measured (August 22 2026)
+
+### The question (Peter's, after a hard week): "is our harness effectively useless next to Hermes and dsh?"
+Answered the only honest way: `scripts/harness-duel.ts` — DeepSeek Harness (github.com/deepseek-ai/deepseek-harness, headless one-shot profile) vs our arena loop, SAME model (qwen3.8-27b on SGLang via `$DSH_HOME/settings.yaml` custom provider), same fresh-workspace fixtures, same computed oracles. Neutral tasks only (file/shell/python) — Invarail-only tool tasks excluded as rigged. Disclosed asymmetries: dsh yields wall-time+oracle only from outside; each arm ran as-shipped thinking defaults; dsh pays npx boot per one-shot run (52s→13s as caches warmed).
+
+### Results (artifacts: data/model-eval/harness-duel-2026-08-22/)
+- **Round 1 (6 simple tasks): 6/6 vs 6/6.** Invarail avg 9.6s/task, dsh 29.1s.
+- **Round 2 (sales-report — the 30-step-spiral class, 3 artifacts from a 20-row CSV): all arms PASS.** Invarail 6 steps/35.9s, arena-pi 5 steps/33.9s, dsh 114.7s — 3× even after discounting boot.
+- **The spiral class is dead, measured:** the task shape that burned 30 iterations on Aug 21 completed in 6 steps — the observation-budget (read_file/exec 8K) + streak-guard + truncation-notice fixes, proven under oracle.
+- **arena-pi did NOT delegate** — inline exec sufficed and it was right. The delegation rung ("our code mode is Pi": pi_build's projectDir affordance, now taught in the description and added to multi's toolset) exists for tasks that outgrow inline; correct non-use is the desired behavior.
+
+### Verdict + doctrine
+**The loop is a commodity.** Peer-equal outcomes on our model, faster resident. dsh's real assets are elsewhere: Code Mode (ours is Pi + exec-code — two rungs, both present), context-management depth (compaction/spill — borrow when a long session actually hurts), and a 95K-star community finding bugs for free (free-ride by reading their fixes). Modularity doctrine set with Peter: **keep a seam wherever a real second implementation exists (models, coding substrate, tools via MCP, and now provably the loop); never build the plugin registry ahead of the second plugin.** Invarail's identity is the part no harness has: authority plane, residency, months-long memory, self-mod rail. Leverage goes to the steward outcomes (email triage / calendar / CRM), not to loop tuning.
+
 ## The First Closed Loop — Production Self-Improvement, End to End (August 22 2026, MILESTONE)
 
 ### What happened (one day, in order)
