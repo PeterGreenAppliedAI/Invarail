@@ -263,4 +263,65 @@ describe('SelfModService', () => {
     await expect(svc.executeMerge({ slug: 'ghost', branch: 'self-mod/ghost', headSha: 'x' }))
       .rejects.toThrow(/no active worktree/);
   });
+
+  it('retry: no kept worktree → refusal', async () => {
+    const svc = makeService({ adapter: committingAdapter() });
+    const res = await svc.retry('peter', 'discord');
+    expect(res.ok).toBe(false);
+    expect(res.reply).toContain('Nothing to retry');
+  });
+
+  it('retry: gate-failed worktree, main fixed → rebased onto new main, self_merge minted', async () => {
+    // Mutable oracle: the suite "rots" (fails), main gets fixed, retry passes.
+    let checksPass = false;
+    const mutableChecks: CheckRunner = async name =>
+      ({ name, pass: checksPass || name !== 'vitest', output: checksPass ? 'ok' : '1 failed', durationMs: 1 });
+    const svc = makeService({ adapter: committingAdapter(), checks: mutableChecks });
+
+    const first = await svc.propose('add logging', 'peter', 'discord');
+    expect(first.ok).toBe(false);
+    expect(svc.status()).toContain('Active self-mod');
+
+    // Main moves under the worktree (the prep-context class: test fix lands on main)
+    writeFileSync(join(repo, 'fix.ts'), 'export const fixed = true;\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'fix rotten test on main');
+    const newMain = git(repo, 'rev-parse', 'main');
+    checksPass = true;
+
+    const res = await svc.retry('peter', 'discord');
+    expect(res.ok).toBe(true);
+    expect(res.pendingId).toBeTruthy();
+    const pending = pendingStore.findById(res.pendingId!, 'peter');
+    expect(pending?.tool).toBe('self_merge');
+    // Base moved with the rebase — the gate diff must not blame main's new commits
+    expect(pending?.params.baseSha).toBe(newMain);
+    // The worktree now sits atop new main
+    const wt = join(repo, 'data', 'self-mod', 'worktrees', first.slug!);
+    expect(git(wt, 'merge-base', 'HEAD', 'main')).toBe(newMain);
+  });
+
+  it('retry: rebase conflict → worktree kept, honest report, no pending', async () => {
+    const svc = makeService({
+      adapter: fakeAdapter(cwd => {
+        writeFileSync(join(cwd, 'a.ts'), 'export const a = 2; // worktree version\n');
+        git(cwd, 'add', '-A');
+        git(cwd, 'commit', '-q', '-m', 'change a.ts');
+      }),
+      checks: failingChecks,
+    });
+    const first = await svc.propose('change a', 'peter', 'discord');
+    expect(first.ok).toBe(false);
+
+    // Main edits the SAME line — rebase must conflict
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 3; // main version\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'conflicting main change');
+
+    const res = await svc.retry('peter', 'discord');
+    expect(res.ok).toBe(false);
+    expect(res.reply).toContain('conflict');
+    expect(pendingStore.listFor('peter')).toHaveLength(0);
+    expect(svc.status()).toContain('Active self-mod'); // worktree still there
+  });
 });

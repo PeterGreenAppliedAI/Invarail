@@ -8,7 +8,7 @@ import { pendingActions, type PendingActionStore } from '../security/pending-act
 import { slugify } from '../utils/text.js';
 import { runMergeGate, type GateVerdict, type MergeGateOptions } from './merge-gate.js';
 import { PiCodingAdapter } from './pi-session.js';
-import { SelfModWorktrees } from './self-mod.js';
+import { SelfModWorktrees, type ActiveWorktree } from './self-mod.js';
 
 /**
  * Self-modification flow (Phase B): !improve → Pi session in an isolated worktree → merge
@@ -193,59 +193,18 @@ export class SelfModService {
       // Safety net: the gate diffs committed history — auto-commit anything Pi left dirty.
       this.autoCommitLeftovers(active.worktreePath, slug);
 
-      const gate = await this.gateRunner({
+      const preGate = await this.gateRunner({
         worktreePath: active.worktreePath,
         baseSha: active.baseSha,
         protectedPathsExtra: this.config.selfMod.protectedPathsExtra,
         timeoutMs: this.config.selfMod.gateTimeoutMs,
       });
-      this.persistVerdict(slug, gate);
-
-      if (!session.ok && gate.touchedFiles.length === 0) {
+      if (!session.ok && preGate.touchedFiles.length === 0) {
+        this.persistVerdict(slug, preGate);
         this.worktrees.remove();
         return { ok: false, reply: `Self-mod **${slug}** failed: Pi session ${session.timedOut ? 'timed out' : 'errored'} (${session.error ?? 'unknown'}) and produced no changes. Worktree removed.` };
       }
-      if (!gate.pass) {
-        const failing = gate.checks.find(c => !c.pass)?.name ?? 'no-changes';
-        logAutonomousAction({
-          action: 'self_mod_gate_failed', tier: 'propose_confirm', source: 'user_command',
-          reversible: true, outcome: 'failure', detail: `${slug}: ${failing}`,
-        });
-        return {
-          ok: false, slug,
-          reply: `Self-mod **${slug}**: gate FAILED — not proposing a merge.\n${this.gateSummary(gate)}\nWorktree kept for inspection: \`${active.worktreePath}\`\nDiscard with \`!improve abandon\`.`,
-        };
-      }
-
-      // 12h TTL (not the 10-min interactive default): a gate-passed merge doesn't rot on
-      // a clock — the headSha re-verification in executeMerge is the staleness guard, and
-      // the 10-min window expired under real usage four separate times (owner reads gate
-      // results, asks questions, life happens).
-      const action = this.pending.record({
-        tool: 'self_merge',
-        params: { slug, branch: active.branch, baseSha: active.baseSha, headSha: gate.headSha },
-        sender: principal,
-        channel,
-        agentId: 'main',
-        sessionKey: `selfmod:${slug}`,
-        category: 'code',
-      }, 12 * 60 * 60 * 1000);
-      logAutonomousAction({
-        action: 'self_mod_proposed', tier: 'propose_confirm', source: 'user_command',
-        reversible: true, outcome: 'proposed', detail: slug, resource: active.branch,
-      });
-      const diffStat = this.git(['diff', '--stat', `${active.baseSha}...HEAD`], active.worktreePath);
-      return {
-        ok: true, slug, pendingId: action.id,
-        reply: [
-          `🔧 Self-mod **${slug}** ready.`,
-          this.gateSummary(gate),
-          '```', diffStat.split('\n').slice(-12).join('\n'), '```',
-          gate.tier === 3 ? '⚠️ **TIER 3 — touches protected paths:** ' + gate.protectedTouched.join(', ') : '',
-          gate.gateConfigTampered ? '🚨 **Diff modifies gate/build config — review with extra care.**' : '',
-          `Reply \`confirm ${action.id}\` to merge + restart, \`deny ${action.id}\` to reject, or \`!improve abandon\`.`,
-        ].filter(Boolean).join('\n'),
-      };
+      return this.judgeAndProposeMerge(active, preGate, principal, channel);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Log server-side too — the channel reply can be lost (e.g. consumed HTTP response)
@@ -255,6 +214,102 @@ export class SelfModService {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Re-gate a kept (gate-failed) worktree after rebasing it onto current main.
+   * The rung between "gate failed" and "redo from scratch": when main moved under
+   * the worktree — e.g. a time-rotten test fixed on main AFTER the gate ran — the
+   * work is fine and only the oracle was stale (first firing: Pi's document-logging
+   * change, 2026-08-22). Owner-only via `!improve retry`.
+   */
+  async retry(principal: string, channel: string): Promise<ProposeResult> {
+    if (!this.config.selfMod.enabled) return { ok: false, reply: 'Self-modification is disabled (`selfMod.enabled`).' };
+    if (this.busy) return { ok: false, reply: 'A self-mod session is already running — one change at a time.' };
+    const active = this.worktrees.getState().active;
+    if (!active) return { ok: false, reply: 'Nothing to retry — no kept worktree. Start fresh with `!improve <spec>`.' };
+    this.busy = true;
+    try {
+      const mainSha = this.git(['rev-parse', 'main']);
+      try {
+        this.git(['rebase', mainSha], active.worktreePath);
+      } catch (err) {
+        try { this.git(['rebase', '--abort'], active.worktreePath); } catch { /* not mid-rebase */ }
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false, slug: active.slug,
+          reply: `Retry **${active.slug}**: rebase onto main hit conflicts — resolve in \`${active.worktreePath}\` or \`!improve abandon\`.\n${msg.slice(0, 300)}`,
+        };
+      }
+      // The base moves with the rebase — without this, the three-dot gate diff would
+      // blame main's new commits on the worktree (wrong tier, wrong protected-path hits).
+      this.worktrees.updateActive({ baseSha: mainSha });
+      logAutonomousAction({
+        action: 'self_mod_retry', tier: 'propose_confirm', source: 'user_command',
+        reversible: true, outcome: 'proposed', detail: active.slug,
+      });
+      const gate = await this.gateRunner({
+        worktreePath: active.worktreePath,
+        baseSha: mainSha,
+        protectedPathsExtra: this.config.selfMod.protectedPathsExtra,
+        timeoutMs: this.config.selfMod.gateTimeoutMs,
+      });
+      return this.judgeAndProposeMerge({ ...active, baseSha: mainSha }, gate, principal, channel);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[SelfMod] retry failed:', msg);
+      return { ok: false, reply: `Retry failed: ${msg.slice(0, 400)}` };
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Shared tail of propose/retry: persist the verdict, then either report the gate
+   *  failure (worktree kept) or mint the owner-confirmed self_merge pending action. */
+  private judgeAndProposeMerge(active: ActiveWorktree, gate: GateVerdict, principal: string, channel: string): ProposeResult {
+    const slug = active.slug;
+    this.persistVerdict(slug, gate);
+    if (!gate.pass) {
+      const failing = gate.checks.find(c => !c.pass)?.name ?? 'no-changes';
+      logAutonomousAction({
+        action: 'self_mod_gate_failed', tier: 'propose_confirm', source: 'user_command',
+        reversible: true, outcome: 'failure', detail: `${slug}: ${failing}`,
+      });
+      return {
+        ok: false, slug,
+        reply: `Self-mod **${slug}**: gate FAILED — not proposing a merge.\n${this.gateSummary(gate)}\nWorktree kept for inspection: \`${active.worktreePath}\`\nRetry after fixing main with \`!improve retry\`, or discard with \`!improve abandon\`.`,
+      };
+    }
+
+    // 12h TTL (not the 10-min interactive default): a gate-passed merge doesn't rot on
+    // a clock — the headSha re-verification in executeMerge is the staleness guard, and
+    // the 10-min window expired under real usage four separate times (owner reads gate
+    // results, asks questions, life happens).
+    const action = this.pending.record({
+      tool: 'self_merge',
+      params: { slug, branch: active.branch, baseSha: active.baseSha, headSha: gate.headSha },
+      sender: principal,
+      channel,
+      agentId: 'main',
+      sessionKey: `selfmod:${slug}`,
+      category: 'code',
+    }, 12 * 60 * 60 * 1000);
+    logAutonomousAction({
+      action: 'self_mod_proposed', tier: 'propose_confirm', source: 'user_command',
+      reversible: true, outcome: 'proposed', detail: slug, resource: active.branch,
+    });
+    const diffStat = this.git(['diff', '--stat', `${active.baseSha}...HEAD`], active.worktreePath);
+    return {
+      ok: true, slug, pendingId: action.id,
+      reply: [
+        `🔧 Self-mod **${slug}** ready.`,
+        this.gateSummary(gate),
+        '```', diffStat.split('\n').slice(-12).join('\n'), '```',
+        gate.tier === 3 ? '⚠️ **TIER 3 — touches protected paths:** ' + gate.protectedTouched.join(', ') : '',
+        gate.gateConfigTampered ? '🚨 **Diff modifies gate/build config — review with extra care.**' : '',
+        `Reply \`confirm ${action.id}\` to merge + restart, \`deny ${action.id}\` to reject, or \`!improve abandon\`.`,
+      ].filter(Boolean).join('\n'),
+    };
   }
 
   /** Executed ONLY via the pending-action ledger's confirm path (self_merge tool). */

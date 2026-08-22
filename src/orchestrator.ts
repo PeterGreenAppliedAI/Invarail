@@ -1116,9 +1116,15 @@ export class Orchestrator {
       if (!this.selfModService) {
         replyText = 'Self-modification is disabled — set `selfMod.enabled: true` in config.';
       } else if (args === '' || args === 'status') {
-        replyText = (args === '' ? 'Usage: `!improve <what to change>` · `!improve status` · `!improve abandon`\n' : '') + this.selfModService.status();
+        replyText = (args === '' ? 'Usage: `!improve <what to change>` · `!improve status` · `!improve retry` · `!improve abandon`\n' : '') + this.selfModService.status();
       } else if (args === 'abandon') {
         replyText = this.selfModService.abandon();
+      } else if (args === 'retry') {
+        replyText = '🔧 Re-gating the kept worktree against current main — rebase + gate results will follow.';
+        void this.selfModService.retry(principal, msg.channel)
+          .then(res => this.channelRegistry.send(target, { text: res.reply }))
+          .catch(err => this.channelRegistry.send(target, { text: `Retry failed: ${err instanceof Error ? err.message : String(err)}` }))
+          .catch(err => console.warn('[Orchestrator] Failed to send retry result:', err instanceof Error ? err.message : err));
       } else {
         replyText = `🔧 Self-mod session starting: "${args.slice(0, 120)}" — Pi builds in an isolated worktree; gate results and a confirm request will follow.`;
         void this.selfModService.propose(args, principal, msg.channel)

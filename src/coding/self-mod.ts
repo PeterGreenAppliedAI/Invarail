@@ -156,7 +156,7 @@ export class SelfModWorktrees {
   }
 
   /** Persist provenance fields onto the active worktree (survives restarts, like the marker). */
-  updateActive(patch: Partial<Pick<ActiveWorktree, 'spec' | 'sessionId' | 'sessionFile'>>): void {
+  updateActive(patch: Partial<Pick<ActiveWorktree, 'spec' | 'sessionId' | 'sessionFile' | 'baseSha'>>): void {
     const state = this.getState();
     if (!state.active) return;
     this.writeState({ active: { ...state.active, ...patch } });
