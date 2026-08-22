@@ -2,10 +2,17 @@ import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
 import { execSync } from 'node:child_process';
 import type { InvarailTool, ToolContext } from './types.js';
+import { conversionError } from '../errors.js';
 import { renderTemplate, AVAILABLE_TEMPLATES, type DocumentContent } from './document-templates.js';
 import { markdownToHtml } from '../utils/markdown-to-html.js';
 
-const SOFFICE = process.env.SOFFICE_PATH ?? '/opt/homebrew/bin/soffice';
+const DEFAULT_SOFFICE = '/opt/homebrew/bin/soffice';
+
+/** Read at call time so a runtime SOFFICE_PATH change (and unit tests) take effect. */
+function getSofficePath(): string {
+  return process.env.SOFFICE_PATH ?? DEFAULT_SOFFICE;
+}
+
 const OUTPUT_DIR = 'data/media/documents';
 const SUPPORTED_FORMATS = ['pdf', 'docx', 'xlsx', 'pptx', 'html', 'csv', 'txt', 'odt', 'ods', 'odp'];
 
@@ -34,19 +41,58 @@ function resolvePath(inputPath: string, ctx: ToolContext): string {
 }
 
 /**
+ * Best-effort extraction of diagnostics from an execSync failure: exit
+ * status / signal and truncated stderr — what makes a silent LibreOffice
+ * conversion diagnosable after the fact.
+ */
+function describeExecFailure(err: unknown): string {
+  if (typeof err === 'string') return err.slice(0, 500);
+  const e = (typeof err === 'object' && err !== null ? err : {}) as {
+    status?: unknown;
+    signal?: unknown;
+    stderr?: unknown;
+    killed?: unknown;
+    message?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof e.status === 'number') {
+    parts.push(`exit=${e.status}`);
+  } else if (e.killed === true || typeof e.signal === 'string') {
+    parts.push(`signal=${e.signal ?? 'killed'}`);
+  }
+  const stderr = typeof e.stderr === 'string'
+    ? e.stderr
+    : e.stderr instanceof Buffer
+      ? e.stderr.toString('utf-8')
+      : '';
+  if (stderr.trim()) {
+    parts.push(`stderr=${stderr.trim().slice(0, 500)}`);
+  } else if (typeof e.message === 'string') {
+    parts.push(`error=${e.message.split('\n')[0]}`);
+  }
+  return parts.join(' ');
+}
+
+/**
  * Run LibreOffice headless conversion.
+ *
+ * On failure — non-zero exit, timeout, or a clean exit that produced no
+ * output file — logs the input path plus the relevant error details (exit
+ * status, stderr, exception message) and throws CONVERSION_ERROR so the
+ * tool-loop engine / pipeline record it with full context.
  */
 function convertFile(inputPath: string, format: string, outDir: string): string {
   mkdirSync(outDir, { recursive: true });
 
+  const soffice = getSofficePath();
+  let execError: unknown;
   try {
     execSync(
-      `${SOFFICE} --headless --convert-to ${format} --outdir "${outDir}" "${inputPath}"`,
+      `${soffice} --headless --convert-to ${format} --outdir "${outDir}" "${inputPath}"`,
       { timeout: 30_000, stdio: 'pipe' },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`LibreOffice conversion failed: ${msg}`);
+    execError = err;
   }
 
   // LibreOffice outputs with the same base name but new extension
@@ -54,7 +100,18 @@ function convertFile(inputPath: string, format: string, outDir: string): string 
   const outputPath = join(outDir, `${base}.${format}`);
 
   if (!existsSync(outputPath)) {
-    throw new Error(`Conversion produced no output file. Expected: ${outputPath}`);
+    const detail = execError != null
+      ? describeExecFailure(execError)
+      : 'LibreOffice exited successfully but produced no output file';
+    console.warn(
+      `[Document] Conversion produced no output file: input="${inputPath}" ` +
+      `format="${format}" expected="${outputPath}"${detail ? ` (${detail})` : ''}`,
+    );
+    throw conversionError(
+      inputPath,
+      format,
+      execError ?? `LibreOffice exited successfully but no output file was created (expected: ${outputPath})`,
+    );
   }
 
   return outputPath;

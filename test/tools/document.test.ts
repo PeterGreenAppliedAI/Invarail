@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createDocumentTool } from '../../src/tools/document.js';
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { InvarailError } from '../../src/errors.js';
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
 // Check if LibreOffice is available
@@ -99,5 +100,96 @@ describe('document tool', () => {
 
     // Cleanup
     try { rmSync('data/media/documents/test_html.html'); } catch { /* ignore */ }
+  });
+});
+
+describe('document tool conversion error logging', () => {
+  // Absolute: convert's inputPath is otherwise resolved against ctx.workspacePath
+  const TMP_DIR = resolve('test', '_tmp_doc_errs');
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  /** Write an executable fake soffice that behaves per `body`. */
+  function fakeSoffice(body: string): string {
+    const binDir = join(TMP_DIR, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const p = join(binDir, `soffice-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(p, `#!/bin/sh\n${body}\n`);
+    chmodSync(p, 0o755);
+    return p;
+  }
+
+  /** Stub the soffice binary (document tool reads SOFFICE_PATH at call time). */
+  function useSoffice(sofficePath: string) {
+    vi.stubEnv('SOFFICE_PATH', sofficePath);
+    return tool;
+  }
+
+  async function runConvert(input: string): Promise<unknown> {
+    try {
+      await tool.execute({ action: 'convert', inputPath: input, format: 'pdf' }, ctx);
+      return undefined; // resolved — caller asserts failure
+    } catch (err) {
+      return err;
+    }
+  }
+
+  function warnOutput(): string {
+    return warnSpy.mock.calls.map(c => String(c[0])).join('\n');
+  }
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    vi.unstubAllEnvs();
+    try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('throws CONVERSION_ERROR and logs input path + stderr when LibreOffice exits non-zero', async () => {
+    useSoffice(fakeSoffice('echo "fake converter exploded" >&2\nexit 3'));
+    const input = join(TMP_DIR, `input-${Math.random().toString(36).slice(2)}.txt`);
+    writeFileSync(input, 'hello');
+
+    const err = await runConvert(input);
+
+    expect(err).toBeInstanceOf(InvarailError);
+    expect(err).toMatchObject({ code: 'CONVERSION_ERROR' });
+    expect((err as Error).message).toContain(input);
+    expect((err as Error).message).toContain('pdf');
+    // Detailed log carries the input path and the converter's stderr/exit
+    expect(warnOutput()).toContain(`input="${input}"`);
+    expect(warnOutput()).toContain('fake converter exploded');
+    expect(warnOutput()).toContain('exit=3');
+  });
+
+  it('logs input path when LibreOffice exits 0 but produces no output file', async () => {
+    useSoffice(fakeSoffice('exit 0'));
+    const input = join(TMP_DIR, `quiet-${Math.random().toString(36).slice(2)}.txt`);
+    writeFileSync(input, 'hello');
+
+    const err = await runConvert(input);
+
+    expect(err).toBeInstanceOf(InvarailError);
+    expect(err).toMatchObject({ code: 'CONVERSION_ERROR' });
+    expect((err as Error).message).toContain(input);
+    expect(warnOutput()).toContain(`input="${input}"`);
+    expect(warnOutput()).toContain('exited successfully');
+  });
+
+  it('logs spawn failure details when the soffice binary is missing', async () => {
+    useSoffice(join(TMP_DIR, 'no-such-soffice'));
+    const input = join(TMP_DIR, `missing-${Math.random().toString(36).slice(2)}.txt`);
+    mkdirSync(TMP_DIR, { recursive: true });
+    writeFileSync(input, 'hello');
+
+    const err = await runConvert(input);
+
+    expect(err).toBeInstanceOf(InvarailError);
+    expect(err).toMatchObject({ code: 'CONVERSION_ERROR' });
+    expect((err as Error).message).toContain(input);
+    expect(warnOutput()).toContain(`input="${input}"`);
+    expect(warnOutput()).toMatch(/ENOENT|no such file|spawn/i);
   });
 });
