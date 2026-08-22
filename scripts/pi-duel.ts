@@ -18,9 +18,15 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DUEL_DIR = 'data/model-eval/pi-duel-2026-08-15';
+// Per-contestant API keys: ds4 ignores auth (any value); the gateway validates
+// against its key list — the dedicated `pi` client identity lives in the
+// gitignored scratchpad, read at runtime, never in the repo.
+function gatewayKey(): string {
+  return readFileSync('scratchpad/pi_key.txt', 'utf-8').trim();
+}
 const CONTESTANTS = [
-  { id: 'deepseek', model: 'vllm/deepseek-v4-flash' },
-  { id: 'qwen38', model: 'gateway/qwen3.8:27b' },
+  { id: 'deepseek', model: 'vllm/deepseek-v4-flash', apiKey: (): string => 'duel-ds4-ignores-auth' },
+  { id: 'qwen38', model: 'gateway/qwen3.8:27b', apiKey: gatewayKey },
 ];
 const SESSION_TIMEOUT_MS = 45 * 60_000;
 const PI_TOOLS = 'read,write,edit,ls,grep,find,bash';
@@ -60,14 +66,16 @@ function listFiles(dir: string, prefix = ''): string[] {
 async function runSessions(): Promise<void> {
   const ticket = readFileSync(join(DUEL_DIR, 'TICKET.md'), 'utf-8');
   const cli = piCliPath();
+  const only = process.argv.find(a => a.startsWith('--only='))?.split('=')[1];
   for (const c of CONTESTANTS) {
+    if (only && c.id !== only) continue;
     const ws = join(DUEL_DIR, `workspace-${c.id}`);
     mkdirSync(ws, { recursive: true });
     writeFileSync(join(ws, 'TICKET.md'), ticket);
     console.log(`\n================ ${c.id} (${c.model}) ================`);
     const start = Date.now();
     const prompt = `${ticket}\n\nImplement this ticket completely in the current directory. Run your tests with python3 and iterate until they pass. When everything passes, stop.`;
-    const r = await runPi(cli, ['-p', '--no-context-files', '--model', c.model, '--api-key', 'duel', '--tools', PI_TOOLS, '-a', prompt], ws, SESSION_TIMEOUT_MS);
+    const r = await runPi(cli, ['-p', '--no-context-files', '--model', c.model, '--api-key', c.apiKey(), '--tools', PI_TOOLS, '-a', prompt], ws, SESSION_TIMEOUT_MS);
     const secs = ((Date.now() - start) / 1000).toFixed(0);
     const files = listFiles(ws);
     writeFileSync(join(DUEL_DIR, `session-${c.id}.log`), `exit=${r.code} timedOut=${r.timedOut} wall=${secs}s\n\n--- stdout ---\n${r.stdout}\n\n--- stderr ---\n${r.stderr}`);
@@ -90,7 +98,9 @@ function score(): void {
     };
     const acc = docker(['python3', '/hidden/acceptance.py']);
     console.log(acc.out.trim().split('\n').map(l => `  ${l}`).join('\n'));
-    const own = docker(['python3', '-m', 'unittest', 'discover', '-s', '.', '-v']);
+    // Module-path invocation: `discover -s .` silently skips a tests/ dir with
+    // no __init__.py and reports "Ran 0 tests / OK" — a false vacuous-suite flag.
+    const own = docker(['sh', '-c', 'python3 -m unittest tests.test_jobqueue -v 2>&1 || python3 -m unittest discover -s tests -t . -v 2>&1']);
     const ownSummary = own.out.trim().split('\n').slice(-3).join(' | ');
     console.log(`  own tests (exit ${own.code}): ${ownSummary.slice(0, 220)}`);
     writeFileSync(join(DUEL_DIR, `score-${c.id}.txt`), `ACCEPTANCE:\n${acc.out}\n\nOWN TESTS (exit ${own.code}):\n${own.out.slice(0, 8000)}`);
