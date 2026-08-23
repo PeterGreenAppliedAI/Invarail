@@ -1,3 +1,5 @@
+import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { logRepair, logToolCall, logSteering } from '../metrics.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { OllamaMessage, OllamaTool, OllamaToolCall } from '../ollama/types.js';
@@ -425,6 +427,39 @@ const MAX_TOOL_RESULT_CHARS = 2000;
  * analyses made the model re-call it to "continue", trapping it in a re-reasoning loop. Give the
  * fetch/reason/code tools room so research breathes; chat doesn't use these, so it stays lean.
  */
+/**
+ * Spill (borrowed from dsh, 2026-08-22): when an observation exceeds its budget, the
+ * FULL text is persisted to a workspace-relative .spill/ file the model can process
+ * with exec (grep/python) or read_file — strictly better than losing the tail, and it
+ * removes the incentive to reconstruct content via repeated partial re-reads.
+ * Returns the hint to append to the truncated observation ('' if spilling unavailable).
+ */
+function spillObservation(full: string, workspacePath: string | undefined, step: number): string {
+  if (!workspacePath) return '';
+  try {
+    const dir = join(workspacePath, '.spill');
+    mkdirSync(dir, { recursive: true });
+    const rel = join('.spill', `step-${step + 1}-${Date.now().toString(36)}.txt`);
+    writeFileSync(join(workspacePath, rel), full);
+    return ` FULL output saved to ${rel} — process it with exec (grep/python) or read_file.`;
+  } catch {
+    return '';
+  }
+}
+
+/** Spill files are transient by contract — drop anything older than 24h at loop start. */
+function cleanupSpill(workspacePath: string | undefined): void {
+  if (!workspacePath) return;
+  try {
+    const dir = join(workspacePath, '.spill');
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      try { if (statSync(p).mtimeMs < cutoff) unlinkSync(p); } catch { /* raced */ }
+    }
+  } catch { /* no spill dir yet */ }
+}
+
 const TOOL_RESULT_LIMITS: Record<string, number> = {
   browser: 16_000,
   pi_build: 16_000,
@@ -516,6 +551,8 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
     effectiveTemperature !== config.temperature ? `, temp clamped ${config.temperature}→${effectiveTemperature}` : ''
   }`);
 
+  cleanupSpill(toolContext.workspacePath);
+  let overflowRepaired = false;
 
   for (let i = 0; i < config.maxIterations + extraIterations; i++) {
     // Steering: fold in messages the user sent mid-turn — a correction lands
@@ -537,13 +574,35 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
 
     // Non-streaming model call for tool iterations
     // Streaming only happens in the final synthesis call (below, after tool loop exits)
-    const response = await client.chat({
+    const chatParams = {
       model: config.model,
       messages,
       tools: ollamaTools.length > 0 ? ollamaTools : undefined,
       ...(config.think === undefined ? {} : { think: config.think }),
       options: buildOllamaOptions(config, effectiveTemperature),
-    });
+    };
+    let response;
+    try {
+      response = await client.chat(chatParams);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Overflow trigger (borrowed from dsh, 2026-08-22): our pre-call trim works from a
+      // token ESTIMATE; when the server says the context actually overflowed, compact
+      // hard once — truncate all but the last two tool observations — and retry instead
+      // of dying. One-shot; a second overflow is a real failure.
+      const isOverflow = /context.*(length|window|overflow)|too many tokens|exceeds?.*(context|length)|maximum.*(context|tokens)/i.test(errMsg);
+      if (!overflowRepaired && isOverflow) {
+        overflowRepaired = true;
+        const toolMsgs = messages.filter(m => m.role === 'tool');
+        for (const m of toolMsgs.slice(0, Math.max(0, toolMsgs.length - 2))) {
+          if ((m.content?.length ?? 0) > 300) m.content = m.content!.slice(0, 300) + '…[compacted after context overflow]';
+        }
+        console.log(`[ReAct] Server reported context overflow — hard-compacted ${Math.max(0, toolMsgs.length - 2)} old observation(s), retrying`);
+        response = await client.chat(chatParams);
+      } else {
+        throw err;
+      }
+    }
 
     // Track token usage
     if (response.prompt_eval_count) totalPromptTokens += response.prompt_eval_count;
@@ -751,8 +810,9 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
           ?? MAX_TOOL_RESULT_CHARS;
         if (observation.length > effectiveLimit) {
           const original = observation.length;
-          observation = observation.slice(0, effectiveLimit) + `\n... [truncated from ${original} chars. Do NOT re-read the rest in slices — work with what you have, or use a tool that takes a file PATH (e.g. document convert) instead of content]`;
-          console.log(`[ReAct] Tool "${toolName}" output truncated: ${original} → ${effectiveLimit} chars`);
+          const spillHint = spillObservation(observation, toolContext.workspacePath, i);
+          observation = observation.slice(0, effectiveLimit) + `\n... [truncated from ${original} chars.${spillHint} Do NOT re-read the rest by re-calling this tool in slices.]`;
+          console.log(`[ReAct] Tool "${toolName}" output truncated: ${original} → ${effectiveLimit} chars${spillHint ? ' (full text spilled)' : ''}`);
         }
 
         steps.push({
