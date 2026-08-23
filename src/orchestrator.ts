@@ -80,6 +80,8 @@ export class Orchestrator {
   /** sessionKey → full inbound messages typed while that session's dispatch is
    *  running (full messages so undrained leftovers can replay as normal traffic) */
   private steeringQueues = new Map<string, InboundMessage[]>();
+  /** sessionKeys whose in-flight run should stop at the next iteration boundary (!stop) */
+  private cancelRequests = new Set<string>();
   private factStore?: FactStore;
   private graphMemory?: GraphMemoryStore;
   private taskStore?: TaskStore;
@@ -251,6 +253,16 @@ export class Orchestrator {
         },
       });
       this.selfModService.bootSweep();
+    }
+
+    // Interrupted-run sweep: journals surviving a restart are runs killed mid-flight —
+    // write a synthetic transcript note so neither the model nor the user sees a silent vanish.
+    try {
+      const { sweepInterruptedRuns } = await import('./services/run-journal.js');
+      const swept = sweepInterruptedRuns(this.sessionStore);
+      if (swept > 0) console.log(`[Orchestrator] Swept ${swept} interrupted run(s) into session transcripts`);
+    } catch (err) {
+      console.warn('[Orchestrator] Run-journal sweep failed:', err instanceof Error ? err.message : err);
     }
 
     // Register all tools
@@ -1619,6 +1631,19 @@ export class Orchestrator {
       // replayed as a normal message — nothing is silently lost.
       const steeringKey = `${route.agentId}:${route.sessionKey}`;
       const activeQueue = this.steeringQueues.get(steeringKey);
+      // !stop: session-scoped cancellation — intercepted BEFORE steering so it acts
+      // instead of being folded into the very run it's trying to kill.
+      if (msg.content.trim().toLowerCase() === '!stop') {
+        const reply = activeQueue
+          ? '🛑 Stopping the running task — it will halt at the next step boundary.'
+          : 'Nothing is running on this session.';
+        if (activeQueue) this.cancelRequests.add(steeringKey);
+        await this.channelRegistry.send(
+          { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+          { text: reply },
+        ).catch(() => {});
+        return;
+      }
       if (activeQueue) {
         activeQueue.push(msg);
         console.log(`[Orchestrator] Steering queued for busy session ${steeringKey}: "${msg.content.slice(0, 60)}"`);
@@ -1695,6 +1720,7 @@ export class Orchestrator {
         factStore: this.factStore,
         graphMemory: this.graphMemory,
         pollSteering: () => (this.steeringQueues.get(steeringKey)?.splice(0) ?? []).map(m => m.content),
+        isCancelled: () => this.cancelRequests.has(steeringKey),
       };
 
       // Voice path: single-shot TTS on full response
@@ -1870,6 +1896,7 @@ export class Orchestrator {
       }
     } finally {
       if (activeSteeringKey) {
+        this.cancelRequests.delete(activeSteeringKey);
         const leftovers = this.steeringQueues.get(activeSteeringKey) ?? [];
         this.steeringQueues.delete(activeSteeringKey);
         // Steering messages the loop finished without draining become normal

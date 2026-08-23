@@ -89,6 +89,46 @@ describe('observation spill (dsh borrow)', () => {
   });
 });
 
+describe('mid-run cancellation (!stop)', () => {
+  it('stops at the next iteration boundary with an honest partial answer', async () => {
+    let cancelled = false;
+    const { client } = mockClient([
+      () => toolCall('dump'),
+      () => answer('should never be reached'),
+    ]);
+    const result = await runToolLoop({
+      client,
+      config: baseConfig,
+      tools: TOOLS,
+      executor: async () => { cancelled = true; return 'step one done'; },
+      toolContext: { agentId: 't', sessionKey: 't' } as ToolContext,
+      userMessage: 'go',
+      isCancelled: () => cancelled,
+    });
+    expect(result.cancelled).toBe(true);
+    expect(result.answer).toContain('Stopped on request after 1 tool step');
+    expect(result.answer).toContain('did NOT complete');
+  });
+
+  it('never-cancelled runs are unaffected', async () => {
+    const { client } = mockClient([
+      () => toolCall('dump'),
+      () => answer('done normally'),
+    ]);
+    const result = await runToolLoop({
+      client,
+      config: baseConfig,
+      tools: TOOLS,
+      executor: async () => 'ok',
+      toolContext: { agentId: 't', sessionKey: 't' } as ToolContext,
+      userMessage: 'go',
+      isCancelled: () => false,
+    });
+    expect(result.cancelled).toBeUndefined();
+    expect(result.answer).toBe('done normally');
+  });
+});
+
 describe('server-reported context overflow (dsh borrow)', () => {
   it('hard-compacts old tool observations and retries once', async () => {
     let threw = false;

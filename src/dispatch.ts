@@ -128,6 +128,8 @@ export interface DispatchParams {
   /** Steering: drained by the ReAct loop each iteration — messages the user
    *  sent while this dispatch was running (orchestrator queues them). */
   pollSteering?: () => string[];
+  /** Cancellation (!stop): checked by the ReAct loop at iteration boundaries. */
+  isCancelled?: () => boolean;
   /** Force the code_gen pipeline to MODIFY this existing build slug (deterministic — bypasses the
    *  enrich stage guessing which project a request refers to). Used by the console "Continue" flow. */
   codeTargetSlug?: string;
@@ -1085,6 +1087,7 @@ RULES:
     errorStore,
     onProgress: params.onProgress,
     pollSteering: params.pollSteering,
+    isCancelled: params.isCancelled,
     summarizeObservations: config.session.summarizeToolObservations
       ? { enabled: true, client, model: config.session.summarizationModel ?? config.router.model }
       : undefined,

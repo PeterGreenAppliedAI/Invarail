@@ -10,6 +10,7 @@ import { buildReActSystemPrompt, type PromptContext } from './prompt-builder.js'
 import { parseReActResponse } from './parser.js';
 import type { ErrorLearningStore } from '../learnings/error-store.js';
 import { enrichObservation } from '../learnings/pattern-matcher.js';
+import { startRunJournal, type RunJournal } from '../services/run-journal.js';
 
 /** Build Ollama options from ReActConfig, omitting undefined sampling params. */
 function buildOllamaOptions(config: ReActConfig, effectiveTemperature: number): Record<string, unknown> {
@@ -51,6 +52,9 @@ export interface RunReActLoopParams {
    *  iteration and injected as user messages so a correction lands inside the
    *  running loop instead of colliding as a separate dispatch. */
   pollSteering?: () => string[];
+  /** Cancellation: checked at each iteration boundary. When true, the loop stops
+   *  and returns a partial result marked cancelled — the !stop path. */
+  isCancelled?: () => boolean;
 }
 
 /**
@@ -485,7 +489,19 @@ const TOOL_RESULT_LIMITS: Record<string, number> = {
  *   5. Safety: max iterations limit
  */
 export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResult> {
-  const { client, config, tools, executor, toolContext, userMessage, history, workspaceContext, promptContext, errorStore, summarizeObservations, onStream, onProgress, pollSteering } = params;
+  // Crash-durable journal: steps are durable as they happen; any exit path deletes
+  // the journal, so a surviving file means process death — the boot sweep accounts
+  // for it in the session transcript (steward requirement, 2026-08-22).
+  const journal = startRunJournal(params.toolContext.agentId, params.toolContext.sessionKey, params.userMessage);
+  try {
+    return await runToolLoopInner(params, journal);
+  } finally {
+    journal.close();
+  }
+}
+
+async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal): Promise<ReActResult> {
+  const { client, config, tools, executor, toolContext, userMessage, history, workspaceContext, promptContext, errorStore, summarizeObservations, onStream, onProgress, pollSteering, isCancelled } = params;
 
   // Build observation summarizer if enabled
   const observationSummarizer: ObservationSummarizer | undefined = summarizeObservations?.enabled
@@ -555,6 +571,22 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
   let overflowRepaired = false;
 
   for (let i = 0; i < config.maxIterations + extraIterations; i++) {
+    // Cancellation boundary: honest partial exit on !stop. In-flight model/tool
+    // calls complete (seconds); the loop never starts another after the flag is set.
+    if (isCancelled?.()) {
+      const toolsUsed = [...new Set(steps.filter(s => s.action).map(s => s.action!.tool))];
+      console.log(`[ReAct] Cancelled by user after ${steps.length} step(s)`);
+      return {
+        answer: `🛑 Stopped on request after ${steps.filter(s => s.action).length} tool step(s)${toolsUsed.length ? ` (${toolsUsed.join(', ')})` : ''}. The task did NOT complete — partial work may exist in the workspace.`,
+        steps,
+        iterations: i,
+        hitMaxIterations: false,
+        cancelled: true,
+        promptTokens: totalPromptTokens,
+        completionTokens: totalCompletionTokens,
+      };
+    }
+
     // Steering: fold in messages the user sent mid-turn — a correction lands
     // inside the running loop instead of colliding as a separate dispatch
     if (pollSteering) {
@@ -820,6 +852,7 @@ export async function runToolLoop(params: RunReActLoopParams): Promise<ReActResu
           action: { tool: toolName, params: toolParams },
           observation,
         });
+        journal.step(i, toolName, observation);
 
         // Append tool result as a tool message
         messages.push({

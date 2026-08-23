@@ -10,6 +10,8 @@ export interface ReActResult {
   steps: ReActStep[];
   iterations: number;
   hitMaxIterations: boolean;
+  /** True when the run was stopped via !stop (isCancelled) — partial work, honest exit */
+  cancelled?: boolean;
   /** Total prompt tokens consumed across all iterations */
   promptTokens?: number;
   /** Total completion tokens generated across all iterations */
