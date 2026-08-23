@@ -4,6 +4,20 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Polar — the Weights Horizon, Designed and Parked (August 23 2026, NO BUILD)
+
+### What it is (plainly)
+NVIDIA Polar (NVIDIA-NeMo/ProRL-Agent-Server, successor to ProRL Agent, arXiv 2605.24220): a tape recorder + report card that turns an existing agent into a model gym. A proxy sits between harness and inference server, records token-faithful trajectories of REAL runs; GRPO runs the same task k times, grades attempts against each other (oracle rewards), nudges weights toward what the passing attempts did. Headline: a 4B gained +22.6 SWE-Bench points trained against a specific harness. The strategic read: it industrializes the harness-duel verdict — harnesses are interchangeable environments; the leverage is trained model-harness FIT.
+
+### The design (Peter's architecture, agreed)
+- **Proxy at the GATEWAY, not in Invarail.** Toggleable capture: on = tape rolls over real production traffic; off = bypassed entirely (fail-open — a dead proxy can never take down inference). Campaigns replay captured/generated tasks k× through the same path to build GRPO groups (production gives 1 attempt/task; groups need k).
+- **Invarail's total footprint: ONE optional run-id header** from MultiBackendClient so trajectories join to outcome verdicts (oracle results, 👍/👎, metrics). ~5 lines, config-gated, dormant.
+- **Weight-worktree principle (Peter): never train the active model.** Training touches a CANDIDATE checkpoint served under its own id. Promotion gate = the oracle eval suite (duel tasks, routing corpus — computed checks only). Owner confirms the swap; rollback = config flip. Canary = per-specialist model assignment (already built): candidate takes ONE category (router or triage) while the incumbent keeps the rest. Self-mod rail semantics, one level down. Invariant preserved: experience informs execution (weights learn), never expands authority (the swap is code-gated + owner-confirmed; a model cannot train itself into production).
+- **Reward doctrine: oracle-checkable rewards ONLY.** The quality judge scored placeholder spam GOOD 5/5/5 (Aug 2026) — GRPO against a judge breeds a placeholder-generator. Our verification doctrine transfers verbatim.
+
+### Trigger to unpark (all three, not vibes)
+(1) a small model consistently failing at something (2) with a computable oracle (3) with thousands of graded examples. Expected first arrival: the email steward's 👍/👎 stream after months of operation → train an owned triage model on private data that never left the house. First campaign target if earlier: router-scale model on the labeled routing corpus. Hardware: GRPO on 4B-class plausible on the Spark (128GB unified), unproven — the probe is clone + wrap duel tasks as a Gym environment + one rollout smoke.
+
 ## The Source Audit — the Deficit List Goes Exhaustive (August 23 2026)
 
 ### Method
