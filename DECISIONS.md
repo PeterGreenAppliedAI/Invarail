@@ -4,6 +4,22 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Source Audit — the Deficit List Goes Exhaustive (August 23 2026)
+
+### Method
+Three parallel readers over dsh's SOURCE (agent-loop/agent, session/persistence/compaction, tools/llm packages) enumerating every failure-handling mechanism with file:line receipts, absences recorded as data; then each mechanism cross-checked against our engine/dispatch/client. Purpose: upgrade "no known deficit that matters" from memory-based to source-audited.
+
+### The audit's first casualty: our own documentation
+CLAUDE.md claimed OllamaClient had "single retry on connection failure." The code has had 4-attempt retry, 429 exponential backoff, request timeouts, and abort propagation for some time — deficit item #5 was built on stale docs. Lesson: an audit of the competitor corrected OUR inventory first; cross-checks must read both sides' source, not one side's source and the other's docs.
+
+### Final reconciliation (both directions)
+**Their genuine depth (dispositioned):** cancellation (13 abort checkpoints, 3-source signal fusion, mid-stream partial recovery, synthetic durable results for aborted tools — ours is v1 boundary-check, deepen when it matters); session durability internals (fsync-ordered appends, atomic link() materialization, torn-tail repair, zstd partial-frame recovery, format-version refusal — ours: atomic tmp+rename, journal covers in-flight; accepted → event-sourcing horizon); typed monotonic guards + invariants registry (ours convention+tests; accepted).
+**Their measured absences (our uniques):** NO depth/iteration caps in loop core, NO timeouts in core, NO retry in core (plugin-optional), NO drift/streak/hallucination/refusal detection, NO malformed-tool-call repair (bad JSON args are rejected, not repaired — we JSON5-repair + parse four narration dialects), pre-step-rejected messages are LOST (our undrained steering replays). The small-model repair layer and runaway bounds exist only in ours — each system is rigorous exactly where its risk lives: theirs assumes frontier models + present humans; ours assumes small models + absent owner.
+**Shipped from the audit (same day):** transient-5xx retry with jittered backoff + Retry-After honoring in both clients (the one true remaining model-layer gap — 429-only before); CLAUDE.md corrected. Their own absences worth knowing: no JSONL checksums, no HMAC on logs, SQLite repair doesn't validate truncate success, no circuit breaker.
+
+### Standing verdict
+Source-audited: the deficit list is complete at four items, all dispositioned (two deliberately deferred with triggers, one v1-shipped, one accepted). The engineering question is CLOSED — further harness investment requires a new live failure class or the dsh adoption re-evaluation, not vibes.
+
 ## The Harness Duel — dsh vs Our Arena, Measured (August 22 2026)
 
 ### The question (Peter's, after a hard week): "is our harness effectively useless next to Hermes and dsh?"

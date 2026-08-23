@@ -24,7 +24,7 @@ Channel (Discord/Telegram/Slack/Web/Gmail/WhatsApp/MS Graph/iMessage/Chrome Exte
 - **Tool-loop engine** — `runToolLoop()` in `src/tool-loop/engine.ts`. ReAct-style loop with native Ollama tool calls + regex fallback parser. Includes hallucination detection, drift detection, error learning hints.
 - **Dispatch pipeline** — `src/dispatch.ts` routes classified messages to specialists/pipelines. Handles 6-layer security enforcement, tool stripping, context isolation.
 - **Briefing system** — `src/orchestrator.ts`. Separate from heartbeat. Runs at 8am/1:15pm/5pm. Gathers calendar + tasks + memory, runs CoT reasoning via qwen3.6:35b, delivers contextual insights.
-- **OllamaClient** — `src/ollama/client.ts`, REST API wrapper with single retry on connection failure.
+- **OllamaClient** — `src/ollama/client.ts`, REST API wrapper: 4-attempt retry (connection failures, 429, transient 5xx) with jittered backoff honoring Retry-After; request timeouts + abort propagation. Same policy in OpenAICompatClient.
 - **DockerBackend** — `src/exec/docker-backend.ts`, sandboxed command execution.
 
 **Data flow:** Channel message -> session resolution -> Router classification (pre-model overrides → model → keyword fallback) -> Security filtering (6 layers) -> Pipeline or Specialist dispatch -> tool-loop execution -> [FILE:] token extraction -> response to channel (thinking stripped) -> transcript persistence (thinking preserved).
@@ -267,7 +267,7 @@ src/
     prompt.ts               #   Router prompt template
 
   ollama/                   # LLM inference
-    client.ts               #   OllamaClient (REST API wrapper, single retry on connection failure)
+    client.ts               #   OllamaClient (REST API wrapper; retry/backoff for connection, 429, transient 5xx)
     openai-client.ts        #   OpenAICompatClient — ds4/OpenAI-compat /v1/chat/completions, Ollama<->OpenAI translation (think gated by supportsThink)
     multi-backend.ts        #   MultiBackendClient (extends OllamaClient) — routes by model id; createInferenceClient()
     types.ts                #   OllamaMessage, OllamaTool, OllamaToolCall

@@ -1,5 +1,6 @@
 import { ollamaUnreachable, ollamaInferenceError } from '../errors.js';
 import { inferenceAbortSignal } from './abort.js';
+import { isRetryableStatus, retryDelayMs } from './client.js';
 import type {
   OllamaChatParams,
   OllamaChatResponse,
@@ -210,9 +211,9 @@ export class OpenAICompatClient {
         }
         throw ollamaUnreachable(this.baseUrl, err);
       }
-      if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
-        const delay = 600 * 2 ** attempt;
-        console.warn(`[OpenAI] 429 rate limited on stream, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
+      if (isRetryableStatus(res.status) && attempt < MAX_ATTEMPTS - 1) {
+        const delay = retryDelayMs(res, attempt);
+        console.warn(`[OpenAI] ${res.status} on stream, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
@@ -345,10 +346,10 @@ export class OpenAICompatClient {
         }
         throw ollamaUnreachable(this.baseUrl, err);
       }
-      // 429 — transient rate limit. Exponential backoff and retry.
-      if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
-        const delay = 600 * 2 ** attempt;
-        console.warn(`[OpenAI] 429 rate limited on ${path}, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
+      // 429 + transient 5xx — jittered exponential backoff, honoring Retry-After.
+      if (isRetryableStatus(res.status) && attempt < MAX_ATTEMPTS - 1) {
+        const delay = retryDelayMs(res, attempt);
+        console.warn(`[OpenAI] ${res.status} on ${path}, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }

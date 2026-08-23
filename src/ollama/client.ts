@@ -47,6 +47,19 @@ function embedThrottle(): Promise<void> {
   return next;
 }
 
+/** 429 (rate limit) and transient 5xx (bad gateway / unavailable / gateway timeout). */
+export function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+/** Jittered exponential backoff (600ms base, ×2, ±30%), honoring a sane Retry-After. */
+export function retryDelayMs(res: { headers?: { get(name: string): string | null } }, attempt: number, capMs = 8_000): number {
+  const retryAfter = Number(res.headers?.get('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0 && retryAfter * 1000 <= capMs) return retryAfter * 1000;
+  const base = Math.min(600 * 2 ** attempt, capMs);
+  return Math.round(base * (0.7 + Math.random() * 0.6));
+}
+
 export class OllamaClient {
   constructor(
     private readonly baseUrl: string,
@@ -98,10 +111,10 @@ export class OllamaClient {
         }
         throw ollamaUnreachable(this.baseUrl, err);
       }
-      // 429 — transient rate limit. Back off and retry.
-      if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
-        const delay = 600 * 2 ** attempt;
-        console.warn(`[Ollama] 429 rate limited on stream, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
+      // 429 + transient 5xx — back off and retry (stream not yet started, safe to redo).
+      if (isRetryableStatus(res.status) && attempt < MAX_ATTEMPTS - 1) {
+        const delay = retryDelayMs(res, attempt);
+        console.warn(`[Ollama] ${res.status} on stream, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
@@ -234,10 +247,11 @@ export class OllamaClient {
         throw ollamaUnreachable(this.baseUrl, err);
       }
 
-      // 429 — transient rate limit. Exponential backoff (600/1200/2400ms) and retry.
-      if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
-        const delay = 600 * 2 ** attempt;
-        console.warn(`[Ollama] 429 rate limited on ${path}, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
+      // 429 + transient 5xx (dsh audit, 2026-08-23): a gateway blip (502/503/504) or
+      // rate limit retries with jittered exponential backoff, honoring Retry-After.
+      if (isRetryableStatus(res.status) && attempt < MAX_ATTEMPTS - 1) {
+        const delay = retryDelayMs(res, attempt);
+        console.warn(`[Ollama] ${res.status} on ${path}, backing off ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }

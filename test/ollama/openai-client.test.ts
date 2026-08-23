@@ -123,3 +123,32 @@ describe('qwen-template effort levels', () => {
     expect(parseBody(captured2).chat_template_kwargs).toEqual({ reasoning_effort: 'xhigh' });
   });
 });
+
+describe('retry classification (dsh audit borrow)', () => {
+  it('retries transient 5xx and 429, not 4xx', async () => {
+    const { isRetryableStatus } = await import('../../src/ollama/client.js');
+    expect(isRetryableStatus(429)).toBe(true);
+    expect(isRetryableStatus(502)).toBe(true);
+    expect(isRetryableStatus(503)).toBe(true);
+    expect(isRetryableStatus(504)).toBe(true);
+    expect(isRetryableStatus(400)).toBe(false);
+    expect(isRetryableStatus(401)).toBe(false);
+    expect(isRetryableStatus(404)).toBe(false);
+    expect(isRetryableStatus(500)).toBe(false); // 500 = often deterministic (bad request shape) — fail fast
+  });
+
+  it('honors sane Retry-After, jitters exponential otherwise, caps delay', async () => {
+    const { retryDelayMs } = await import('../../src/ollama/client.js');
+    const withHeader = { headers: { get: (n: string) => (n === 'retry-after' ? '2' : null) } };
+    expect(retryDelayMs(withHeader, 0)).toBe(2000);
+    const noHeader = { headers: { get: () => null } };
+    for (let a = 0; a < 6; a++) {
+      const d = retryDelayMs(noHeader, a);
+      expect(d).toBeGreaterThanOrEqual(Math.min(600 * 2 ** a, 8000) * 0.7 - 1);
+      expect(d).toBeLessThanOrEqual(8000 * 1.3 + 1);
+    }
+    const hugeRetryAfter = { headers: { get: () => '3600' } };
+    const d = retryDelayMs(hugeRetryAfter, 0);
+    expect(d).toBeLessThanOrEqual(8000 * 1.3); // insane Retry-After ignored, local backoff used
+  });
+});
