@@ -83,6 +83,37 @@ const CONFIG_FILE = 'invarail.config.json5';
 // Split literal keeps the mechanical rename sweep from rewriting the LEGACY name
 const LEGACY_CONFIG_FILE = 'local' + 'claw.config.json5';
 
+/**
+ * Fill `defaultModel` into every foreground-model slot that doesn't override it —
+ * BEFORE Zod parses, so schemas stay strict (model still required per specialist)
+ * and no consumer type changes. A model cutover is one line ("defaultModel") instead
+ * of a 19-edit sweep (the glm-5.3-flash cutover, 2026-08-26 — Peter's rule: if a
+ * swap needs edits everywhere, the config violates its own principle).
+ * Utility-tier models (router phi4, NER, embeddings — gateway class) deliberately
+ * do NOT inherit: they are a different model class with their own explicit fields.
+ */
+function applyDefaultModel(cfg: unknown): void {
+  if (typeof cfg !== 'object' || cfg === null) return;
+  const c = cfg as Record<string, any>;
+  const dm = c.defaultModel;
+  if (typeof dm !== 'string' || !dm) return;
+  if (typeof c.specialists === 'object' && c.specialists !== null) {
+    for (const s of Object.values(c.specialists as Record<string, any>)) {
+      if (typeof s === 'object' && s !== null && s.model === undefined) s.model = dm;
+    }
+  }
+  for (const key of ['briefing', 'heartbeat'] as const) {
+    if (typeof c[key] === 'object' && c[key] !== null && c[key].model === undefined) c[key].model = dm;
+  }
+  if (typeof c.vision === 'object' && c.vision !== null) {
+    if (c.vision.model === undefined) c.vision.model = dm;
+    if (c.vision.visionModel === undefined) c.vision.visionModel = dm;
+  }
+  if (typeof c.browser === 'object' && c.browser !== null && c.browser.visionModel === undefined) {
+    c.browser.visionModel = dm;
+  }
+}
+
 export function loadConfig(filePath?: string): InvarailConfig {
   // Load .env before anything else
   loadDotEnv();
@@ -107,6 +138,7 @@ export function loadConfig(filePath?: string): InvarailConfig {
 
   const expanded = expandEnvVars(raw);
   const cleaned = removeEmptyStrings(expanded);
+  applyDefaultModel(cleaned);
   const result = InvarailConfigSchema.safeParse(cleaned);
 
   if (!result.success) {

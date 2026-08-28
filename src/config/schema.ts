@@ -510,6 +510,10 @@ export const LocalIndexConfigSchema = z.object({
 });
 
 export const InvarailConfigSchema = z.object({
+  /** THE foreground model — filled into every specialist/briefing/heartbeat/vision
+   *  slot that doesn't override it (pre-parse, in the loader). A model cutover is
+   *  this ONE line plus the backend entry; per-slot `model:` remains an override. */
+  defaultModel: z.string().optional(),
   /** Owner user ID — the single person who can access owner-only tools (gmail, calendar, etc.). Checked in code, not by the model. */
   ownerId: z.string().optional(),
   /** Principals: person → channel sender aliases. See PrincipalSchema. */

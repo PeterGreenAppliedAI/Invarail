@@ -171,11 +171,20 @@ export class OpenAICompatClient {
     if (!msg.content && !msg.tool_calls?.length && choice.finish_reason === 'length') {
       console.warn(`[OpenAI] Empty completion from ${data.model ?? params.model} — hit max_tokens before emitting an answer (reasoning likely overran the budget).`);
     }
+    // Separated reasoning (vLLM parses it out of content: GLM `reasoning`, qwen-style
+    // `reasoning_content`) maps back to inline <think> tags — the ENTIRE existing
+    // thinking pipeline (transcript preservation, delivery/preview strips, extractor
+    // stripping) is keyed on that format, so one mapping here makes every backend
+    // behave identically downstream (2026-08-26, glm-5.3-flash onboarding).
+    const reasoning = msg.reasoning ?? msg.reasoning_content;
+    const content = reasoning
+      ? `<think>${reasoning}</think>${msg.content ?? ''}`
+      : msg.content ?? '';
     return {
       model: data.model ?? params.model,
       message: {
         role: 'assistant',
-        content: msg.content ?? '',
+        content,
         tool_calls: this.parseToolCalls(msg.tool_calls),
       },
       done: true,
