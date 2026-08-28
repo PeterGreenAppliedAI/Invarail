@@ -99,6 +99,8 @@ export class OpenAICompatClient {
       messages: this.toOpenAIMessages(params.messages),
       stream,
     };
+    // vLLM only reports usage on streams when asked.
+    if (stream) body.stream_options = { include_usage: true };
     if (o.temperature !== undefined) body.temperature = o.temperature;
     if (o.top_p !== undefined) body.top_p = o.top_p;
     if (o.num_predict !== undefined) {
@@ -163,34 +165,13 @@ export class OpenAICompatClient {
   }
 
   async chat(params: Omit<OllamaChatParams, 'stream' | 'keep_alive'>): Promise<OllamaChatResponse> {
-    const data = await this.post<any>('/v1/chat/completions', this.toRequestBody(params, false), undefined, params.abortSignal);
-    const choice = data.choices?.[0] ?? {};
-    const msg = choice.message ?? {};
-    // Empty content with finish_reason "length" means reasoning blew the token budget — surface it
-    // rather than letting an empty string silently propagate (it would gut a verification stage).
-    if (!msg.content && !msg.tool_calls?.length && choice.finish_reason === 'length') {
-      console.warn(`[OpenAI] Empty completion from ${data.model ?? params.model} — hit max_tokens before emitting an answer (reasoning likely overran the budget).`);
-    }
-    // Separated reasoning (vLLM parses it out of content: GLM `reasoning`, qwen-style
-    // `reasoning_content`) maps back to inline <think> tags — the ENTIRE existing
-    // thinking pipeline (transcript preservation, delivery/preview strips, extractor
-    // stripping) is keyed on that format, so one mapping here makes every backend
-    // behave identically downstream (2026-08-26, glm-5.3-flash onboarding).
-    const reasoning = msg.reasoning ?? msg.reasoning_content;
-    const content = reasoning
-      ? `<think>${reasoning}</think>${msg.content ?? ''}`
-      : msg.content ?? '';
-    return {
-      model: data.model ?? params.model,
-      message: {
-        role: 'assistant',
-        content,
-        tool_calls: this.parseToolCalls(msg.tool_calls),
-      },
-      done: true,
-      eval_count: data.usage?.completion_tokens,
-      prompt_eval_count: data.usage?.prompt_tokens,
-    } as OllamaChatResponse;
+    // Long completions MUST stream (2026-08-26, glm-5.3-flash cutover): a non-streaming
+    // request sends no response headers until the ENTIRE generation is done, and undici
+    // kills header-less connections at its own 5-min deadline (UND_ERR_HEADERS_TIMEOUT)
+    // regardless of our abort budget — research synthesis with think:true died there,
+    // and each blind retry restarted the same >5-min generation. Streaming sends headers
+    // immediately, so the only clock left is our own (OLLAMA_CHAT_TIMEOUT_MS).
+    return this.chatStream(params, () => undefined);
   }
 
   async chatStream(
@@ -207,7 +188,7 @@ export class OpenAICompatClient {
           method: 'POST',
           headers: this.headers(),
           body: JSON.stringify(body),
-          signal: AbortSignal.any([AbortSignal.timeout(300_000), inferenceAbortSignal()]),
+          signal: AbortSignal.any([AbortSignal.timeout(defaultRequestTimeoutMs()), inferenceAbortSignal()]),
         });
       } catch (err) {
         if (err instanceof DOMException && err.name === 'TimeoutError') {
@@ -239,6 +220,7 @@ export class OpenAICompatClient {
 
     const decoder = new TextDecoder();
     let fullContent = '';
+    let fullReasoning = '';
     let model = params.model;
     let promptTokens: number | undefined;
     let completionTokens: number | undefined;
@@ -266,6 +248,11 @@ export class OpenAICompatClient {
             completionTokens = chunk.usage.completion_tokens ?? completionTokens;
           }
           const delta = chunk.choices?.[0]?.delta ?? {};
+          // Reasoning deltas accumulate for the final message (<think> mapping, same as
+          // non-stream) but are NEVER sent to onDelta — previews stay clean by construction.
+          if (delta.reasoning || delta.reasoning_content) {
+            fullReasoning += delta.reasoning ?? delta.reasoning_content;
+          }
           if (delta.content) {
             fullContent += delta.content;
             onDelta(delta.content);
@@ -282,11 +269,16 @@ export class OpenAICompatClient {
     }
 
     const toolCalls = Object.values(toolCallAcc).filter(t => t.name);
+    // Empty completion diagnostic (moved from the retired non-streaming path): reasoning
+    // that ate the whole budget must be surfaced, not silently propagated as ''.
+    if (!fullContent && !toolCalls.length) {
+      console.warn(`[OpenAI] Empty completion from ${model}${fullReasoning ? ' — reasoning consumed the budget without an answer' : ''}.`);
+    }
     return {
       model,
       message: {
         role: 'assistant',
-        content: fullContent,
+        content: fullReasoning ? `<think>${fullReasoning}</think>${fullContent}` : fullContent,
         tool_calls: toolCalls.length
           ? this.parseToolCalls(toolCalls.map(t => ({ function: { name: t.name, arguments: t.args } })))
           : undefined,
