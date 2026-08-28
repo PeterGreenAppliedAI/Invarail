@@ -152,3 +152,25 @@ describe('retry classification (dsh audit borrow)', () => {
     expect(d).toBeLessThanOrEqual(8000 * 1.3); // insane Retry-After ignored, local backoff used
   });
 });
+
+describe('deliberation-leak think coercion (glm class)', () => {
+  function bodyFor(think: unknown): Record<string, unknown> {
+    const c = new OpenAICompatClient('http://x', 'k', true, 'qwen-template');
+    return (c as any).toRequestBody({ model: 'glm-5.3-flash', messages: [], think }, false);
+  }
+
+  it('think:false and think:undefined both coerce to enable_thinking:true on leak-flagged models', () => {
+    expect(bodyFor(false).chat_template_kwargs).toEqual({ enable_thinking: true });
+    expect(bodyFor(undefined).chat_template_kwargs).toEqual({ enable_thinking: true });
+  });
+
+  it('effort strings pass through untouched', () => {
+    expect(bodyFor('low').chat_template_kwargs).toEqual({ reasoning_effort: 'low' });
+  });
+
+  it('non-leaky models keep their explicit think:false', () => {
+    const c = new OpenAICompatClient('http://x', 'k', true, 'qwen-template');
+    const body = (c as any).toRequestBody({ model: 'qwen3.8-27b', messages: [], think: false }, false);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+  });
+});

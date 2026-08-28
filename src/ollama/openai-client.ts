@@ -1,6 +1,7 @@
 import { ollamaUnreachable, ollamaInferenceError } from '../errors.js';
 import { inferenceAbortSignal } from './abort.js';
 import { isRetryableStatus, retryDelayMs } from './client.js';
+import { capsFor } from './model-caps.js';
 import type {
   OllamaChatParams,
   OllamaChatResponse,
@@ -123,6 +124,19 @@ export class OpenAICompatClient {
       body.response_format = { type: 'json_object' };
       body.guided_json = params.format;
     }
+    // Leak-flagged models (model-caps noThinkLeaksDeliberation): thinking suppressed OR
+    // defaulted leaks deliberation prose INTO content — untagged, unstrippable (glm-5.3,
+    // live-caught twice 2026-08-28: chat delivered its meta-planning to a Discord DM).
+    // Rule: on these models thinking is ALWAYS explicitly on; an explicit false is
+    // coerced with a warn-once. Never silent — the override is logged. Revisit per-model
+    // when a think A/B for the model exists.
+    if (this.supportsThink && capsFor(params.model).noThinkLeaksDeliberation && params.think !== true && typeof params.think !== 'string') {
+      if (params.think === false && !OpenAICompatClient.leakCoerceWarned) {
+        OpenAICompatClient.leakCoerceWarned = true;
+        console.warn(`[OpenAI] ${params.model}: think:false requested, but this model leaks deliberation into content when thinking is suppressed — coercing to think:true (model-caps noThinkLeaksDeliberation)`);
+      }
+      params = { ...params, think: true };
+    }
     // `think` forwarding is config-gated per backend: ds4/DwarfStar honors it
     // (verified 2026-08-12), but a generic OpenAI-compat server silently ignores
     // unknown fields — and a silent no-op is the exact bug class the 2026-08
@@ -149,6 +163,7 @@ export class OpenAICompatClient {
   }
 
   private static thinkWarned = false;
+  private static leakCoerceWarned = false;
 
   /** Translate an OpenAI tool_calls array (string args) to Ollama shape (object args). */
   private parseToolCalls(toolCalls: any[] | undefined): OllamaMessage['tool_calls'] {
