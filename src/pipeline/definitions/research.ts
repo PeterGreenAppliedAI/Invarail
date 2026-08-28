@@ -173,8 +173,15 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
  *  single entailment checks into 300s timeouts (live, 2026-08-14). The
  *  user-facing prose calls (facet findings, final synthesis, sentence
  *  corrections) keep the model's default — the owner reads those. */
-const noThink = (model: string): { think?: false } =>
-  ['toggle', 'full'].includes(capsFor(model).think ?? '') ? { think: false } : {};
+const noThink = (model: string): { think?: false } => {
+  const caps = capsFor(model);
+  // Models that leak deliberation into content when thinking is suppressed (glm-5.3)
+  // must keep thinking ON: the reasoning channel is what keeps their content clean —
+  // leaked prose corrupts facet material, sentence splices, and enum parsing worse
+  // than the latency of thinking costs. (Suppression stays for clean-off models.)
+  if (caps.noThinkLeaksDeliberation) return {};
+  return ['toggle', 'full'].includes(caps.think ?? '') ? { think: false } : {};
+};
 
 // (Removed 2026-08-16: serializeSynthesis — a deepseek/ds4-era accommodation
 // for three concurrent 284B generations self-contending on one box. SGLang

@@ -28,6 +28,13 @@ export interface ModelCaps {
    *  'none'   — rejects the think field (Ollama 400)
    *  undefined — unprobed; treat as unknown */
   think?: 'toggle' | 'levels' | 'full' | 'none';
+  /** Model narrates its deliberation INSIDE content when thinking is suppressed
+   *  ("The user is asking… Let me…") — untagged, unstrippable prose (glm-5.3,
+   *  probed 2026-08-26: think ON routes deliberation to the separated reasoning
+   *  channel and content comes out clean/direct; think OFF interleaves it).
+   *  Consumers that would suppress thinking for speed should NOT on these models —
+   *  leaky prose corrupts reports, splices, and enum parsing worse than latency hurts. */
+  noThinkLeaksDeliberation?: boolean;
 }
 
 const DEFAULT_CAPS: ModelCaps = { supportsFormat: true, parallelToolCalls: false, vision: false };
@@ -50,7 +57,7 @@ const MODEL_CAPS: Record<string, Partial<ModelCaps>> = {
   'gemma4': { supportsFormat: true, vision: true, think: 'toggle' },
   'muse-glimmer': { think: 'toggle' },
   'nemotron': { think: 'toggle' },
-  'glm': { think: 'toggle' },
+  'glm': { think: 'toggle', vision: true, noThinkLeaksDeliberation: true }, // glm-5.3-flash probed 2026-08-26: vision OK; think-off leaks deliberation prose into content
   'devstral': { think: 'none' },
   'llama4': { think: 'none' },
   // Family-wide: accepts think:false, silently disobeys it (obedience audit
