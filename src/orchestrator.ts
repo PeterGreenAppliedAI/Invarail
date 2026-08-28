@@ -1406,6 +1406,25 @@ export class Orchestrator {
       return;
     }
 
+    // !stop — session-scoped cancellation of an in-flight tool loop. MUST live in the
+    // command layer: the unknown-command catchall below eats every unrecognized "!"
+    // before dispatch-side interception could see it (live-caught 2026-08-26: "!stop"
+    // → "Unknown command" while a run was active — the steering-branch handler was dead code).
+    if (trimmed === '!stop') {
+      const route = resolveRoute(
+        { channel: msg.channel, senderId: msg.senderId, guildId: msg.guildId, channelId: msg.channelId },
+        this.config,
+      );
+      const steeringKey = `${route.agentId}:${route.sessionKey}`;
+      const active = this.steeringQueues.has(steeringKey);
+      if (active) this.cancelRequests.add(steeringKey);
+      await this.channelRegistry.send(
+        { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
+        { text: active ? '🛑 Stopping the running task — it will halt at the next step boundary.' : 'Nothing is running on this session. (Note: pipeline runs — e.g. research — cannot be stopped mid-stage.)' },
+      ).catch(() => {});
+      return;
+    }
+
     // Unknown-command catchall: a "!" prefix is command INTENT — it must never
     // fall through to the router and get a model-improvised answer ("!experience"
     // got a hallucinated capability tour, Aug 10). Deterministic help instead.
@@ -1631,19 +1650,6 @@ export class Orchestrator {
       // replayed as a normal message — nothing is silently lost.
       const steeringKey = `${route.agentId}:${route.sessionKey}`;
       const activeQueue = this.steeringQueues.get(steeringKey);
-      // !stop: session-scoped cancellation — intercepted BEFORE steering so it acts
-      // instead of being folded into the very run it's trying to kill.
-      if (msg.content.trim().toLowerCase() === '!stop') {
-        const reply = activeQueue
-          ? '🛑 Stopping the running task — it will halt at the next step boundary.'
-          : 'Nothing is running on this session.';
-        if (activeQueue) this.cancelRequests.add(steeringKey);
-        await this.channelRegistry.send(
-          { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
-          { text: reply },
-        ).catch(() => {});
-        return;
-      }
       if (activeQueue) {
         activeQueue.push(msg);
         console.log(`[Orchestrator] Steering queued for busy session ${steeringKey}: "${msg.content.slice(0, 60)}"`);
