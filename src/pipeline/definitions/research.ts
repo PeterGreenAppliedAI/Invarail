@@ -198,7 +198,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
   try {
     let urls: string[];
     if (presetUrls && presetUrls.length > 0) {
-      urls = presetUrls.slice(0, 3);
+      urls = presetUrls.slice(0, 4);
     } else {
       // LOCAL-FIRST: the curated index answers before the open web is asked.
       // Additive, never a boundary (anti-search-buckets doctrine): thin local
@@ -209,7 +209,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
         const localUrls = typeof local === 'string' && !local.startsWith('Error') ? extractUrls(local) : [];
         if (localUrls.length >= 2) {
           console.log(`[Research] Facet "${label}": ${localUrls.length} local-index hits — skipping web search`);
-          urls = localUrls.slice(0, 3);
+          urls = localUrls.slice(0, 4);
           ctx.params._localSourced = true;
           return await fetchAndSynthesize(ctx, angle, label, urls);
         }
@@ -225,7 +225,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
       };
 
       const searchResult = await ctx.executor('web_search', searchParams, ctx.toolContext);
-      urls = extractUrls(searchResult).slice(0, 3);
+      urls = extractUrls(searchResult).slice(0, 4);
       if (urls.length === 0) {
         // Question-shaped queries over-constrain metasearch — condense to
         // keywords and retry ONCE before declaring the facet dry (degrade,
@@ -234,7 +234,7 @@ async function researchAngle(ctx: PipelineContext, angle: string, presetUrls?: s
         if (condensed && condensed.split(' ').length >= 2 && condensed !== angle) {
           console.warn(`[Research] Facet "${label}": no results — retrying condensed: "${condensed}"`);
           const retryResult = await ctx.executor('web_search', { ...searchParams, query: condensed }, ctx.toolContext);
-          urls = extractUrls(retryResult).slice(0, 3);
+          urls = extractUrls(retryResult).slice(0, 4);
         }
         if (urls.length === 0) {
           console.warn(`[Research] Facet "${label}": no search results (${searchResult.slice(0, 80)})`);
