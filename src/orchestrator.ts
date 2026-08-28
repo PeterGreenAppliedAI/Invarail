@@ -1517,8 +1517,16 @@ export class Orchestrator {
             { channel: msg.channel, channelId: msg.channelId!, replyToId: msg.id },
             { text: `I received **${saved.filename}**. Would you like me to:\n1. **Import** it to the knowledge base (searchable across sessions)\n2. **Read** it as text for this conversation\n\nReply **1** or **2**.` },
           );
-          // Store pending file choice (similar to !save pending)
-          const pendingDir = join(resolveWorkspacePath(this.config.agents.default, this.config), 'memory', msg.senderId);
+          // Store pending file choice (similar to !save pending). MUST use the same
+          // route + principal resolution as the "1"/"2" reply handler — the writer
+          // keyed on raw msg.senderId while the reader keyed on the resolved principal
+          // (live-caught 2026-08-28: "2" fell through to the model, which had never
+          // seen the question). Same siloing class the principals migration fixed.
+          const pendingRoute = resolveRoute(
+            { channel: msg.channel, senderId: msg.senderId, guildId: msg.guildId, channelId: msg.channelId },
+            this.config,
+          );
+          const pendingDir = join(resolveWorkspacePath(pendingRoute.agentId, this.config), 'memory', principal);
           mkdirSync(pendingDir, { recursive: true });
           writeFileSync(join(pendingDir, 'pending-file.json'), JSON.stringify({
             filePath: saved.localPath,
