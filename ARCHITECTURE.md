@@ -2,22 +2,22 @@
 
 ## Overview
 
-Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on a large model (currently DeepSeek-V4-Flash) served by **vLLM**; small utility/modality models run behind an **Ollama-compatible gateway**. It uses a **Router + Specialist** architecture with **deterministic pipelines** — code controls the workflow, models only extract parameters and synthesize text.
+Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on ONE swappable model (currently glm-5.3-flash, served by **vLLM**, selected by a single `defaultModel` config line); small utility/modality models run behind an **Ollama-compatible gateway**. It uses a **Router + Specialist** architecture where the default execution mode is the **arena** — an open ReAct loop inside rigid walls — and **deterministic pipelines** survive only where their stages are verification (research claim-checking, system heartbeat). Doctrine, measured not asserted (DECISIONS "The Arena Duel" / "The Harness Duel"): *the loop is a commodity; the walls are the product.*
 
-9+ models across two inference backends (vLLM + Ollama gateway), 39 tools, 12 pipelines, 15 categories, 8 channel adapters (including Chrome extension with browser control), FalkorDB graph memory with 1,000+ nodes, 451 tests across 33 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
+Two inference backends (vLLM + Ollama gateway), ~69 tools (incl. MCP), 2 deterministic pipelines + arena for everything else, 4 channel adapters + Chrome extension with browser control, FalkorDB graph memory, live self-modification rail (SIP), read-only email steward, 881 tests across 84 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
 
 ## Design Principles
 
-1. **Code decides, model executes** — Deterministic pipelines for most categories. The model never decides tool ordering, parallel execution, or error recovery.
-2. **Specialist isolation** — Each specialist sees 3-6 tools. No model chooses from 39 tools.
+1. **Constrain the arena, not every move** — The model owns control flow inside a bounded loop (iteration caps, budgets, drift/streak guards, run journal); code owns everything the loop may not do. Pipelines remain only where stages ARE the verification. Authority is never model judgment.
+2. **Specialist isolation** — Each specialist sees only its configured tools. No model chooses from the full registry.
 3. **Code computes, model interprets** — Numbers, aggregations, temporal logic computed in code. The model only adds "so what" — interpretation, risk assessment, recommendations.
-4. **Fail predictably** — Each pipeline fails in its own lane. A broken analytics pipeline doesn't affect chat or web search.
-5. **Local-first** — Zero cloud dependencies, no API costs, all data stays on your hardware.
+4. **Fail predictably** — Guards, gates, and ledgers fail closed; a broken subsystem degrades to silence or an honest error, never invented output.
+5. **Local-first** — Zero cloud dependencies, no API costs, all data stays on your hardware. The steward tier (email/calendar/CRM) exists precisely because that data never goes to frontier models.
 
 ## System Flow
 
 ```
-Channel (Discord / Telegram / WhatsApp / Web / Gmail / Slack / iMessage / Chrome Extension)
+Channel (Discord / Telegram / Web / Gmail / Chrome Extension)
   ↓
 Orchestrator
   - Rate limiting (10/min/user)
@@ -45,27 +45,32 @@ Response → channel (thinking stripped) → transcript (thinking preserved)
 
 ## Multi-Model Strategy (two backends)
 
-Foreground reasoning runs on **DeepSeek-V4-Flash** via **vLLM** (256K context) on the DGX Spark.
-This is the swappable *foreground slot*, not a hard dependency — it was MiniMax-M2.7 before, and the
-whole tier moves by config (no model literals in logic). Small utility + modality models run on the
-**A5000 node behind an OpenAI-compatible gateway** (Ollama wire protocol). A `MultiBackendClient` routes
-each call by model id — purely additive, so the Ollama path is unchanged. See "Inference Routing" below.
+Foreground reasoning runs on **ONE model selected by one config line** — `defaultModel` (currently
+**glm-5.3-flash** via **vLLM**, 262K context) is filled into every specialist/briefing/heartbeat/vision
+slot that doesn't override it. A model cutover is that line + the backend entry: the slot has been
+MiniMax-M2.7 → DeepSeek-V4-Flash → qwen3.8-27B → glm-5.3-flash, each swap cheaper than the last
+(the 2026-08-26 cutover motivated the one-line mechanism — 19 scattered model strings violated the
+config-not-code principle). Small utility + modality models run behind the **Ollama-compatible
+gateway**. A `MultiBackendClient` routes each call by model id — purely additive, the Ollama path
+unchanged. Per-model quirks live in **model-caps** (`src/ollama/model-caps.ts`), including think
+capability and `noThinkLeaksDeliberation` (glm-5.3 leaks deliberation prose into content when thinking
+is suppressed — the client always enables thinking on such models and routes it to the separated
+reasoning channel, mapped to `<think>` and stripped at delivery).
 
 | Role | Model | Backend | Why |
 |------|-------|---------|-----|
-| Chat + all foreground specialists (web_search, exec, memory, multi, research, analytics, image, code_gen, etc.) | DeepSeek-V4-Flash | vLLM / Spark | Strong multi-step reasoning + tool sequencing; 256K context |
-| Reasoning (`reason` tool) | DeepSeek-V4-Flash | vLLM / Spark | One model for foreground reasoning — no separate reasoning model |
-| Router | phi4:14b | gateway / A5000 | Fast classification (~50ms), few-shot |
-| Fact Extraction | phi4:14b | gateway / A5000 | Dense, reliable JSON |
-| NER | phi4-mini | gateway / A5000 | Entity typing with bootstrapped graph context |
-| Embedding | qwen3-embedding:8b | gateway / A5000 | 4096-dim vectors for memory search |
-| Vision | qwen3.6:27b (multimodal) | gateway / A5000 | Image analysis (DeepSeek is text-only) |
-| Briefing + Heartbeat reasoning | DeepSeek-V4-Flash | vLLM / Spark | Background reasoning on the foreground model |
-| Voice fast-path | qwen2.5:7b | gateway / A5000 | Small + fast for voice-originated messages |
+| Chat + ALL foreground specialists + vision + briefing/heartbeat reasoning | `defaultModel` (glm-5.3-flash) | vLLM / Spark | One model, one line; multimodal; 262K context |
+| Router | phi4:14b | gateway | Fast classification, few-shot |
+| Fact Extraction | phi4:14b | gateway | Dense, reliable JSON |
+| NER | phi4-mini | gateway | Entity typing with bootstrapped graph context |
+| Embedding | qwen3-embedding:8b | gateway | 4096-dim vectors for memory search |
+| Voice fast-path | qwen2.5:7b | gateway | Small + fast for voice-originated messages |
+| Pi coding substrate | `pi.model` (vllm/glm-5.3-flash) | vLLM / Spark | Pi's provider/id format; same box |
 
-**Context:** `session.contextSize` raised to 128K (was 32K). Per-specialist `contextSize` override
-in the schema lets small-context models stay low. DeepSeek-V4-Flash ignores `num_ctx` (vLLM serves
-256K at launch), so the value mainly drives the compaction budget.
+**Context:** `session.contextSize` (160K) budgets compaction below the served 262K, leaving headroom
+for output + reasoning. Per-specialist `contextSize` override lets small-context models stay low.
+Long completions stream by construction (`chat()` rides SSE internally) so generation length can
+never hit undici's response-headers deadline; the only clock is `OLLAMA_CHAT_TIMEOUT_MS`.
 
 ## Inference Routing
 
@@ -114,22 +119,16 @@ JSON5 repair) stay active in both modes as a safety net.
 
 Post-classification layers: sticky routing (keeps follow-ups on chat), conversational guard (blocks pipeline misroutes), silent re-route (if chat specialist admits capability gap).
 
-## Pipelined Categories
+## Dispatch Modes (arena fleet-wide, 2026-08-21)
+
+**Arena (the default)** — categories `chat`, `web_search`, `memory`, `exec`, `cron`, `message`, `website`, `task`, `code_gen`, `multi` run an open ReAct loop (`dispatchMode: "arena"`): the model sequences its configured tools with session history and stops naturally, bounded by iteration caps, drift/streak guards, observation budgets + spill, the crash-durable run journal, and `!stop`. Measured basis: the arena duel (plan pipeline 7/7 vs arena 7/7 at 4.7× the cost) and a week of production. The former per-category pipelines (extract→tool choreography) and the plan/foreman pipeline are retired from dispatch; each category's old flow is preserved in git history and the `pipeline:` config fields remain as one-line reverts. `multi` additionally carries `pi_build` — code-shaped subtasks delegate to the Pi substrate in one call instead of tool-per-turn chains.
+
+**Deterministic pipelines (the two survivors — stages as ORACLES, not choreography):**
 
 | Category | Pipeline | Flow |
 |----------|----------|------|
-| web_search | Linear | extract → search → pick URLs → parallel fetch → synthesize → quality review → [revision] |
 | research | Complex | [flow_gather] → decompose → per-facet research (search+fetch+synthesize) → gap-fill → analytical synthesis → claim verification (cited-source + Tier-1 cross-check) → charts → render PDF. `flow_gather` fires only when the request EXPLICITLY names an available flow tool (code gate): the flow's `##` sections become the facets, its links the source pool, decompose is skipped, and everything downstream is unchanged — verification works on flow-gathered pages because the fetch/cache path is identical. Flow failure degrades to normal decompose+search. |
-| analytics | Data-driven | extract file → pandas report (code) → charts (code) → LLM interpretation |
-| exec | Linear | extract → tool → format |
-| task | Branched (5) | llm_branch → extract → tool → confirm |
-| memory | Branched (2) | llm_branch → extract → tool → format |
-| cron | Branched (4) | llm_branch → extract → tool → confirm |
-| message | Linear | extract → tool → confirm |
-| plan (multi) | Meta | LLM plan → self-reflect → execute loop (sub-dispatches) → summarize |
-| code_gen | Linear | list projects → enrich → Pi build (cwd-scoped) → verify (tests) → [fix] → commit → report |
-| heartbeat | Deterministic | fact diff (code) → LLM reasoning → task board (code) → LLM summary |
-| website | ReAct | web_fetch → browser fallback → summarize |
+| heartbeat | Deterministic | fact diff (code) → LLM reasoning → task board (code) → SIP proposal step → email-steward digest → LLM summary |
 
 ## Research Claim Verification
 

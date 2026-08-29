@@ -1,3 +1,5 @@
+> **FROZEN 2026-07-07** — point-in-time session handoff. Architecture has moved substantially since (see DECISIONS.md: arena fleet-wide, glm-5.3-flash cutover, SIP live, email steward). Kept as historical record.
+
 # CONTINUATION.md — Handoff for the next build session
 
 This document briefs the next AI collaborator (or future session) continuing the

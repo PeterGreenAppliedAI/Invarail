@@ -23,3 +23,5 @@ vault/
 invarail.config.json5
 .learnings/
 scratchpad/
+.DS_Store
+localclaw.log

@@ -491,4 +491,4 @@ No cloud services. No API costs. No data leaving the machine. The graph, vectors
 
 ---
 
-*Invarail is an open-source local-model-first AI agent framework. The memory system described here is part of a larger architecture with 39 tools, 12 deterministic pipelines, and 8 channel adapters — all running on personal hardware via Ollama.*
+*Invarail is an open-source local-model-first AI agent framework. The memory system described here is part of a larger architecture with ~69 tools, 2 deterministic pipelines (research + heartbeat), and 4 channel adapters (Discord, Telegram, Web, Gmail) — all running on personal hardware.*

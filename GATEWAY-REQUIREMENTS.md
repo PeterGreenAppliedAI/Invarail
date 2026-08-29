@@ -1,5 +1,10 @@
 # Gateway Requirements — what Invarail needs from the inference gateway
 
+> **Status 2026-08-29:** the gateway now serves ONLY the utility tier (phi4:14b
+> router, phi4-mini NER, qwen3-embedding:8b, whisper). The foreground model
+> (glm-5.3-flash) is served directly by vLLM — not through the gateway — so the
+> P0 requirements below apply to utility models only.
+
 Audience: the gateway service at `http://10.9.8.20:8001` (custom FastAPI proxy
 fronting Ollama on the DGX Spark). Invarail treats this endpoint as a stock
 Ollama API. Everything below is either a gap observed in live testing on
@@ -127,8 +132,10 @@ time curl -s -o /dev/null -w '%{http_code}' "$GW/api/chat" -d '{...any valid bod
 # PASS: 502/503 in under 2s. FAIL: hangs.
 
 # 3. tools round-trip — MUST return message.tool_calls with OBJECT arguments
+#    (model updated 2026-08-29: originally qwen3.6:35b — retired; foreground
+#    models no longer sit behind the gateway, so test with the router model)
 curl -s -H 'Content-Type: application/json' "$GW/api/chat" -d '{
-  "model":"qwen3.6:35b","messages":[{"role":"user","content":"What is the weather in Boston? Use the tool."}],
+  "model":"phi4:14b","messages":[{"role":"user","content":"What is the weather in Boston? Use the tool."}],
   "tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather",
     "parameters":{"type":"object","properties":{"city":{"type":"string","description":"City"}},"required":["city"]}}}],
   "stream":false}'

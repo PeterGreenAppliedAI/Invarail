@@ -7,7 +7,7 @@
 Invarail runs entirely on your own hardware: no cloud APIs, no per-token costs, no data leaving your machines. It is a **systems answer** to the agent problem, deliberately separated into layers:
 
 - **An authority plane** — permissions, target-bound grants, a confirmation ledger, audit trails, and tool exposure the agent *cannot modify from inside*. Learning may inform execution; it may never expand authority.
-- **A daily driver** — chat with graph memory, verified research reports, briefings, scheduling, image generation — on Discord/Telegram/Slack/WhatsApp/Gmail/web/Chrome through pluggable adapters.
+- **A daily driver** — chat with graph memory, verified research reports, briefings, scheduling, image generation — on Discord/Telegram/Gmail/web/Chrome through pluggable adapters (Slack/WhatsApp/iMessage/MS Graph adapters were deliberately removed — see DECISIONS).
 - **A host for interchangeable workers** — coding runs through the [Pi](https://pi.dev) agent, repeatable procedures through [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flows, open-ended tasks through a governed ReAct loop. Workers have been swapped whole (OpenCode out, Pi in) without the architecture noticing.
 
 Built for small local models (7-30B), where every failure is legible the same evening — which is exactly how this architecture was learned.
@@ -87,7 +87,7 @@ All coding runs through the [Pi coding agent](https://pi.dev) (`@earendil-works/
 // invarail.config.json5
 pi: {
   enabled: true,
-  model: "sglang/qwen3.8-27b",   // provider/id from ~/.pi/agent/models.json — any OpenAI-compat server
+  model: "vllm/glm-5.3-flash",   // provider/id from ~/.pi/agent/models.json — any OpenAI-compat server
 }
 ```
 
@@ -138,11 +138,11 @@ The `research` pipeline produces an analytical PDF report whose claims are check
 
 ## Models
 
-One measured principle: **the harness holds the value, not the weights.** The entire foreground tier has been swapped three times (qwen → MiniMax → DeepSeek-V4-Flash → qwen3.8) purely via config and the multi-backend client — memory graph, pipelines, and channels untouched.
+One measured principle: **the harness holds the value, not the weights.** The entire foreground tier has been swapped four times (qwen → MiniMax → DeepSeek-V4-Flash → qwen3.8 → glm-5.3-flash) purely via config — since 2026-08-26 a cutover is literally ONE line (`defaultModel`), filled into every foreground slot by the loader. Memory graph, arena, and channels untouched every time.
 
 | Role | Model | Backend |
 |------|-------|---------|
-| Foreground: chat, specialists, briefing, reasoning, vision (native VL), Pi builds | Qwen3.8 27B (NVFP4, served as `qwen3.8-27b`) | SGLang, direct OpenAI-compat (continuous batching, MTP speculative decoding, 262K context) |
+| Foreground: chat, specialists, briefing, reasoning, vision (native VL), Pi builds | `defaultModel` — currently glm-5.3-flash (NVFP4) | vLLM, direct OpenAI-compat (262K context; always-streamed completions; per-model caps incl. think-leak coercion) |
 | Router | phi4:14b | Ollama gateway |
 | NER | phi4-mini | Ollama gateway |
 | Embeddings | qwen3-embedding:8b | Ollama gateway |
@@ -189,7 +189,7 @@ A `MultiBackendClient` routes each call by model id: foreground models to OpenAI
 
 ## Channels & Console
 
-**Channels:** Discord, Telegram, Slack, WhatsApp (Baileys, no Chrome), Gmail, Microsoft Graph, iMessage (BlueBubbles), Web API, and a **Chrome extension** side panel (page context injected directly — summarize/ask about any page, no fetching). Any platform can be added by implementing a 5-method `ChannelAdapter` — zero core changes. All adapters deliver file attachments (PDFs, images, documents).
+**Channels:** Discord, Telegram, Gmail (read-only tools), Web API, and a **Chrome extension** side panel (page context injected directly — summarize/ask about any page, no fetching). Any platform can be added by implementing a 5-method `ChannelAdapter` — zero core changes. All adapters deliver file attachments (PDFs, images, documents).
 
 **Management console** at `http://localhost:3100/console/` (React + Vite + Tailwind, served from the same process): dashboard, full chat with voice mode (VAD hands-free loop), session transcripts with tool-call details, kanban task board, cron management, memory browser, channel status, tool registry, config viewer (secrets redacted). REST API + SSE streaming underneath.
 
@@ -236,7 +236,7 @@ Set `ownerId`. `ownerOnlyTools` is a code gate — the tools don't exist in the 
 
 The README is the front door; the detail lives in dedicated docs:
 
-- **[FEATURES.md](FEATURES.md)** — feature guides: console + API reference, voice setup, WhatsApp, vision, documents, task board, heartbeat/briefing, plan pipeline, compaction, workspace, CLI, self-improvement, router training data
+- **[FEATURES.md](FEATURES.md)** — feature guides: console + API reference, voice setup, vision, documents, task board, heartbeat/briefing, email steward, multi-step arena tasks, compaction, workspace, CLI, self-improvement (SIP), router training data
 - **[INSTALL.md](INSTALL.md)** — the install tier ladder, from Tier 0 to the full build
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the engine works
 - **[MEMORY-SYSTEM.md](MEMORY-SYSTEM.md)** — the graph memory deep-dive
@@ -258,7 +258,7 @@ src/
   memory/              # FalkorDB graph store, fact store, embeddings, consolidation
   learnings/           # error store, lessons, experience harvesting (code-detected only)
   security/            # pending-action ledger, standing grants
-  channels/            # adapters: Discord/Telegram/Slack/WhatsApp/Gmail/Graph/iMessage/Web
+  channels/            # adapters: Discord/Telegram/Gmail/Web (+ Chrome extension bridge)
   console/             # management console API
   exec/                # Docker sandbox + persistent code sessions
   webindex/            # personal vertical index (RSS-first honest crawler)
@@ -266,7 +266,7 @@ src/
 console/               # React management console
 chrome-extension/      # WXT + React side panel companion
 evals/                 # published model evals + duel artifacts
-test/                  # 756 tests across 67 files
+test/                  # 881 tests across 84 files
 ```
 
 Architecture deep-dives: [ARCHITECTURE.md](ARCHITECTURE.md) · [ROUTING.md](ROUTING.md) · [SPECIALISTS.md](SPECIALISTS.md) · [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md) · decision history with failed experiments: [DECISIONS.md](DECISIONS.md).

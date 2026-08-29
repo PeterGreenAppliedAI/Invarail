@@ -108,17 +108,23 @@ heartbeat: {
 },
 ```
 
-## Plan Pipeline (multi-step tasks)
+## Email Steward
 
-For "search Eventbrite for tech events near X, then add one to my task list"-class requests — the model plans, code executes:
+Read-only email triage, opt-in via the `emailTriage` config block. It never writes email — no send capability exists. Three lanes:
 
-1. **Plan** — LLM emits steps as `{tool, params, purpose}` JSON
-2. **Self-reflect** — LLM critiques its own plan (missing snapshots, bad ordering, placeholder params, blind first-result selection) and revises
-3. **Execute loop** — code iterates, calling tools directly: smart content selection from rendered page text, dynamic param resolution from real page data, DOM-first browser with automatic visual-mode escalation (Xvfb + vision model + pixel coordinates) only when DOM interaction fails
-4. **Verify** — per-step success checks; failures get one LLM-adjusted retry
-5. **Summarize + record** — outcomes become graph `:Experience` nodes judged by the user's actual reaction
+- **Fast lane** — support-alias / VIP senders: 15-minute poll with an immediate ping (the poll cron is not scheduled when the lists are empty)
+- **Watch lane** — owner-chosen bulk senders folded into the heartbeat digest (bypasses the automated-mail filter)
+- **Judged lane** — everything else gets one constrained model judgment
 
-**Foreman handoffs:** specialists receive structured briefings (task, plan context, prior-step status + artifact paths) with full results on disk at `.plan-artifacts/step-N.txt` — `read_file` on demand instead of prompt bloat. All pipeline dispatches run context-isolated (no parent session history).
+## Self-Modification (SIP)
+
+Live in production. The heartbeat drafts `!improve` specs from recurring tool errors into the pending-action ledger; every change needs two owner confirms — one to attempt, one to merge (a denial is permanent). Pi implements in isolated worktrees; the merge gate runs `tsc` + the full vitest suite + Tier-3 protected-path checks; deployment is supervised with a health check and rollback. `!improve retry` re-gates a kept worktree after rebasing onto main.
+
+## Multi-step Tasks (arena)
+
+For "search Eventbrite for tech events near X, then add one to my task list"-class requests, the `multi` category runs as an **arena** dispatch: an open ReAct loop with the tools listed in config, session history, and a natural stop — the model decides which tools to call and in what order, under the same 6 security layers and the pending-action confirm ledger. `multi` also carries `pi_build` for code-shaped delegation.
+
+**Historical:** until 2026-08-21, `multi` ran the deterministic plan pipeline (LLM plan → self-reflect → code-driven execute loop with per-step verify → summarize, plus foreman handoffs writing full step results to `.plan-artifacts/step-N.txt`). It was retired after a measured head-to-head duel against the open loop; the code remains in `src/pipeline/definitions/plan.ts`, unused by dispatch.
 
 ## Context Compaction
 

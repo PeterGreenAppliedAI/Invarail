@@ -1,3 +1,5 @@
+> Written 2026-08-08 — dated synthesis, kept as record.
+
 # Working Notes: What Six Months of Building Agents Actually Showed
 
 *A brief for Peter's own synthesis. This document reports what happened and what claims are on the table. It deliberately draws no conclusion — where an argument appeared in our conversations, it is labeled as a claim, not a fact. The evidence citations are your own artifacts.*

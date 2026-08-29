@@ -1,6 +1,6 @@
 # Invarail Roadmap
 
-Invarail is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, WhatsApp, and Web with a Router + Specialist architecture. Foreground reasoning runs on DeepSeek-V4-Flash via **vLLM** (a swappable foreground slot — was MiniMax-M2.7 before); small/modality models run on an Ollama-compatible gateway, routed by a `MultiBackendClient`. 39 tools, 12 pipelines, FalkorDB graph memory, autonomous heartbeats and briefings. 451 tests.
+Invarail is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, and Web (plus the Chrome extension and read-only Gmail tools) with a Router + Specialist architecture — arena (open ReAct) dispatch fleet-wide, deterministic pipelines only for research and the heartbeat. Foreground reasoning runs on glm-5.3-flash via **vLLM** (262K ctx), set by a single root `defaultModel` config line that fills all specialist/briefing/heartbeat/vision slots (a swappable foreground slot — previously DeepSeek-V4-Flash, before that MiniMax-M2.7); the utility tier (phi4:14b router, phi4-mini NER, qwen3-embedding:8b, whisper) runs on an Ollama-compatible gateway, routed by a `MultiBackendClient`. ~69 tools (incl. MCP), FalkorDB graph memory, autonomous heartbeats and briefings. 881 tests.
 
 ---
 
@@ -31,6 +31,15 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 - **Search Source Buckets** — Topic→curated-domain buckets with anchors; real_estate + civic (NYC/NY Open Data); web_search freshness forcing + recency-aware quality judge; over-trigger fix.
 - **Small-Model Hardening (July 2026)** — One tool-calling convention per model (`toolStyle`, native default — halves fixed prompt overhead); grammar-constrained decoding (`format`/guided_json) for extraction, branching, router, claim extraction with automatic fallback; extraction degrade-not-abort (JSON5, post-parse validation, deterministic fallbacks); research correction as code-driven sentence splice; memory injection relevance floor (0.55) + caps; real-prompt context budgeting; enforced router timeout; tool-loop bug batch (scaffolding leak, sanitizer corruption, dedup double-push, empty-completion retry, hallucination false-positives). Live-verified on real phi4 + qwen3.6:35b (`scripts/*-live-check.ts`). See DECISIONS.md July 5-6.
 - **Bounded-Autonomy Gates (July 2026)** — Pending-action ledger (confirmations execute the exact previewed call: sender-bound, single-use, expiring; closes the pipeline + console bypasses); tool `autonomy {tier, reversible, blastRadius}` metadata with `autoApproveTools` per-channel promotion; cron category-conditional exec/send_message; heartbeat stale-fact deletion demoted to propose-and-confirm; `autonomous_action` metrics as the promotion track record. First rungs of the autonomy ladder — structural, code-enforced.
+- **SearXNG Integration** — Self-hosted meta-search at 192.168.77.239:8080 is the web_search provider (replaced Brave)
+- **MCP Client Bridge (July 2026)** — stdio + streamable-HTTP transports, zero-dep client, small-model translation layer, DCR OAuth (no broker), SecretStore
+- **Proactive Actions — Ladder Complete (July 2026)** — Ledger + buttons (Discord/Telegram) + deny + continuation-after-confirm + target-bound standing grants (`always <id>`, `!grants`) + auditable cron run sessions/artifacts + approval/resource metrics columns
+- **Skill System (rebuilt July 2026)** — Semantic matching (measured 0.65 floor), triggers frontmatter, save-time dedup judge, skill_find progressive disclosure. Guards added Aug 2026: explicit-tool-mention override + no-credit-on-fallback (self-reinforcing hijack class)
+- **FlowMCP Integration (Aug 2026)** — [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) (Peter's workflow-first MCP server) as first real bridge consumer: compiled `weekly_gather` flow powers research-pipeline flow-first gathering (4s vs minutes) behind an explicit-naming code gate; verified live with a fabrication caught by verification
+- **Arena Fleet-Wide (2026-08-21)** — cron, task, memory, message, website, web_search, exec, code_gen, multi all run `dispatchMode: "arena"`: open ReAct loop, session history, natural stop, same 6 security layers + confirm ledger. Plan pipeline retired from dispatch after the measured duel; deterministic pipelines remain only for research + heartbeat
+- **SIP Live (2026-08-22)** — Self-modification in production: heartbeat drafts `!improve` specs from recurring tool errors → pending-action ledger, two owner confirms (attempt + merge, denial permanent), Pi implements in isolated worktrees, merge gate = tsc + full vitest + Tier-3 protected paths, supervised deploy with health-check + rollback, `!improve retry` re-gates after rebase
+- **GLM Cutover (2026-08-26)** — glm-5.3-flash on vLLM (262K ctx) as the foreground model, configured by one root `defaultModel` line filling all specialist/briefing/heartbeat/vision slots. qwen3.8-27B/SGLang retired 2026-08-26; DeepSeek-V4-Flash/ds4 retired 2026-08-16
+- **Email Steward (2026-08-29)** — Read-only email triage (no send capability exists): fast lane (support alias/VIP, 15-min poll, immediate ping), watch lane (owner-chosen bulk senders → heartbeat digest), judged lane (one constrained model judgment). Opt-in via `emailTriage`
 
 ---
 
@@ -38,18 +47,19 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
-| ✅ Done | **SearXNG integration** | Self-hosted meta-search at 192.168.77.239:8080 is the web_search provider (replaced Brave) |
-| ✅ Done | **MCP client bridge** | stdio + streamable-HTTP transports, zero-dep client, small-model translation layer, DCR OAuth (no broker), SecretStore. July 2026 |
-| ✅ Done | **Proactive actions — ladder complete** | Ledger + buttons (Discord/Telegram) + deny + continuation-after-confirm + target-bound standing grants (`always <id>`, `!grants`) + auditable cron run sessions/artifacts + approval/resource metrics columns. July 2026 |
-| ✅ Done | **Skill system (rebuilt)** | Semantic matching (measured 0.65 floor), triggers frontmatter, save-time dedup judge, skill_find progressive disclosure. July 2026. Guards added Aug 2026: explicit-tool-mention override + no-credit-on-fallback (self-reinforcing hijack class) |
-| ✅ Done | **FlowMCP integration** | [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) (Peter's workflow-first MCP server) as first real bridge consumer: compiled `weekly_gather` flow powers research-pipeline flow-first gathering (4s vs minutes) behind an explicit-naming code gate; verified live with a fabrication caught by verification. Aug 2026 |
+| Next | **Repo manifest + generalized merge gate** | Extend SIP beyond the Invarail repo: per-repo manifest, generalized merge gate, draft-PR path (DECISIONS: "The Factory") |
+| Next | **GitHub intake cron** | Scheduled intake of GitHub work items feeding the factory loop |
+| Next | **Rework loop** | `selfMod.reworkIterations` — bounded re-attempts when a SIP change fails its gate |
+| Next | **Ladder promotions on track record** | Promote action types up the autonomy ladder based on the `autonomous_action` metrics record |
 | Next | **Semantic flow proposal** | Floor-gated similarity check that PROPOSES a matching gathering flow for a research topic (asks, never silently selects) — the rung above strict naming |
 | Next | **Firecrawl integration** | Self-hosted web fetching between web_fetch (basic) and browser (heavy). Handles JS rendering without full Chromium |
 | Next | **Blender MCP demo** | First real MCP consumer: `uvx blender-mcp` + Blender on the Mini; then MCP self-service setup (agent proposes+validates server config, confirm-gated) |
 | Planned | **Self-wake** | `sleep_until`/`wake_on` tools with quotas (max pending, min interval, cronMode-filtered resume) — continuation machinery landed July 25 |
 | Blocked | **Gateway passthrough** | Constrained decoding + keep_alive + full num_ctx blocked on the gateway's normalization-layer refactor (GATEWAY-REQUIREMENTS.md has the contract + acceptance tests) |
-| Planned | **Cross-channel sessions** | Map user IDs across Discord/Telegram/WhatsApp to shared sessions (Slice 3 — principal layer landed; dragons documented in CONTINUATION.md) |
+| Planned | **Cross-channel sessions** | Map user IDs across channels to shared sessions (Slice 3 — principal layer landed; dragons documented in CONTINUATION.md) |
 | Planned | **Rebrand** | Rename from Invarail to new identity (plan exists, 357 references mapped across 80 files) |
+
+**Horizon** (see DECISIONS.md): dsh adoption re-eval · event-sourced sessions · Polar training · bitemporal fact validity (valid_at vs recorded_at as FalkorDB properties + query filter — Hypha steal-back; EXTRACTED_FROM/SUPERSEDES provenance is halfway there)
 
 ---
 

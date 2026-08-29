@@ -94,9 +94,8 @@ Every message flows through a multi-layer pipeline before reaching a specialist.
 ┌─────────────────────────────────────────────────────────┐
 │  [9] DISPATCH DECISION                                  │
 │  • No tools → bare chat (direct LLM, no loop)           │
-│  • Has pipeline → deterministic stages                  │
-│  • Category is 'multi' → plan decomposition             │
-│  • Otherwise → ReAct tool loop                          │
+│  • research / heartbeat → deterministic pipeline        │
+│  • Everything else → arena (open ReAct tool loop)       │
 └───────────────────────┬─────────────────────────────────┘
                         ▼
                   Specialist Execution
@@ -154,6 +153,8 @@ Multi-turn conversations should stay in the same category. If you're chatting ab
 - Keyword matches that point to a different category than the current one. Keyword patterns that can break sticky need pre-model-override precision — plain `\bsetting\b` matched "setting up a business" and hijacked a reminder paste, so the config pattern is now `settings?(?! up)`.
 
 **Why sticky exists:** Without it, every message mid-conversation gets re-classified independently. "What do you think about the trade-offs?" during an AI discussion gets classified as `research` because "trade-offs" sounds analytical. Sticky keeps the conversation flowing.
+
+Note: sticky routing governs *classification* (which category the message lands in) and is independent of *dispatch type* — whether that category then runs as an arena ReAct loop or a deterministic pipeline is decided separately at Layer 9.
 
 ---
 
@@ -282,7 +283,7 @@ The most nuanced layer. Prevents pipeline misroutes when a user is mid-conversat
 
 ## Layer 9: Dispatch Decision
 
-The final routing — how the message gets processed. One code gate applies at this layer before any pipeline starts: **explicit tool mentions**. `findExplicitToolMentions` (registry) scans the message against the specialist's allowed tool names — word-boundary, case-insensitive, with bare-name aliasing for MCP-prefixed tools ("weekly_gather" matches `flows_weekly_gather`). Hits are injected into pipeline params and consumed twice: the research pipeline's `flow_gather` stage (a named gathering flow replaces decompose+search), and the plan pipeline's skill guard (a matched skill whose steps never mention an explicitly named tool is ignored — explicit instruction outranks learned habit). Like the pre-model overrides in Layer 2, this is deterministic string matching, not model judgment.
+The final routing — how the message gets processed. One code gate applies at this layer before any pipeline starts: **explicit tool mentions**. `findExplicitToolMentions` (registry) scans the message against the specialist's allowed tool names — word-boundary, case-insensitive, with bare-name aliasing for MCP-prefixed tools ("weekly_gather" matches `flows_weekly_gather`). Hits are injected into pipeline params and consumed twice: the research pipeline's `flow_gather` stage (a named gathering flow replaces decompose+search), and the plan pipeline's skill guard (a matched skill whose steps never mention an explicitly named tool is ignored — explicit instruction outranks learned habit; historical — the plan pipeline was retired from dispatch 2026-08-21). Like the pre-model overrides in Layer 2, this is deterministic string matching, not model judgment.
 
 ```
 ┌─────────────────┐     ┌──────────────────────────────┐
@@ -291,23 +292,20 @@ The final routing — how the message gets processed. One code gate applies at t
 └─────────────────┘     └──────────────────────────────┘
 
 ┌─────────────────┐     ┌──────────────────────────────┐
-│ Has pipeline     │────▶│ Deterministic pipeline        │
-│ (task, exec,     │     │ Code controls the workflow    │
-│  web_search...)  │     │ LLM fills params, synthesizes │
+│ research /       │────▶│ Deterministic pipeline        │
+│ system heartbeat │     │ Code controls the workflow    │
+│                  │     │ LLM fills params, synthesizes │
 └─────────────────┘     └──────────────────────────────┘
 
 ┌─────────────────┐     ┌──────────────────────────────┐
-│ Category = multi │────▶│ Plan pipeline                 │
-│                  │     │ LLM decomposes into sub-tasks │
-│                  │     │ Code executes each step       │
-└─────────────────┘     └──────────────────────────────┘
-
-┌─────────────────┐     ┌──────────────────────────────┐
-│ Everything else  │────▶│ ReAct tool loop               │
-│ (chat, config,   │     │ Model decides what tools to   │
-│  personal, image)│     │ use and in what order         │
+│ Everything else  │────▶│ Arena (open ReAct tool loop)  │
+│ (multi, exec,    │     │ Model decides what tools to   │
+│  web_search,     │     │ use and in what order —       │
+│  chat, cron...)  │     │ natural stop, session history │
 └─────────────────┘     └──────────────────────────────┘
 ```
+
+Since the arena rollout (fleet-wide 2026-08-21), the open ReAct loop is the default dispatch: `multi`, `exec`, `web_search`, `cron`, `task`, `memory`, `message`, `website`, and `code_gen` all run `dispatchMode: "arena"` — same 6 security layers and confirm ledger, no staged workflow. The plan pipeline (LLM decomposition for `multi`) was retired from dispatch at the same time. Deterministic pipelines remain only where determinism pays: `research` (claim verification + PDF render) and the system heartbeat.
 
 **The principle:** If the workflow is predictable (search → fetch → synthesize), use a pipeline. If the workflow depends on what the model finds (open-ended conversation, calendar queries, image generation), use ReAct.
 

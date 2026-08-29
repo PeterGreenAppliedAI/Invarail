@@ -2,28 +2,32 @@
 
 ## Architecture
 
-Invarail uses a **Router + Specialist** pattern with a **tool-loop (ReAct) engine** and **deterministic pipelines**.
+Invarail uses a **Router + Specialist** pattern with an **arena tool-loop (ReAct) engine** as the default execution mode, plus **deterministic pipelines** where the task carries its own verification oracle.
 
 ```
-Channel (Discord/Telegram/Slack/Web/Gmail/WhatsApp/MS Graph/iMessage/Chrome Extension)
+Channel (Discord/Telegram/Web/Gmail/Chrome Extension)
   -> Router (phi4:14b, classifies intent into one category)
-    -> Pipeline (deterministic stages — most categories)
-    -> OR Specialist (config-assigned model + ReAct tool-loop — chat, config, personal)
+    -> ARENA (open ReAct loop, natural stop — the default for conversational categories)
+    -> OR Pipeline (deterministic stages — research + system heartbeat only)
       -> Tool Executor (sandboxed via Docker or allowlist)
         -> Response back to channel
 ```
 
-**Inference backends (additive multi-backend):** A `MultiBackendClient` (`src/ollama/multi-backend.ts`, extends `OllamaClient`) routes each `chat`/`chatStream` call by model id. Foreground reasoning models (currently DeepSeek-V4-Flash — the swappable foreground slot) route to an **OpenAI-compatible ds4/DwarfStar** endpoint (github.com/antirez/ds4 — direct, NOT behind the gateway; launched without --think/--nothink → default thinking, high effort) via `OpenAICompatClient` (`src/ollama/openai-client.ts`); everything else (router phi4, NER phi4-mini, embedding, vision qwen3.6:27b) stays on the **Ollama gateway**. `embed()` always uses Ollama. Configured via `inference.backends[]` in config. The OpenAI client translates Ollama↔OpenAI shapes: `options.*`→top-level params (reserving reasoning headroom on `max_tokens` so a small `num_predict` can't starve a reasoning model into an empty completion), tool-call `arguments` string→object, `tool_call_id` stitching, SSE streaming, `usage`→`eval_count`/`prompt_eval_count`. **`think` control** (2026-08 eval): `OllamaChatParams.think` + per-specialist `think` config flows through dispatch→engine; the OpenAI-compat path forwards it only for backends declaring `supportsThink` (ds4 does, verified) and warn-once-omits otherwise — never a silent drop. Purely additive — the Ollama path is unchanged.
+**Arena fleet-wide (DECISIONS 2026-08-21):** categories `cron`, `task`, `memory`, `message`, `website`, `web_search`, `exec`, `code_gen`, `multi` run `dispatchMode: "arena"` — open loop with session history, same six security layers and confirm ledger. Deterministic pipelines survive ONLY where stages are an oracle, not choreography: **research** (claim verification) and the system **heartbeat**. Doctrine: *constrain the arena, not every move* — and (harness duel + dsh source audit, DECISIONS 2026-08-22/23) *the loop is a commodity; the walls are the product*.
+
+**Inference backends (additive multi-backend):** A `MultiBackendClient` (`src/ollama/multi-backend.ts`, extends `OllamaClient`) routes each `chat`/`chatStream` call by model id. **THE foreground model is a single config line** — `defaultModel` (currently `glm-5.3-flash`, vLLM at `VLLM_SPARK2_URL`, 262K ctx) is filled pre-parse into every specialist/briefing/heartbeat/vision slot that doesn't override it (`applyDefaultModel` in loader.ts); a model cutover = that line + the `inference.backends[]` entry (+ `pi.model`). Utility tier (router phi4, NER phi4-mini, embeddings, whisper) stays on the **Ollama gateway**; `embed()` always uses Ollama. The OpenAI-compat client (`src/ollama/openai-client.ts`) translates Ollama↔OpenAI shapes: `options.*`→top-level params (reasoning headroom on `max_tokens`), tool-call `arguments` string→object, `tool_call_id` stitching, `usage`→`eval_count`. **`chat()` always streams under the hood** — a non-streaming request sends no headers until generation completes and undici kills header-less connections at 5 min (live-caught 2026-08-26); SSE headers arrive instantly, so the only clock is `OLLAMA_CHAT_TIMEOUT_MS`. **Separated reasoning** (vLLM `reasoning`/`reasoning_content` fields) maps to inline `<think>` tags so the whole thinking pipeline applies uniformly. **`think` control:** forwarded only for backends declaring `supportsThink` (warn-once-omit otherwise — never a silent drop); **model-caps** (`src/ollama/model-caps.ts`) declare per-model quirks, incl. `noThinkLeaksDeliberation` (glm-5.3 narrates its deliberation INSIDE content when thinking is suppressed — the client coerces `think:false`→`true` on such models, warn-once; per-specialist `think` flags are qwen-era values, coerced at this choke point).
 
 **Key components:**
 - **Router** — phi4:14b, single-word classification into categories: `chat`, `web_search`, `memory`, `exec`, `cron`, `message`, `website`, `multi`, `config`, `task`, `research`, `personal`. Pre-model overrides for high-confidence patterns (PDF reports, calendar queries; bare URLs → website — a URL inside a larger request does NOT hijack routing). Model output is enum-grammar-constrained via `format` when the backend supports it. `config.router.timeout` is ENFORCED (Promise race → keyword fallback; the client's connection-retry loop no longer stalls messages past the budget). Fallback to `defaultCategory` on timeout/parse failure. Implemented in `src/router/classifier.ts`.
-- **Pipeline engine** — `src/pipeline/executor.ts`. Deterministic stage-based workflows: extract, tool, parallel_tool, llm, code, branch, llm_branch, loop. Most categories use pipelines instead of letting the model decide the workflow. Extraction (`src/pipeline/extractor.ts`) uses grammar-constrained decoding (`format` JSON schema, auto-fallback if the backend rejects it), a 2048-token default budget (thinking counts against `num_predict` — 256 starved thinking models into emitting reasoning prose with no JSON; 2026-08 eval), `stripThinkingTags` before parsing (Qwen `<think>` AND Gemma-4 formats), JSON5-tolerant parsing, post-parse required/enum/coercion validation feeding the repair prompt, and best-effort params over aborting; `ExtractStage.fallback(ctx)` provides deterministic degrade-not-abort per stage. `llm_branch` output is enum-constrained.
-- **Plan pipeline** — `src/pipeline/definitions/plan.ts`. LLM decomposes goals into specialist sub-tasks, self-reflects, executes via foreman handoffs with write-through artifacts. Used by `multi` category. The skills system was retired 2026-08-10 (successor: graph experience memory — experience informs execution, never expands authority; see DECISIONS).
+- **Pipeline engine** — `src/pipeline/executor.ts`. Deterministic stage-based workflows: extract, tool, parallel_tool, llm, code, branch, llm_branch, loop. Since the arena melt (2026-08-21) only research and heartbeat use it — pipelines earn their keep where stages are verification, not choreography. Extraction (`src/pipeline/extractor.ts`) uses grammar-constrained decoding (`format` JSON schema, auto-fallback if the backend rejects it), a 2048-token default budget (thinking counts against `num_predict` — 256 starved thinking models into emitting reasoning prose with no JSON; 2026-08 eval), `stripThinkingTags` before parsing (Qwen `<think>` AND Gemma-4 formats), JSON5-tolerant parsing, post-parse required/enum/coercion validation feeding the repair prompt, and best-effort params over aborting; `ExtractStage.fallback(ctx)` provides deterministic degrade-not-abort per stage. `llm_branch` output is enum-constrained.
+- **Plan pipeline (RETIRED for dispatch)** — `src/pipeline/definitions/plan.ts` still exists in code but `multi` runs arena since the duel (7/7 vs 7/7 at 4.7× the cost — DECISIONS "The Arena Duel"). The skills system was retired 2026-08-10 (successor: graph experience memory — experience informs execution, never expands authority; see DECISIONS).
+- **Self-modification rail + SIP** — `src/coding/`: Pi (`pi-session.ts`, SDK adapter) implements changes in isolated git worktrees (never the running tree); merge gate (`merge-gate.ts`: three-dot diff, clamped Tier-3 PROTECTED_PATHS, scrubbed-env tsc+vitest) → owner-confirmed `self_merge` on the ledger (12h TTL) → deploy marker + exit(42) → supervisor restarts with health check + rollback; `!improve retry` rebases a kept worktree onto main and re-gates (for when MAIN was at fault, e.g. a time-rotten test). **SIP** (`improvement-proposals.ts` + `tools/self-improve.ts`, both PROTECTED): the heartbeat drafts `!improve` specs from code-detected error recurrence onto the ledger — two owner gates, max 1/cycle, denied = permanent (denial detail leads with the pending id). First closed production loop 2026-08-22 (DECISIONS).
+- **Email steward** — `src/services/email-steward.ts`. READ-ONLY FOREVER (no email-send capability exists — the boundary is tool absence). Three lanes: fast (watched alias/VIP senders → immediate ping, 15-min poll — cron not scheduled at all when lists are empty), watch (owner-chosen bulk senders → always digest, bypasses the automated-mail filter), judged (one grammar-constrained needs-Peter judgment). Flagged mail rides the 2h heartbeat digest; every alert logs an autonomous_action row (the promotion track record). Personal sender lists live ONLY in gitignored config.
 - **Research pipeline** — `src/pipeline/definitions/research.ts`. [flow_gather] → decompose → per-facet parallel search + fetch + synthesis → analytical markdown report → **evidence verification** → deterministic markdown→HTML→PDF render with charts (absolute img paths — LibreOffice resolves relative src against the temp HTML's dir). **Flow-first gathering:** when the request EXPLICITLY names an available flow tool, `flow_gather` calls it once; `parseFlowGather` turns its `##` sections into facets and links into per-facet source pools; decompose/parse_angles skip (`when` gates); `researchAngle(ctx, angle, presetUrls)` fetches/synthesizes identically so verification works unchanged. Flow failure degrades to normal search. Strict naming only — NO semantic flow-matching (that's the skill-hijack bug class one layer up).
 - **Evidence verification** — `src/pipeline/verification.ts` + stages in research.ts. After the draft, extract atomic claims (fast model, grammar-constrained via `CLAIMS_JSON_SCHEMA`), check each against the **cached pages that actually mention it** (`pickRelevantSources` ranks all cached sources by token overlap — no independent search), and **attribute/qualify (never remove)** overstated or single-sourced claims. Corrections are **code-driven sentence splices**: `locateClaimSentence` fuzzy-locates the claim's sentence by token overlap (URLs AND decimal numbers are masked with same-length filler before segmentation — any non-terminator dot splices corrections mid-URL/mid-version-number; skips Sources/headings/charts; skips rather than splicing a wrong match), the model rewrites ONE sentence, code splices it back with sanity bounds — the report body is never handed to a model for wholesale rewriting. A **Tier-1 cross-check** then escalates a bounded set of high-impact, falsifiable claims (corporate events / financials / market-share, capped at `maxCrossChecks`) to ONE independent search each — CONTRADICTED → `correct` the wrong detail (this is what catches the Groq-date class of error); CONFIRMED → un-hedge; SILENT → leave. Publishes with a `## Verification` appendix + auditable `verification.json`. Config-gated via `verification` block (`enabled`, `crossCheck`, both default on).
-- **Tool-loop engine** — `runToolLoop()` in `src/tool-loop/engine.ts`. ReAct-style loop with native Ollama tool calls + regex fallback parser. Includes hallucination detection, drift detection, error learning hints.
+- **Tool-loop engine** — `runToolLoop()` in `src/tool-loop/engine.ts`. ReAct-style loop with native tool calls + fallback parsers for four narrated dialects (DSML, `<invoke>`, `Action:`, Qwen-template `<tool_call>`/`<function=>`). Guardrails: hallucination/refusal repairs, drift + same-tool streak detection, action dedup, error-learning hints, observation spill (oversized results persist whole to workspace `.spill/` — the model greps instead of re-reading in slices), server-overflow hard-compact retry, crash-durable run journal (every step lands in `data/run-journal/`; surviving journals sweep into transcripts at boot as "interrupted" notes), and `!stop` mid-run cancellation at iteration boundaries.
 - **Dispatch pipeline** — `src/dispatch.ts` routes classified messages to specialists/pipelines. Handles 6-layer security enforcement, tool stripping, context isolation.
-- **Briefing system** — `src/orchestrator.ts`. Separate from heartbeat. Runs at 8am/1:15pm/5pm. Gathers calendar + tasks + memory, runs CoT reasoning via qwen3.6:35b, delivers contextual insights.
+- **Briefing system** — `src/orchestrator.ts`. Separate from heartbeat. Runs at 8am/1:15pm/5pm. Gathers calendar + tasks + memory, runs CoT reasoning on the foreground model (`defaultModel`), delivers contextual insights.
 - **OllamaClient** — `src/ollama/client.ts`, REST API wrapper: 4-attempt retry (connection failures, 429, transient 5xx) with jittered backoff honoring Retry-After; request timeouts + abort propagation. Same policy in OpenAICompatClient.
 - **DockerBackend** — `src/exec/docker-backend.ts`, sandboxed command execution.
 
@@ -31,7 +35,7 @@ Channel (Discord/Telegram/Slack/Web/Gmail/WhatsApp/MS Graph/iMessage/Chrome Exte
 
 **Chrome Extension:** Browser companion side panel (WXT + React + Manifest V3) in `chrome-extension/`. Content script extracts page context (URL, title, selected text, page content). Connects to existing Web channel API via SSE streaming (`/console/api/chat`). When `[PAGE:]` token detected in message, `src/console/handlers/chat.ts` forces `overrideCategory: 'chat'` — model reads injected content directly, no fetching. Two dispatch paths exist: orchestrator (Discord/Telegram/etc.) and console API (Web/Extension) — routing overrides must be applied in the correct path.
 
-**Thinking tag handling:** Models that emit thinking blocks (`<think>...</think>` for Qwen, `<|channel>thought\n...<channel|>` for Gemma 4) have their thinking preserved in the session transcript so the model can see its own reasoning on subsequent turns. Thinking is stripped via `stripThinking()` in `src/dispatch.ts` only for: channel delivery, graph memory turns, session state updates, continuation context previews, handoff summarization. The `num_ctx` Ollama option is passed through from `config.session.contextSize` to ensure models have enough context window for the larger history.
+**Thinking tag handling:** Thinking is preserved in the session transcript (model sees its own reasoning on later turns) and stripped only at boundaries: channel delivery, stream previews, graph memory turns, session state, continuation previews, handoff summarization — all via the shared `stripThinkingTags()` (`src/utils/text.ts`), which also scrubs residual narrated tool-call markup as the delivery backstop. Separated-reasoning backends (vLLM `reasoning` fields) are mapped to inline `<think>` by the client so one format feeds the whole pipeline; Gemma-4's `<|channel>thought` format is handled too. **Per-model caps** (`src/ollama/model-caps.ts`) declare think capability (`toggle`/`levels`/`full`/`none`) and quirks — on `noThinkLeaksDeliberation` models (glm-5.3) thinking is always explicitly enabled, because suppression leaks untagged deliberation prose into content that nothing can strip. The `num_ctx` option passes through from `config.session.contextSize` (sized to the serving backend's context).
 
 ### Memory System
 
@@ -244,7 +248,17 @@ src/
     gmail-read.ts           #   Gmail search + read (OAuth2, read-only)
     calendar-read.ts        #   Google Calendar list + search (OAuth2, read-only)
     memory-forget.ts        #   Remove facts by text match
+    pi-build.ts             #   pi_build — delegate code-shaped work to Pi (projectDir = existing-dir mode; in multi's toolset)
+    self-improve.ts         #   SIP ledger tool — model-invisible, grant-ineligible [PROTECTED]
     *.ts                    #   Individual tool factories (createXxxTool)
+
+  coding/                   # Pi coding substrate + self-modification rail
+    pi-session.ts           #   PiCodingAdapter — Pi SDK sessions (thinkingLevel config, metrics, memory_search customTool)
+    self-mod.ts             #   SelfModWorktrees — worktree lifecycle, deploy markers, state
+    self-mod-service.ts     #   propose/retry/executeMerge — gates, ledger merges, supervised deploy
+    merge-gate.ts           #   Three-dot diff, Tier-3 PROTECTED_PATHS (clamped), tsc+vitest checks
+    coding-memory.ts        #   Prior-experience briefs + memory_search callback for Pi sessions
+    improvement-proposals.ts#   SIP: candidate selection, proposal history (denied=permanent), drafting [PROTECTED]
 
   learnings/                # Self-improvement system
     error-store.ts          #   ErrorLearningStore — JSONL store for tool failures (findHints also surfaces tool-tagged lessons)
@@ -267,9 +281,10 @@ src/
     prompt.ts               #   Router prompt template
 
   ollama/                   # LLM inference
-    client.ts               #   OllamaClient (REST API wrapper; retry/backoff for connection, 429, transient 5xx)
-    openai-client.ts        #   OpenAICompatClient — ds4/OpenAI-compat /v1/chat/completions, Ollama<->OpenAI translation (think gated by supportsThink)
+    client.ts               #   OllamaClient (REST API wrapper; retry/backoff for connection, 429, transient 5xx w/ Retry-After)
+    openai-client.ts        #   OpenAICompatClient — vLLM/OpenAI-compat; chat() always streams; reasoning→<think> mapping; think coercion for leak-flagged models
     multi-backend.ts        #   MultiBackendClient (extends OllamaClient) — routes by model id; createInferenceClient()
+    model-caps.ts           #   Declared per-model capabilities (format, vision, think mode, noThinkLeaksDeliberation)
     types.ts                #   OllamaMessage, OllamaTool, OllamaToolCall
 
   plugins/                  # Plugin system — dynamic tool discovery
@@ -335,8 +350,10 @@ src/
     types.ts                  #   CommandContext interface
 
   services/                   # Extracted services (from orchestrator decomposition)
-    heartbeat-service.ts      #   runHeartbeat() — 411 lines of maintenance logic
+    heartbeat-service.ts      #   runHeartbeat() — maintenance + SIP proposals + email digest
     briefing-service.ts       #   runBriefing() — calendar/task/memory CoT synthesis
+    email-steward.ts          #   Read-only email triage: fast/watch/judged lanes, heartbeat digest
+    run-journal.ts            #   Crash-durable run journal + boot sweep (interrupted-run transcript notes)
     rate-limiter.ts           #   Sliding window per-user rate limiter
     media-debouncer.ts        #   3-second batching for rapid media messages
     media-extraction.ts       #   extractMediaAttachments() — [IMAGE:]/[FILE:] token parsing
@@ -433,6 +450,10 @@ Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + 
 - **Repairs don't burn budget** — each one-shot repair (hallucination, refusal, empty-completion retry, drift re-anchor) extends the loop by one iteration instead of consuming maxIterations.
 - **Answer hygiene** — ReAct scaffolding (`Thought:`/`Final Answer:`) is stripped from the answer path; empty completions get one retry. Thinking blocks are left intact here (dispatch strips at delivery boundaries).
 - **Error learning** — records failures, hints before execution, enriches observations with tool-specific recovery guidance.
+- **Observation spill** — an observation over its per-tool budget persists WHOLE to workspace `.spill/` (24h transient); the truncation notice teaches grep/read instead of slice-reconstruction (the 30-step re-read spiral class, killed 2026-08-22).
+- **Server-overflow retry** — pre-call trimming works from a token estimate; when the server reports actual context overflow, hard-compact all but the last two observations and retry ONCE.
+- **Same-tool streak guard** — 5 consecutive calls to one tool with varying params = grinding; one reconsider-your-tools re-anchor.
+- **Crash-durable journal + `!stop`** — steps land in `data/run-journal/` as they happen (accounted exits delete the file; boot sweeps survivors into transcripts as "interrupted" notes); `!stop` (command layer — the unknown-command catchall would eat it later) cancels the session's run at the next iteration boundary with an honest partial answer.
 - **Observation summarization** — optional LLM-based summarization for old tool observations (>1000 chars) when context budget is tight. Preserves key data vs hard truncation. Config: `session.summarizeToolObservations`.
 - **Param validation** — runtime type coercion (string→number, string→boolean) + enum + required field checks before execution.
 
@@ -485,8 +506,8 @@ System operations (heartbeat, cron) should never match or save user-facing skill
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + build on every push/PR to main
-- **Current:** 451 tests across 33 files
-- **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`. NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
+- **Current:** 881 tests across 84 files
+- **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)
   - Networking (Ollama client, web fetch, SSRF checks)

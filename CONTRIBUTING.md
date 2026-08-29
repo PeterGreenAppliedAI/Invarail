@@ -9,11 +9,12 @@ Thanks for your interest in contributing! Invarail is a local-model-first AI age
 - [Node.js](https://nodejs.org/) 22+
 - [Ollama](https://ollama.ai/) running locally or on your network
 - Required models:
-  ```bash
-  ollama pull phi4-mini          # Router model
-  ollama pull qwen3-coder:30b    # Specialist model
-  ollama pull qwen3-embedding:8b # Embeddings
-  ```
+  - **Foreground:** any OpenAI-compatible served model, configured via the single root `defaultModel` line (fills all specialist/briefing/heartbeat/vision slots — current production model: glm-5.3-flash on vLLM)
+  - **Utility tier** (Ollama):
+    ```bash
+    ollama pull phi4-mini          # NER / utility model
+    ollama pull qwen3-embedding:8b # Embeddings
+    ```
 
 ### Setup
 
@@ -39,7 +40,7 @@ cp .env.example .env
 
 ```bash
 npm run typecheck   # Should pass with zero errors
-npm test            # 14 test suites should pass
+npm test            # 881 tests should pass
 ```
 
 ## Project Structure
@@ -172,6 +173,8 @@ Invarail uses `invarail.config.json5` for all configuration. When adding feature
 - Add corresponding types in `src/config/types.ts`
 - Use environment variable interpolation (`"${ENV_VAR}"`) for secrets
 - Document new config options in your PR
+- Note: `config.principals` provides identity mapping — channel-specific user IDs map to a single principal
+
 
 ## Safety
 
