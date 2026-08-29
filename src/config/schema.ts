@@ -446,6 +446,15 @@ export const HeartbeatConfigSchema = z.object({
 export const EmailTriageConfigSchema = z.object({
   enabled: z.boolean().default(false),   // opt-in — every autonomy surface enters disabled
   pollMinutes: z.number().default(15),
+  /** Additional Gmail accounts beyond the default (GOOGLE_REFRESH_TOKEN). Each needs its
+   *  own refresh token (mint with scripts/google-auth.ts signed into that account) named
+   *  by refreshTokenEnv. Missing env → that account skip-warns, never breaks the poll.
+   *  Motivating case: GitHub-facing outreach lands on the personal address, not the
+   *  business one the default token covers. */
+  accounts: z.array(z.object({
+    label: z.string(),
+    refreshTokenEnv: z.string(),
+  })).default([]),
   fastLane: z.object({
     /** Inbound addresses that always flag + ping immediately (e.g. support@devmesh.tech). */
     aliases: z.array(z.string()).default([]),

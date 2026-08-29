@@ -64,3 +64,19 @@ describe('email steward — code gates', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe('spam rescue + multi-account tagging', () => {
+  it('alert format surfaces spam flag and account label', () => {
+    const f: FlaggedEmail = { id: 'x', from: 'CodeSoul <yi@code-soul.example>', subject: 'your work caught our eye', date: 'Aug 25', reason: 'real human waiting on reply', lane: 'judged', account: 'personal', spam: true };
+    const alert = formatAlert(f);
+    expect(alert).toContain('🚩 IN SPAM');
+    expect(alert).toContain('[personal]');
+    expect(alert).toContain('caught our eye');
+  });
+
+  it('default-account alerts stay untagged', () => {
+    const f: FlaggedEmail = { id: 'x', from: 'Jane <jane@client.example>', subject: 'Q', date: 'd', reason: 'r', lane: 'fast' };
+    expect(formatAlert(f)).not.toContain('IN SPAM');
+    expect(formatAlert(f)).not.toContain('[');
+  });
+});

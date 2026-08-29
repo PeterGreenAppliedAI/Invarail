@@ -31,6 +31,10 @@ export interface FlaggedEmail {
   date: string;
   reason: string;
   lane: 'fast' | 'judged';
+  /** Which account it arrived on ('' = default/business) */
+  account?: string;
+  /** Found in the SPAM folder — surfaced so the owner can rescue it (the CodeSoul class) */
+  spam?: boolean;
 }
 
 interface StewardState {
@@ -101,7 +105,19 @@ const JUDGE_SYSTEM = [
 ].join('\n');
 
 export function formatAlert(f: FlaggedEmail): string {
-  return `📧 **${f.from.replace(/<[^>]*>/g, '').trim() || f.from}** — ${f.subject}\n> ${f.reason} · ${f.date}`;
+  const tags = [f.spam ? '🚩 IN SPAM' : '', f.account ? `[${f.account}]` : ''].filter(Boolean).join(' ');
+  return `📧 ${tags ? tags + ' ' : ''}**${f.from.replace(/<[^>]*>/g, '').trim() || f.from}** — ${f.subject}\n> ${f.reason} · ${f.date}`;
+}
+
+/** OAuth client for a specific refresh token (multi-account); default falls back to env. */
+function authFor(refreshToken: string | undefined) {
+  if (!refreshToken) return getAuth();
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
+  oauth2.setCredentials({ refresh_token: refreshToken });
+  return oauth2;
 }
 
 /**
@@ -111,25 +127,73 @@ export function formatAlert(f: FlaggedEmail): string {
 export async function checkInbox(deps: StewardDeps): Promise<{ fetched: number; pinged: number; queued: number }> {
   const cfg = deps.config.emailTriage;
   if (!cfg?.enabled) return { fetched: 0, pinged: 0, queued: 0 };
-  const auth = getAuth();
-  if (!auth) {
-    console.warn('[Steward] Gmail not configured (GOOGLE_* env) — skipping poll');
-    return { fetched: 0, pinged: 0, queued: 0 };
-  }
   const statePath = deps.statePath ?? STATE_PATH;
   const state = loadState(statePath);
-  const gmail = google.gmail({ version: 'v1', auth });
-
-  const list = await gmail.users.messages.list({ userId: 'me', q: 'in:inbox newer_than:2d', maxResults: 25 });
-  const ids = (list.data.messages ?? []).map(m => m.id!).filter(id => !state.seenIds.includes(id));
   let pinged = 0;
   let queued = 0;
+  let fetchedTotal = 0;
 
   const delivery = cfg.delivery ?? deps.config.heartbeat?.delivery;
   const model = cfg.model ?? deps.config.heartbeat?.model ?? deps.config.router.model;
 
+  // Default account + any configured extras (missing token env → skip-warn, never break).
+  const accounts: Array<{ label: string; auth: ReturnType<typeof authFor> }> = [
+    { label: '', auth: authFor(undefined) },
+    ...cfg.accounts.map(a => ({ label: a.label, auth: authFor(process.env[a.refreshTokenEnv]) })),
+  ];
+
+  for (const account of accounts) {
+    if (!account.auth) {
+      console.warn(`[Steward] Gmail account "${account.label || 'default'}" not configured — skipping`);
+      continue;
+    }
+    const gmail = google.gmail({ version: 'v1', auth: account.auth });
+
+    // Inbox AND spam: legit outreach misclassified as spam is the highest-value rescue
+    // (a real correspondent sat unseen 4 days in spam — the incident that added this).
+    const queries = [
+      { q: 'in:inbox newer_than:2d', max: 25, spam: false },
+      { q: 'in:spam newer_than:2d', max: 10, spam: true },
+    ];
+    for (const { q, max, spam } of queries) {
+      let listIds: string[] = [];
+      try {
+        const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: max });
+        listIds = (list.data.messages ?? []).map(m => m.id!);
+      } catch (err) {
+        console.warn(`[Steward] List failed (${account.label || 'default'}, ${q}):`, err instanceof Error ? err.message : err);
+        continue;
+      }
+      const ids = listIds.map(id => `${account.label}:${id}`).filter(key => !state.seenIds.includes(key)).map(key => key.slice(account.label.length + 1));
+      fetchedTotal += ids.length;
+
+      const res = await scanMessages(gmail, ids, { account: account.label, spam, cfg, model, delivery, deps, state });
+      pinged += res.pinged;
+      queued += res.queued;
+    }
+  }
+
+  saveState(statePath, state);
+  if (fetchedTotal > 0) console.log(`[Steward] Poll: ${fetchedTotal} new, ${pinged} pinged, ${queued} queued for digest`);
+  return { fetched: fetchedTotal, pinged, queued };
+}
+
+interface ScanCtx {
+  account: string;
+  spam: boolean;
+  cfg: NonNullable<InvarailConfig['emailTriage']>;
+  model: string;
+  delivery: { channel: string; target: string } | undefined;
+  deps: StewardDeps;
+  state: StewardState;
+}
+
+async function scanMessages(gmail: ReturnType<typeof google.gmail>, ids: string[], ctx: ScanCtx): Promise<{ pinged: number; queued: number }> {
+  const { account, spam, cfg, model, delivery, deps, state } = ctx;
+  let pinged = 0;
+  let queued = 0;
   for (const id of ids) {
-    state.seenIds.push(id);
+    state.seenIds.push(`${account}:${id}`);
     try {
       const msg = await gmail.users.messages.get({
         userId: 'me', id, format: 'metadata',
@@ -168,13 +232,18 @@ export async function checkInbox(deps: StewardDeps): Promise<{ fetched: number; 
         }
       }
       if (!flagged) continue;
+      flagged.account = account || undefined;
+      flagged.spam = spam || undefined;
 
       logAutonomousAction({
         action: 'email_alert', tier: 'silent', source: 'steward', reversible: true,
-        outcome: 'proposed', detail: `${flagged.lane}: ${from.slice(0, 60)} — ${subject.slice(0, 60)}`,
+        outcome: 'proposed', detail: `${flagged.lane}${spam ? '/spam' : ''}${account ? `/${account}` : ''}: ${from.slice(0, 60)} — ${subject.slice(0, 60)}`,
       });
-      if (flagged.lane === 'fast' && delivery) {
-        await deps.send({ channel: delivery.channel, channelId: delivery.target }, formatAlert(flagged));
+      // Spam finds from fast/watch senders ping immediately regardless of lane — a chosen
+      // sender in the spam folder is a misfiling emergency, not a digest item.
+      const pingNow = delivery && (flagged.lane === 'fast' || (spam && flagged.reason === 'watched sender'));
+      if (pingNow) {
+        await deps.send({ channel: delivery!.channel, channelId: delivery!.target }, formatAlert(flagged));
         pinged++;
       } else {
         state.digest.push(flagged);
@@ -184,10 +253,7 @@ export async function checkInbox(deps: StewardDeps): Promise<{ fetched: number; 
       console.warn('[Steward] Message fetch failed:', err instanceof Error ? err.message : err);
     }
   }
-
-  saveState(statePath, state);
-  if (ids.length > 0) console.log(`[Steward] Poll: ${ids.length} new, ${pinged} pinged, ${queued} queued for digest`);
-  return { fetched: ids.length, pinged, queued };
+  return { pinged, queued };
 }
 
 /** Drain flagged-but-not-pinged mail for the heartbeat digest. Empties the pile. */
