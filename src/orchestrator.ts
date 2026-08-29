@@ -344,6 +344,28 @@ export class Orchestrator {
       console.log('[Briefing] Scheduled at 8:00am, 1:15pm, 5:00pm');
     }
 
+    // Email steward fast-lane poll (read-only, informs only — never writes email).
+    // Peter's rule: EMPTY fast-lane lists → this cron is not scheduled at all; the 2h
+    // heartbeat still runs the inbox check itself, so the digest lane works regardless.
+    const et = this.config.emailTriage;
+    if (et?.enabled && (et.fastLane.aliases.length + et.fastLane.senders.length > 0)) {
+      const { checkInbox } = await import('./services/email-steward.js');
+      new Cron(`*/${et.pollMinutes} * * * *`, { timezone: this.config.timezone }, async () => {
+        try {
+          await checkInbox({
+            config: this.config,
+            client: this.client,
+            send: (target, text) => this.channelRegistry.send({ channel: target.channel, channelId: target.channelId }, { text }).then(() => undefined),
+          });
+        } catch (err) {
+          console.warn('[Steward] Poll failed:', err instanceof Error ? err.message : err);
+        }
+      });
+      console.log(`[Steward] Email fast-lane poll every ${et.pollMinutes}m (${et.fastLane.aliases.length} alias(es), ${et.fastLane.senders.length} VIP sender(s))`);
+    } else if (et?.enabled) {
+      console.log('[Steward] Email triage enabled, fast-lane lists empty — digest-only via heartbeat (no poll cron)');
+    }
+
     const models = await this.client.listModels();
     console.log(`[Orchestrator] Models: ${models.length} | Tools: ${this.toolRegistry.list().length} | Channels: ${this.channelRegistry.list().join(', ') || 'none'}`);
     console.log('[Orchestrator] Started');

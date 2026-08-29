@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import type { InvarailTool } from './types.js';
 
-function getAuth() {
+export function getAuth() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;

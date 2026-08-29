@@ -647,6 +647,26 @@ Now write YOUR analysis of THIS user. Return ONLY the JSON object with your spec
         reportParts.push(proposalSummary);
       }
 
+      // Email steward digest (read-only, informs only): run the inbox check here so
+      // the digest lane works even with no fast-lane poll cron (Peter's skip rule),
+      // then drain flagged-but-not-pinged mail into the report.
+      if (deps.config.emailTriage?.enabled) {
+        try {
+          const { checkInbox, drainDigest, formatAlert } = await import('./email-steward.js');
+          await checkInbox({
+            config: deps.config,
+            client: deps.client,
+            send: (target, text) => deps.channelRegistry.send({ channel: target.channel, channelId: target.channelId }, { text }).then(() => undefined),
+          });
+          const flagged = drainDigest();
+          if (flagged.length > 0) {
+            reportParts.push(`📬 **Email — needs you** (${flagged.length})\n${flagged.map(formatAlert).join('\n')}`);
+          }
+        } catch (err) {
+          console.warn('[Heartbeat] Email steward step failed:', err instanceof Error ? err.message : err);
+        }
+      }
+
       let reportText = reportParts.join('\n\n');
 
       if (reviewCandidates.length > 0) {

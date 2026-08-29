@@ -437,6 +437,27 @@ export const HeartbeatConfigSchema = z.object({
   }).default({}),
 });
 
+/** Email steward (2026-08-29, DECISIONS "The Factory" phase 1). READ-ONLY FOREVER —
+ *  the steward informs, it never writes email (no gmail-send tool exists; the boundary
+ *  is capability absence, not policy). One delta poll every pollMinutes: fast-lane
+ *  matches (support alias / VIP senders) ping immediately; everything else gets one
+ *  narrow model judgment and flagged mail rides the 2h heartbeat digest. Peter's rule:
+ *  EMPTY fast-lane lists → the poll cron is not scheduled at all (digest-only). */
+export const EmailTriageConfigSchema = z.object({
+  enabled: z.boolean().default(false),   // opt-in — every autonomy surface enters disabled
+  pollMinutes: z.number().default(15),
+  fastLane: z.object({
+    /** Inbound addresses that always flag + ping immediately (e.g. support@devmesh.tech). */
+    aliases: z.array(z.string()).default([]),
+    /** VIP sender addresses or bare domains ("client.com") — immediate ping. */
+    senders: z.array(z.string()).default([]),
+  }).default({}),
+  /** Model for the one needs-Peter judgment per email. Defaults to heartbeat model. */
+  model: z.string().optional(),
+  /** Delivery target; defaults to heartbeat.delivery. */
+  delivery: z.object({ channel: z.string(), target: z.string() }).optional(),
+});
+
 /** Briefing reasoning config. Timing is fixed (8am/1:15pm/5pm); model is configurable. */
 export const BriefingConfigSchema = z.object({
   model: z.string().default('qwen3.6:35b'),
@@ -547,4 +568,5 @@ export const InvarailConfigSchema = z.object({
   selfMod: SelfModConfigSchema.default({}),
   voice: VoiceConfigSchema.default({}),
   heartbeat: HeartbeatConfigSchema.optional(),
+  emailTriage: EmailTriageConfigSchema.optional(),
 });
