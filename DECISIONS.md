@@ -4,6 +4,23 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The Factory — Steward and Software Factory Converge (August 29 2026, VISION SET, NO BUILD YET)
+
+### Peter's design (his words, structured)
+1. **The agent must understand my build logic — my process.** Per-repo conventions as standing artifacts. The Rails lesson (from solo-factory operators Peter knows — one alternates 15 Codex seats, ~$36K/yr of rate-limit arbitrage; one runs Kimi; one ships almost exclusively RoR): *convention keeps the agents in check* — omakase structure collapses agent degrees of freedom and turns review into pattern-matching, the only review that scales to one human. Concrete form: a **per-repo manifest** (build cmd, test cmd, protected paths, process notes/CLAUDE.md) that also generalizes the merge gate beyond Invarail — the gate runs the manifest's checks, not hardcoded tsc+vitest.
+2. **Support-inbox intake → PR.** ONE shared intake address (support@devmesh.tech — not per-client aliases). Client identity resolves from the SENDER address via a sender→client/repo routing table; unknown senders route to Peter's triage, never into the factory. Change request → spec → Pi worktree on that client repo → manifest gate → **draft PR** for Peter's review. Client-triggered work starts propose_confirm on the ledger; specific clients may earn auto-draft via the ladder. `pi.git.pushRemote` stays off until per-repo ladder decisions.
+3. **GitHub intake.** Cron polls Peter's repos (gh, read-only) for issues and contributor PRs: issues → spec queue; contributor PRs → the gate runs THEIR branch and Peter gets a summarized verdict.
+4. **Rework loop** (the missing station): gate-fail output feeds back to Pi in the same worktree, bounded iterations (config `selfMod.reworkIterations`, default 0), ONLY for fixable failures (tsc/vitest) — policy failures (protected paths, gate tampering) never get an unattended second attempt. Authority unmoved: oracles decide, owner ratifies the merge.
+
+### The convergence (the day's insight)
+The email steward IS the factory's intake dock — triage("needs Peter" vs "actionable") feeds the spec queue. The factory's demand-side question ("a factory needs a queue") is answered: DevMesh clients. Solo factories work because review relocates UP the stack: review specs not diffs, trust computed gates, check behavior, tier by blast radius, make everything reversible — every one of those primitives already exists in Invarail (tiers, gates, worktree+rollback, logAutonomousAction track record); the one unbuilt rung is auto-merge for low tiers, to be climbed on evidence (self-mod track record n=2 — not yet).
+
+### Open definitions (Peter's list to fill)
+Which repos/clients first · manifest format + location · sender→client/repo routing table · per-intake autonomy tier (default: everything propose_confirm until n justifies promotion) · PR etiquette (draft always; branch naming; Peter merges, always) · per-client compute budget.
+
+### Build order (each phase ships alone)
+(1) Steward email triage — now load-bearing for the factory; blocked on Peter's two answers (what counts as "needs a response"; digest vs immediate alerts). (2) Repo manifest + generalized gate + PR-draft path. (3) GitHub intake cron. (4) Rework loop. (5) Ladder promotions on track record.
+
 ## Polar — the Weights Horizon, Designed and Parked (August 23 2026, NO BUILD)
 
 ### What it is (plainly)
