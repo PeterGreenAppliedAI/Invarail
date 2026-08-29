@@ -136,10 +136,15 @@ export async function checkInbox(deps: StewardDeps): Promise<{ fetched: number; 
   const delivery = cfg.delivery ?? deps.config.heartbeat?.delivery;
   const model = cfg.model ?? deps.config.heartbeat?.model ?? deps.config.router.model;
 
-  // Default account + any configured extras (missing token env → skip-warn, never break).
+  // Default account + configured extras. A configured account with a MISSING token env
+  // must SKIP, never fall back to the default token — the fallback double-polled the
+  // business mailbox under the "personal" label and re-flagged everything (2026-08-29).
   const accounts: Array<{ label: string; auth: ReturnType<typeof authFor> }> = [
     { label: '', auth: authFor(undefined) },
-    ...cfg.accounts.map(a => ({ label: a.label, auth: authFor(process.env[a.refreshTokenEnv]) })),
+    ...cfg.accounts.map(a => ({
+      label: a.label,
+      auth: process.env[a.refreshTokenEnv] ? authFor(process.env[a.refreshTokenEnv]) : null,
+    })),
   ];
 
   for (const account of accounts) {
@@ -197,9 +202,17 @@ async function scanMessages(gmail: ReturnType<typeof google.gmail>, ids: string[
     try {
       const msg = await gmail.users.messages.get({
         userId: 'me', id, format: 'metadata',
-        metadataHeaders: ['From', 'To', 'Cc', 'Subject', 'Date', 'List-Unsubscribe'],
+        metadataHeaders: ['From', 'To', 'Cc', 'Subject', 'Date', 'List-Unsubscribe', 'Message-ID'],
       });
       const h = Object.fromEntries((msg.data.payload?.headers ?? []).map(x => [x.name ?? '', x.value ?? '']));
+      // Cross-mailbox dedup: the same email delivered to two addresses has different
+      // Gmail ids but ONE RFC Message-ID — flag it once, wherever it landed first.
+      const rfcId = (h['Message-ID'] ?? h['Message-Id'] ?? '').trim();
+      if (rfcId) {
+        const rfcKey = `rfc:${rfcId}`;
+        if (state.seenIds.includes(rfcKey)) continue;
+        state.seenIds.push(rfcKey);
+      }
       const from = h.From ?? '';
       const to = `${h.To ?? ''} ${h.Cc ?? ''}`;
       const subject = h.Subject ?? '(no subject)';

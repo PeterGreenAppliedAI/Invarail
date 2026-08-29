@@ -143,11 +143,17 @@ export class ProposalHistory {
 export function selectCandidates(opts: {
   workspacePath: string;
   minOccurrences?: number;
+  /** Only errors within this window count as evidence (default 30 days). This is ALSO
+   *  the done-marker: a confirmed+merged fix only re-proposes if the failure RECURS
+   *  after the merge — stale April errors re-proposed an already-shipped fix twice
+   *  (2026-08-22 identified, 2026-08-29 struck again) before this landed. */
+  maxAgeDays?: number;
   lessonLookup?: (tool: string) => string | undefined;
 }): ImprovementCandidate[] {
   const min = opts.minOccurrences ?? 3;
+  const cutoff = Date.now() - (opts.maxAgeDays ?? 30) * 86_400_000;
   const store = new ErrorLearningStore(opts.workspacePath);
-  const entries = store.loadAll();
+  const entries = store.loadAll().filter(e => Date.parse(e.timestamp) > cutoff);
   const groups = new Map<string, ImprovementCandidate>();
   for (const e of entries) {
     const signature = `${e.tool}:${e.error.slice(0, 60).toLowerCase().trim()}`;

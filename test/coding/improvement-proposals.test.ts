@@ -99,3 +99,24 @@ describe('draftProposal', () => {
     expect(await draftProposal(client('not json' as never), 'm', candidate)).toBeNull();
   });
 });
+
+describe('recency window (the done-marker)', () => {
+  it('stale errors do not qualify; fresh recurrence after a fix does', () => {
+    const ws = mkdtempSync(join(tmpdir(), 'sip-recency-'));
+    const store = new ErrorLearningStore(ws);
+    // Simulate 4 stale errors by writing entries with old timestamps directly
+    mkdirSync(join(ws, '.learnings'), { recursive: true });
+    const old = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    for (let i = 0; i < 4; i++) {
+      appendFileSync(join(ws, '.learnings', 'errors.jsonl'), JSON.stringify({
+        timestamp: old, tool: 'document', params: {}, error: 'conversion produced no output', step: 1, category: 'x',
+      }) + '\n');
+    }
+    expect(selectCandidates({ workspacePath: ws })).toHaveLength(0); // stale = no evidence
+
+    // Fresh recurrence AFTER the fix window re-qualifies legitimately
+    for (let i = 0; i < 3; i++) store.recordError({ tool: 'document', params: {}, error: 'conversion produced no output', step: 1, category: 'x' });
+    expect(selectCandidates({ workspacePath: ws })).toHaveLength(1);
+    rmSync(ws, { recursive: true, force: true });
+  });
+});
