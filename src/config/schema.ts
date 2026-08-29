@@ -452,6 +452,14 @@ export const EmailTriageConfigSchema = z.object({
     /** VIP sender addresses or bare domains ("client.com") — immediate ping. */
     senders: z.array(z.string()).default([]),
   }).default({}),
+  /** Watched senders/domains (owner-chosen groups, orgs, event lists): always flagged
+   *  into the DIGEST lane, no model call — and they BYPASS the automated-mail filter,
+   *  because group/event mail is bulk by nature and bulk ≠ unwanted when the owner
+   *  chose the sender. The actual list is personal — it lives ONLY in the gitignored
+   *  config, never in code, tests, or commits. */
+  watch: z.object({
+    senders: z.array(z.string()).default([]),
+  }).default({}),
   /** Model for the one needs-Peter judgment per email. Defaults to heartbeat model. */
   model: z.string().optional(),
   /** Delivery target; defaults to heartbeat.delivery. */

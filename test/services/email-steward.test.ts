@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isAutomated, isFastLane, formatAlert, drainDigest, type FlaggedEmail } from '../../src/services/email-steward.js';
+import { isAutomated, isFastLane, matchesSenders, formatAlert, drainDigest, type FlaggedEmail } from '../../src/services/email-steward.js';
 
 describe('email steward — code gates', () => {
   it('automated senders are filtered before any model call', () => {
@@ -30,6 +30,20 @@ describe('email steward — code gates', () => {
     expect(isFastLane('Rando <rando@other.com>', 'pgreen@devmesh.tech', cfg)).toBe(false);
     // "client.com" must not match a lookalike domain suffix
     expect(isFastLane('Evil <x@notclient.com>', 'pgreen@devmesh.tech', cfg)).toBe(false);
+  });
+
+  it('watch-lane senders match by address or domain', () => {
+    const senders = ['group-a.example', 'events@list-b.example'];
+    expect(matchesSenders('Events <newsletter@group-a.example>', senders)).toBe(true);
+    expect(matchesSenders('List <events@list-b.example>', senders)).toBe(true);
+    expect(matchesSenders('Rando <spam@group-a.example.evil.com>', senders)).toBe(false);
+  });
+
+  it('watched bulk mail would pass despite List-Unsubscribe (lane order beats the filter)', () => {
+    // The automated filter WOULD kill this — lane ordering in checkInbox runs
+    // watch matching first, which is the whole point for chosen bulk senders.
+    expect(isAutomated('Group <newsletter@group-a.example>', '<mailto:unsub@x.example>')).toBe(true);
+    expect(matchesSenders('Group <newsletter@group-a.example>', ['group-a.example'])).toBe(true);
   });
 
   it('alert format: sender, subject, reason, age — never a drafted reply', () => {

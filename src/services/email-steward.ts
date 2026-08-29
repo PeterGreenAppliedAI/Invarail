@@ -66,15 +66,20 @@ export function isAutomated(from: string, listUnsubscribe: string | undefined): 
   return /\b(no-?reply|donotreply|notifications?|mailer(-daemon)?|newsletter|updates?|alerts?|billing|receipts?)@/i.test(from);
 }
 
+/** Sender match: exact address ("a@b.com") or bare domain ("b.com", subdomains included). */
+export function matchesSenders(from: string, senders: string[]): boolean {
+  const fromAddr = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();
+  return senders.some(s => {
+    const needle = s.toLowerCase();
+    return needle.includes('@') ? fromAddr === needle : fromAddr.endsWith('@' + needle) || fromAddr.endsWith('.' + needle);
+  });
+}
+
 /** Fast-lane: delivered to a watched alias, or from a VIP address/domain. */
 export function isFastLane(from: string, to: string, cfg: { aliases: string[]; senders: string[] }): boolean {
   const toLower = to.toLowerCase();
   if (cfg.aliases.some(a => toLower.includes(a.toLowerCase()))) return true;
-  const fromAddr = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();
-  return cfg.senders.some(s => {
-    const needle = s.toLowerCase();
-    return needle.includes('@') ? fromAddr === needle : fromAddr.endsWith('@' + needle) || fromAddr.endsWith('.' + needle);
-  });
+  return matchesSenders(from, cfg.senders);
 }
 
 const JUDGE_SCHEMA = {
@@ -137,11 +142,17 @@ export async function checkInbox(deps: StewardDeps): Promise<{ fetched: number; 
       const date = h.Date ?? '';
       const snippet = msg.data.snippet ?? '';
 
-      if (isAutomated(from, h['List-Unsubscribe'])) continue;
-
       let flagged: FlaggedEmail | null = null;
       if (isFastLane(from, to, cfg.fastLane)) {
+        // Fast lane checks BEFORE the automated filter — a chosen sender is never bulk.
         flagged = { id, from, subject, date, reason: 'fast lane (watched alias/sender)', lane: 'fast' };
+      } else if (matchesSenders(from, cfg.watch.senders)) {
+        // Watch lane: always-flag into the digest, no model call. Also bypasses the
+        // automated filter — group/event mail is bulk by nature, and bulk ≠ unwanted
+        // when the owner chose the sender.
+        flagged = { id, from, subject, date, reason: 'watched sender', lane: 'judged' };
+      } else if (isAutomated(from, h['List-Unsubscribe'])) {
+        continue;
       } else {
         try {
           const raw = await chatMaybeStructured(deps.client, model, [
