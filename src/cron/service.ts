@@ -11,6 +11,10 @@ export interface CronServiceDeps {
   timezone?: string;
 }
 
+/** Gap between staggered catch-up runs at boot — enough that a serialized model
+ *  host isn't hit by every missed job at once (env-tunable for drills). */
+const CATCHUP_STAGGER_MS = Number(process.env.CRON_CATCHUP_STAGGER_MS) || 45_000;
+
 export class CronService {
   private store: CronStore;
   private onTrigger: (job: CronJob) => Promise<void>;
@@ -38,21 +42,39 @@ export class CronService {
 
   /** Run-once catch-up: a fire that was missed while the process was down runs
    *  at boot (spawned, not awaited — boot must not block on job work). Matters
-   *  most for `once` reminders: a reboot at 8:59 must not eat a 9:00 reminder. */
+   *  most for `once` reminders: a reboot at 8:59 must not eat a 9:00 reminder.
+   *
+   *  STALENESS BOUND (2026-09-19): a missed fire is skipped once the job's OWN next
+   *  cycle has also elapsed — i.e. you didn't just miss a fire, you missed a whole
+   *  period. A daily motivation from three weeks ago is noise; an annual token
+   *  reminder four days late is still worth sending, and the 8:59-reboot case is
+   *  untouched (its next cycle is tomorrow). Caught live: a month of downtime fired
+   *  four stale jobs at once into a single serialized model host.
+   *
+   *  Survivors are STAGGERED so they queue politely instead of thundering. */
   private catchUpMissedRuns(): void {
     const now = Date.now();
+    let dueIndex = 0;
     for (const job of this.store.list()) {
       if (job.type === 'heartbeat' || !job.enabled) continue;
       try {
         const since = new Date(job.lastRunAt ?? job.createdAt);
         const probe = new Cron(job.schedule, { paused: true, timezone: this.timezone });
         const missed = probe.nextRun(since);
+        // The cycle AFTER the missed fire — the staleness horizon.
+        const nextCycle = missed ? probe.nextRun(missed) : null;
         probe.stop();
-        if (missed && missed.getTime() < now) {
-          console.log(`[Cron] Catch-up: "${job.name}" missed a fire at ${missed.toISOString()} — running once now`);
-          void this.executeJob(job).catch(err =>
-            console.warn(`[Cron] Catch-up run failed for ${job.id}:`, err instanceof Error ? err.message : err));
+        if (!missed || missed.getTime() >= now) continue;
+        if (nextCycle && nextCycle.getTime() < now) {
+          console.log(`[Cron] Catch-up SKIPPED (stale): "${job.name}" missed ${missed.toISOString()} and its next cycle ${nextCycle.toISOString()} also passed`);
+          continue;
         }
+        const delayMs = dueIndex++ * CATCHUP_STAGGER_MS;
+        console.log(`[Cron] Catch-up: "${job.name}" missed a fire at ${missed.toISOString()} — running once${delayMs ? ` in ${delayMs / 1000}s` : ' now'}`);
+        const run = () => void this.executeJob(job).catch(err =>
+          console.warn(`[Cron] Catch-up run failed for ${job.id}:`, err instanceof Error ? err.message : err));
+        if (delayMs) setTimeout(run, delayMs).unref?.();
+        else run();
       } catch { /* invalid schedule already logged by scheduleJob */ }
     }
   }

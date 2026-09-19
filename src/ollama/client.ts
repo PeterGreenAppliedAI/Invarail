@@ -67,13 +67,15 @@ export class OllamaClient {
   ) {}
 
   async chat(params: Omit<OllamaChatParams, 'stream' | 'keep_alive'>): Promise<OllamaChatResponse> {
-    const { abortSignal, ...rest } = params;
-    const body: OllamaChatParams = {
-      ...rest,
-      stream: false,
-      keep_alive: this.keepAlive,
-    };
-    return this.post<OllamaChatResponse>('/api/chat', body, undefined, abortSignal);
+    // Long completions MUST stream (2026-09-19; the same fix OpenAICompatClient got
+    // on 2026-08-26, applied here once Ollama became the foreground path). A
+    // non-streaming request sends NO response headers until the whole generation is
+    // done, so a request queued behind other work on a busy host trips undici's
+    // 5-minute headers deadline (UND_ERR_HEADERS_TIMEOUT) and each blind retry
+    // restarts the same doomed generation. Streaming sends headers immediately;
+    // the only clock left is our own budget. Caught live: four cron catch-ups
+    // serialized on one Mac Mini killed a meal-plan run mid-repair.
+    return this.chatStream(params, () => undefined);
   }
 
   /**
@@ -132,6 +134,10 @@ export class OllamaClient {
 
     const decoder = new TextDecoder();
     let fullContent = '';
+    // Separated thinking must survive the stream path: vision.ts/browser visual fall
+    // back to `message.thinking` when content is empty, and chat() now routes through
+    // here — dropping it would silently break those callers.
+    let fullThinking = '';
     let lastChunk: OllamaChatResponse | null = null;
 
     while (true) {
@@ -146,6 +152,9 @@ export class OllamaClient {
           const chunk = JSON.parse(line) as OllamaChatResponse;
           lastChunk = chunk;
 
+          // Thinking accumulates but is NEVER sent to onDelta — stream previews stay
+          // clean by construction (same rule as the OpenAI-compat path).
+          if (chunk.message?.thinking) fullThinking += chunk.message.thinking;
           if (chunk.message?.content) {
             fullContent += chunk.message.content;
             onDelta(chunk.message.content);
@@ -162,6 +171,7 @@ export class OllamaClient {
       message: {
         role: 'assistant',
         content: fullContent,
+        ...(fullThinking ? { thinking: fullThinking } : {}),
         tool_calls: lastChunk?.message?.tool_calls,
       },
       done: true,
