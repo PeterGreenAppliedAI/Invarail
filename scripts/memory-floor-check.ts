@@ -18,7 +18,7 @@ const QUERIES = [
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const store = new GraphMemoryStore(client);
   // Facts are stored under the USER's sender id (config.ownerId), not the
   // heartbeat delivery target (a channel id)

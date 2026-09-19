@@ -31,7 +31,7 @@ interface RemovedEntry { text: string; reason: string; removedAt: string; expire
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 
   const allLines = readFileSync(REMOVED_PATH, 'utf-8').trim().split('\n');
   const entries = allLines.map(l => JSON.parse(l) as RemovedEntry);

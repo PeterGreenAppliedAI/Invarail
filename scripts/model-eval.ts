@@ -991,7 +991,7 @@ async function evalModel(client: OllamaClient, row: ModelRow, meta: Provenance['
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 
   // Provenance: model digests from the gateway catalog
   let catalog: Array<{ name: string; model?: string; digest?: string; details?: { quantization_level?: string; parameter_size?: string } }> = [];

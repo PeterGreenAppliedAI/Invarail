@@ -286,7 +286,7 @@ async function main(): Promise<void> {
   const runs = Number(flag('runs') ?? '1');
 
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 
   const stamp = new Date().toISOString().slice(0, 10);
   const outDir = join('data', 'model-eval', `harness-duel-${stamp}`);

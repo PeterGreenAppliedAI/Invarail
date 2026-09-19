@@ -427,7 +427,7 @@ let currentThink: boolean | undefined;
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 
   // Answer-key discipline: validate the flow executor with a reference flow first.
   const reference: Flow = {

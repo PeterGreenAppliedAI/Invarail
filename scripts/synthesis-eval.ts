@@ -69,7 +69,7 @@ const SYSTEM = [
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const pack = buildPack();
   writeFileSync(join(RUN_DIR, 'pack.md'), pack);
   console.log(`Source pack: ${PACK_URLS.length} docs, ${pack.length} chars -> ${RUN_DIR}`);

@@ -116,7 +116,7 @@ async function runOrchestrator(config: ReturnType<typeof loadConfig>) {
 }
 
 async function runRepl(config: ReturnType<typeof loadConfig>) {
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const registry = new ToolRegistry();
   const { mcpManager } = await registerAllTools(registry, config);
 

@@ -23,9 +23,22 @@ export const VllmBackendSchema = z.object({
   thinkStyle: z.enum(['native', 'qwen-template']).default('native'),
 });
 
+/** A second Ollama-NATIVE host (not OpenAI-compat) — e.g. gemma4 on the .221 Mini,
+ *  served by its own Ollama. Chat calls whose model matches route to this host's
+ *  Ollama API; embeddings and the utility tier stay on the gateway. Native think
+ *  control and response shape are identical to the gateway, so nothing to probe. */
+export const OllamaBackendSchema = z.object({
+  url: z.string(),
+  keepAlive: z.string().optional(),
+  /** Exact model ids this host serves, e.g. "gemma4:12b-mlx" */
+  models: z.array(z.string()).default([]),
+});
+
 export const InferenceConfigSchema = z.object({
-  /** Extra OpenAI-compatible backends. Chat calls whose model matches route here; everything else stays on Ollama. */
+  /** Extra OpenAI-compatible backends (vLLM/ds4). Chat calls whose model matches route here; everything else stays on Ollama. */
   backends: z.array(VllmBackendSchema).default([]),
+  /** Extra Ollama-native hosts. Chat calls whose model matches route to that host; the gateway keeps embeddings + the utility tier. */
+  ollamaBackends: z.array(OllamaBackendSchema).default([]),
 });
 
 export const RouterCategorySchema = z.object({

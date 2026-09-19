@@ -21,7 +21,7 @@ const SHOULD_NOT_MATCH = [
 async function main(): Promise<void> {
   const workspacePath = process.argv[2] ?? 'data/workspaces/main';
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const store = new LessonStore(workspacePath);
 
   const lessons = store.list();

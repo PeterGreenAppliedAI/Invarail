@@ -2,31 +2,44 @@ import type { z } from 'zod';
 import { OllamaClient } from './client.js';
 import { OpenAICompatClient } from './openai-client.js';
 import type { OllamaChatParams, OllamaChatResponse } from './types.js';
-import type { VllmBackendSchema } from '../config/schema.js';
+import type { VllmBackendSchema, OllamaBackendSchema } from '../config/schema.js';
 
 /** Derived from the Zod schema (source of truth) — was a hand-written duplicate
  *  that silently drifted when supportsThink landed. */
 export type VllmBackendConfig = z.infer<typeof VllmBackendSchema>;
+export type OllamaBackendConfig = z.infer<typeof OllamaBackendSchema>;
 
 /**
  * Routing inference client. Extends OllamaClient so it's a drop-in replacement
  * everywhere `client: OllamaClient` is expected — purely additive.
  *
- * chat/chatStream route to an OpenAI-compatible backend (vLLM) when the request
- * model matches a configured backend; otherwise they fall through to the
- * Ollama/gateway behavior. embed/generate/listModels always use the Ollama path
- * (embeddings + small models stay on the gateway).
+ * chat/chatStream route by model id: to an OpenAI-compatible backend (vLLM) or to
+ * a second Ollama-NATIVE host (e.g. gemma4 on the .221 Mini, 2026-09-19); anything
+ * unrouted falls through to the primary Ollama gateway. embed/generate/listModels
+ * always use the gateway path (embeddings + the utility tier live there).
  */
 export class MultiBackendClient extends OllamaClient {
-  private readonly routes = new Map<string, OpenAICompatClient>();
+  private readonly routes = new Map<string, OpenAICompatClient | OllamaClient>();
 
-  constructor(ollamaUrl: string, keepAlive: string | undefined, backends: VllmBackendConfig[]) {
+  constructor(
+    ollamaUrl: string,
+    keepAlive: string | undefined,
+    backends: VllmBackendConfig[],
+    ollamaBackends: OllamaBackendConfig[] = [],
+  ) {
     super(ollamaUrl, keepAlive);
     for (const b of backends) {
       const client = new OpenAICompatClient(b.url, b.apiKey, b.supportsThink, b.thinkStyle);
       for (const model of b.models) {
         this.routes.set(model, client);
         console.log(`[Inference] Route: "${model}" → OpenAI-compat ${b.url}${b.supportsThink ? ` (think-capable, ${b.thinkStyle})` : ''}`);
+      }
+    }
+    for (const b of ollamaBackends) {
+      const client = new OllamaClient(b.url, b.keepAlive ?? keepAlive);
+      for (const model of b.models) {
+        this.routes.set(model, client);
+        console.log(`[Inference] Route: "${model}" → Ollama-native ${b.url}`);
       }
     }
   }
@@ -54,9 +67,10 @@ export function createInferenceClient(
   ollamaUrl: string,
   keepAlive: string | undefined,
   backends: VllmBackendConfig[] | undefined,
+  ollamaBackends: OllamaBackendConfig[] | undefined = undefined,
 ): OllamaClient {
-  if (backends?.length) {
-    return new MultiBackendClient(ollamaUrl, keepAlive, backends);
+  if (backends?.length || ollamaBackends?.length) {
+    return new MultiBackendClient(ollamaUrl, keepAlive, backends ?? [], ollamaBackends ?? []);
   }
   return new OllamaClient(ollamaUrl, keepAlive);
 }

@@ -4,6 +4,25 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## gemma4:12b Takes the Foreground — a 12B on a Mac Mini Matches the Flagship (September 19 2026)
+
+### The measurement
+Same seven-task oracle duel, same think-off pinning, on the SAME Mini that scored 1/7 with Qwen3.8-27B@Q2 hours earlier — this time gemma4:12b-mlx via Ollama (7.7GB, ~half the box free): **7/7 pass, avg 43.4s/task**, including the long-horizon 3-artifact `sales-report` composite (126.5s) that the Q2 never reached. md-linecounts: 26.4s vs the Q2's 259s FAIL. Probes: 17×23 correct with thinking on (25.6 tok/s), native tool calls clean, think toggle honored, no deliberation-leak quirk (unlike glm-5.3 — the qwen-era `think:false` specialist flags work as written, no client coercion).
+
+### Fleet decision (Peter's): the Mini is the daily driver, the Spark is the workshop
+- `defaultModel: "gemma4:12b-mlx"` — chat, arena, cron, tasks, memory, website, research, briefing, heartbeat, vision.
+- **GLM-5.3 keeps CODING ONLY**: `code_gen` specialist override + `pi.model` (the Spark's speed goes where quality compounds and the merge gate catches slop).
+- Utility tier unchanged on the gateway: phi4 router, phi4-mini NER, embeddings, whisper, steward judgment.
+
+### What it cost in code: one new routing concept
+The multi-backend client only knew OpenAI-compat backends + ONE gateway Ollama; gemma4 lives on a SECOND Ollama-native host. Added `inference.ollamaBackends[]` (url, models, optional keepAlive) routed by model id — same additive pattern as `backends[]`, native think control and response shape identical to the gateway so nothing needed probing. `createInferenceClient` now builds a routing client when EITHER backend kind is configured; the 19 call sites were swept in one mechanical pass (a missed one = that script silently can't reach the Mini). Live-verified end to end in lab tmux: both routes register, a real chat call returns in 1.7s.
+
+### Caught in the flip (the stale-cap lesson, inverted)
+`session.contextSize` was 160000 — sized for glm-5.3's 262K. gemma4 serves 131072, so the cap was now ABOVE the model's ceiling rather than below it. Set to 96000. The 2026-08 lesson was "after a context upgrade, hunt for caps that are now too small"; the mirror image is real — after a context DOWNgrade, hunt for caps that would overrun.
+
+### Watch list (honest, unmeasured)
+`research` inherits gemma4 and runs think-ON synthesis — the one slot where the 12B's extra weight might be missed and where Peter's doctrine says rigor is never rationed. The next weekly report is the A/B; a one-line `model:` override moves it back to GLM if quality drops. Vision also inherits (gemma4 is multimodal, model-caps says vision:true) but has not been image-probed on this serving.
+
 ## Q2 on the .221 Mini — the Quant Cliff and the Memory Cliff, Measured (September 19 2026)
 
 ### The question (Peter's plan)

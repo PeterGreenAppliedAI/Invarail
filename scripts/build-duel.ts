@@ -50,7 +50,7 @@ function extractHtml(reply: string): string {
 async function generate(): Promise<void> {
   mkdirSync(RUN_DIR, { recursive: true });
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const shuffled = [...CONTESTANTS].sort((a, b) =>
     createHash('sha256').update(a.name + RUN_DIR).digest('hex')
       .localeCompare(createHash('sha256').update(b.name + RUN_DIR).digest('hex')));

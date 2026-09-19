@@ -15,7 +15,7 @@ const PROMPT = 'Summarize in exactly 3 bullet points, nothing before or after: T
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 
   let meteredTokens = 0;
 

@@ -47,7 +47,7 @@ globalThis.fetch = (async (url: Parameters<typeof fetch>[0], init?: RequestInit)
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 
   console.log(`Probe model: ${MODEL}`);
   console.log(`capsFor(${MODEL}).supportsFormat = ${capsFor(MODEL).supportsFormat}`);

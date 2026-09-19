@@ -18,7 +18,7 @@ const TASK = 'What are the top 2 AI news stories today? Search the web, then ans
 
 async function runOnce(style: 'native' | 'text'): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const webSearch = createWebSearchTool(config.tools?.web?.search);
 
   const executor: ToolExecutor = async (name, params, ctx) => {

@@ -414,7 +414,7 @@ async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
   if (process.argv.includes('--selftest')) return selftest(config);
 
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   mkdirSync(OUT_DIR, { recursive: true });
   const arms = ARM_ARG ? [ARM_ARG] : ['pipeline', 'arena', 'arena-contracts'];
   const results: Array<Record<string, unknown>> = [];

@@ -90,7 +90,7 @@ export class Orchestrator {
 
   constructor(config: InvarailConfig) {
     this.config = config;
-    this.client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+    this.client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
     this.toolRegistry = new ToolRegistry();
     this.channelRegistry = new ChannelRegistry();
     this.sessionStore = new SessionStore(config.session.transcriptDir);

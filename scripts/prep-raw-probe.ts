@@ -7,7 +7,7 @@ import { parseCalendarEvents, buildPrepPrompt, parsePrepAssessments, PREP_ASSESS
 import { resolveWorkspacePath } from '../src/agents/scope.js';
 
 const config = loadConfig('invarail.config.json5');
-const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
 const registry = new ToolRegistry();
 await registerAllTools(registry, config, { ollamaClient: client });
 const executor = registry.createExecutor();

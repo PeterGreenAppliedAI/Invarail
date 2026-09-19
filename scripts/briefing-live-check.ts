@@ -28,7 +28,7 @@ import type { ChannelRegistry } from '../src/channels/registry.js';
 
 async function main(): Promise<void> {
   const config = loadConfig('invarail.config.json5');
-  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends);
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
   const workspacePath = resolveWorkspacePath(config.agents.default, config);
 
   const factStore = new FactStore(workspacePath, client);
