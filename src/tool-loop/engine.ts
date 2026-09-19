@@ -6,7 +6,7 @@ import type { OllamaMessage, OllamaTool, OllamaToolCall } from '../ollama/types.
 import type { ToolDefinition, ToolExecutor, ToolContext } from '../tools/types.js';
 import type { ReActConfig, ReActResult, ReActStep } from './types.js';
 import { estimateMessagesTokens } from '../context/tokens.js';
-import { buildReActSystemPrompt, type PromptContext } from './prompt-builder.js';
+import { buildReActSystemPrompt, buildVolatileContext, type PromptContext } from './prompt-builder.js';
 import { parseReActResponse } from './parser.js';
 import type { ErrorLearningStore } from '../learnings/error-store.js';
 import { enrichObservation } from '../learnings/pattern-matcher.js';
@@ -529,10 +529,17 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
   const hasToolAccess = tools.length > 0;
   const availableToolNames = new Set(tools.map(t => t.name));
 
-  // Build message history
+  // Build message history. ORDER IS A PERFORMANCE CONTRACT (2026-09-19): the
+  // system prompt is static and history is append-only, so the whole head stays
+  // KV-cached across turns; per-turn volatile content (session state + retrieved
+  // memory) rides a small tail message right before the user's, so only that tail
+  // re-prefills. Measured: 8K-token prefill 61s cold vs 0.3s with the prefix intact
+  // — and a single changed token near the front costs the full 61s again.
+  const volatileContext = buildVolatileContext(promptContext);
   const messages: OllamaMessage[] = [
     { role: 'system', content: systemPrompt },
     ...(history ?? []),
+    ...(volatileContext ? [{ role: 'user' as const, content: volatileContext }] : []),
     { role: 'user', content: userMessage },
   ];
 

@@ -18,6 +18,14 @@ export interface PromptContext {
  *   TOP (highest weight):  Role + Task — what the model is doing right now
  *   MIDDLE:                Channel, Tools, Persona
  *   BOTTOM (second highest): Format rules + constraints
+ *
+ * PREFIX-CACHE CONTRACT (2026-09-19): this prompt must stay BYTE-IDENTICAL across
+ * the turns of a session. Every inference backend worth using caches the KV state of
+ * a shared prompt prefix; change one token near the front and the whole prompt —
+ * conversation history included — re-prefills. Measured on a Mac Mini: 8K-token
+ * prefill is 61s cold and 0.3s when the prefix holds. So per-turn volatile content
+ * (session state, retrieved memory) does NOT belong here — it goes in the volatile
+ * tail via buildVolatileContext(), injected right before the user's message.
  */
 export function buildReActSystemPrompt(
   specialistPrompt: string | undefined,
@@ -54,15 +62,10 @@ export function buildReActSystemPrompt(
     sections.push(`Workspace directory: "${promptContext.workspacePath}" — user scripts, notes, and workspace files are stored here.`);
   }
 
-  // ── Session state ──
-  if (promptContext?.statePreamble) {
-    sections.push(promptContext.statePreamble);
-  }
-
-  // ── User priming — stable facts about who's asking ──
-  if (promptContext?.userPriming) {
-    sections.push(promptContext.userPriming);
-  }
+  // NOTE: session state and retrieved memory used to sit HERE. They change every
+  // turn, so they invalidated the cached prefix for the entire prompt below them —
+  // including all conversation history. They now ride the volatile tail instead
+  // (buildVolatileContext), which also puts them in the recency position.
 
   // ── Tools — text style only. In native style the tool schemas travel via the
   // API tools field and the model's own template; duplicating them here doubles
@@ -142,4 +145,21 @@ Final Answer: Here is what I found: …
   }
 
   return sections.join('\n\n');
+}
+
+/**
+ * Build the VOLATILE tail — per-turn content that must not live in the cached
+ * system prompt: session state and retrieved memory. Injected as one user-role
+ * message immediately before the user's actual message, so the long stable prefix
+ * (system prompt + conversation history) stays KV-cached across turns while only
+ * this small block re-prefills. Recency also favors it: this is the last thing the
+ * model reads before the request.
+ *
+ * Returns null when there's nothing volatile — no empty message, no cache churn.
+ */
+export function buildVolatileContext(promptContext?: PromptContext): string | null {
+  const parts: string[] = [];
+  if (promptContext?.statePreamble) parts.push(promptContext.statePreamble);
+  if (promptContext?.userPriming) parts.push(promptContext.userPriming);
+  return parts.length ? parts.join('\n\n') : null;
 }

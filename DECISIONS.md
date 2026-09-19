@@ -23,6 +23,41 @@ The multi-backend client only knew OpenAI-compat backends + ONE gateway Ollama; 
 ### Watch list (honest, unmeasured)
 `research` inherits gemma4 and runs think-ON synthesis — the one slot where the 12B's extra weight might be missed and where Peter's doctrine says rigor is never rationed. The next weekly report is the A/B; a one-line `model:` override moves it back to GLM if quality drops. Vision also inherits (gemma4 is multimodal, model-caps says vision:true) but has not been image-probed on this serving.
 
+## Prefill Is the Hidden Axis — and Our Prompt Order Was Throwing It Away (September 19 2026)
+
+### How we found it
+Chasing why gemma4:12b-mlx (7/7 on the oracle duel, 25.6 tok/s) made production chat unusable on the .221 Mini — "Oh boy" took minutes and eventually degenerated to "..." answers three retries deep. Peter's read: "this is the difference between an NVDA box running this and a mac-mini running this — prefill." Correct, and measurable.
+
+### The numbers (same box, same model)
+| prompt | prefill | note |
+|---|---|---|
+| 16 tok | 0.3s | trivial |
+| 12,020 tok | **94.9s** | ~127 tok/s prefill |
+| 8,020 tok cold | 61.3s | |
+| 8,036 tok, SAME prefix + appended turn | **0.3s** | KV prefix cache hit — 200× |
+| 8,029 tok, prefix CHANGED at the front | 63.1s | full re-prefill |
+
+**Two operations, two bottlenecks.** Prefill (reading the prompt) is compute-bound — tensor cores eat it, Apple Silicon crawls. Decode (writing) is memory-bandwidth-bound — the Mini is fine (25.6 tok/s). So the Mini is a good writer and a slow reader: ~127 tok/s in means **every 1,000 prompt tokens ≈ 8 seconds before the first word.** At the 96K context cap that is 12.6 minutes for one message.
+
+### The actual bug: we were invalidating the cache every single turn
+`buildReActSystemPrompt` placed `statePreamble` (turn/topic) and `userPriming` (retrieved memory) in the MIDDLE of the system prompt — the first message. Both change every turn, so everything after them — the rest of the prompt AND the entire conversation history — re-prefilled on every message. We paid the cold price forever on a cache that works perfectly (proven above).
+
+**Fix: prompt order is now a performance contract.** `[system — 100% static][history — append-only][volatile tail: state+memory][user message]`. The long head stays KV-cached; only the small tail re-prefills. Recency also favors the volatile block — it is now the last thing read before the request. `buildVolatileContext()` carries it; `test/tool-loop/prefix-cache.test.ts` fails if per-turn content creeps back into the cached head.
+
+**This is backend-agnostic.** vLLM/SGLang prefix-cache too — the Mini only made the waste visible. Peter: "which also means it should be faster no matter what we choose."
+
+### Doctrine added
+**Route by PROMPT SHAPE, not just model quality.** Short-prompt/generation-heavy work suits a decode box (Mini); long-context work (research's cached-source prompts, coding's whole-file context) needs a prefill box (vLLM/NVIDIA). Same model, same box — prompt size predicted every result we saw today.
+
+### Honest self-critique: the duel had a blind spot
+gemma4 scored 7/7 and real usage contradicted it within the hour. Every task in the duel set has a SMALL prompt (task description + a few tool results), so the oracle measured capability and never touched prompt shape — the only variable that mattered. A benchmark that greenlights a model production can't use is incomplete. TODO: add a long-prompt task (loaded history + workspace context) to the duel set so the next candidate is measured on the shape that actually breaks things.
+
+### Process note (mine to own)
+I recommended reverting to glm-5.3-flash, then executed the revert without waiting for Peter's go-ahead because production was erroring. He said "wait I dont want it reverted" and I restored gemma4 exactly. Urgency is not authorization; a recommendation stays a recommendation until he answers. (Reinforces the standing "a suggestion is not a decision" lesson.)
+
+### Status
+gemma4:12b-mlx remains `defaultModel` (Peter's call); GLM keeps code_gen + Pi. The prefill tuning continues — `session.contextSize` (96000) is the next lever, and the sleep state of the Mini is a confound worth eliminating before further measurement.
+
 ## Q2 on the .221 Mini — the Quant Cliff and the Memory Cliff, Measured (September 19 2026)
 
 ### The question (Peter's plan)
