@@ -1595,12 +1595,14 @@ async function runAsBareChat(
   if (isVoice) {
     systemContent += '\n\nIMPORTANT: This is a voice conversation. Your response will be spoken aloud via TTS. Keep responses concise. Do NOT use emojis, markdown formatting, bullet points, or special characters — they will be verbalized. Use plain conversational English only.';
   }
-  if (statePreamble) {
-    systemContent += '\n\n' + statePreamble;
-  }
-  if (userPriming) {
-    systemContent += '\n\n' + userPriming;
-  }
+  // PREFIX-CACHE CONTRACT (2026-09-19) — mirrors the tool-loop engine. statePreamble
+  // (turn/topic) and userPriming (FalkorDB facts, re-retrieved per message) USED to be
+  // appended to systemContent here. Both change every turn, so they invalidated the
+  // cached KV prefix for the whole prompt below them — conversation history included —
+  // making every chat message pay a full cold prefill (8K tokens ≈ 61s on the Mini vs
+  // 0.3s with the prefix intact). They now ride a volatile tail message just before the
+  // user's, so the static head + append-only history stay cached.
+  const volatileContext = [statePreamble, userPriming].filter(Boolean).join('\n\n');
 
   // Strip thinking from history for chat — Gemma 4 docs: "No Thinking Content in History"
   // and old qwen3 thinking tags in history confuse other models into generating massive output.
@@ -1612,6 +1614,7 @@ async function runAsBareChat(
   const messages: OllamaMessage[] = [
     { role: 'system', content: systemContent },
     ...cleanHistory,
+    ...(volatileContext ? [{ role: 'user' as const, content: volatileContext }] : []),
     { role: 'user', content: message },
   ];
 
