@@ -4,6 +4,19 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Q2 on the .221 Mini — the Quant Cliff and the Memory Cliff, Measured (September 19 2026)
+
+### The question (Peter's plan)
+Route ALL conversational traffic through Qwen3.8-27B at Q2 on a new Mac Mini (oMLX, 262K, MTP), reserving glm-5.3-flash for coding only. Same oracle duel as the dsh/GLM rounds; think:false pinned for parity with NVFP4 qwen3.8's historical 7/7.
+
+### Verdict: 1/7 — dead on this hardware, two independent cliffs
+- **Quant cliff (model signal):** probe with thinking ON got 17×23 WRONG (rambling, degraded chains); md-linecounts thrashed 30 iterations/259s without ever writing the file (NVFP4: 8.8s). One clean PASS (csv-revenue, correct, 117s — 6× slower). Think-OFF short answers stayed correct and fast (3 ctok/1.2s).
+- **Memory cliff (box signal):** ~13.5GB dynamic ceiling vs a 27B that barely fits — oMLX's prefill guard bounced requests as KV grew (12.92→13.85GB creep across the run), then EVICTED the model entirely (507, "current: 2.70GB"). Arena loops grow context by nature; this box rejects grown context by design. Q3 never fit at all.
+- **Bonus finding (server, not model):** gemma-4-12B on oMLX produced pure degeneracy ("o. o. o.", dots at temp 0) in BOTH mxfp4 and standard 4-bit conversions — but answered 391 correctly via /v1/completions with a hand-built <start_of_turn> template. oMLX applies no/wrong chat template when the conversion ships without one; the model files were innocent. Diagnosis method worth keeping: raw-completion-with-hand-template is the discriminating probe for template-vs-runtime bugs.
+
+### Standing conclusions
+2-bit is past the quality cliff for agentic work even when it fits; a 16GB-class box cannot hold a 27B with agentic KV headroom. The Mini's real profile is small-model (4-14B at 4-8bit) utility/steward work — short prompts, no context growth — where even the Q2 was correct and fast. Eval infra gained DUEL_MODEL + DUEL_TOOLSTYLE parameterization; the oMLX backend entry stays in config for future candidates. Next tenant under test: gemma4:12b via Ollama on the same box.
+
 ## The Factory — Steward and Software Factory Converge (August 29 2026, VISION SET, NO BUILD YET)
 
 ### Peter's design (his words, structured)

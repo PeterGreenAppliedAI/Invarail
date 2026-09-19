@@ -32,7 +32,10 @@ import { createPiBuildTool } from '../src/tools/pi-build.js';
 
 const execFileAsync = promisify(execFile);
 
-const MODEL = 'qwen3.8-27b';
+const MODEL = process.env.DUEL_MODEL || 'qwen3.8-27b';
+// Tool-calling convention for the invarail arm: models without native tool templates
+// (gemma lineage on most servings) duel with prompt-described tools + fallback parsers.
+const TOOLSTYLE = (process.env.DUEL_TOOLSTYLE === 'text' ? 'text' : 'native') as 'native' | 'text';
 const DSH_HOME = join(process.env.HOME ?? '', '.dsh-home');
 const DSH_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -232,7 +235,7 @@ async function runInvarail(client: OllamaClient, config: ReturnType<typeof loadC
       maxTokens: 2048,
       contextSize: 32768,
       systemPrompt: ARENA_PROMPT(tools),
-      toolStyle: 'native',
+      toolStyle: TOOLSTYLE,
       think: false, // duel-pinned parity with the arena duel
     },
     tools,
