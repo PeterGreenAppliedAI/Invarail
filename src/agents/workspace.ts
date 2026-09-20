@@ -55,7 +55,7 @@ These workspace files are your memory. Read them. Update them. They persist acro
 - Read USER.md to understand who you're helping
 - Check TOOLS.md for environment-specific notes
 - Use memory tools to search past conversations when relevant
-- Update MEMORY.md when you learn important persistent facts
+- Save important persistent facts with memory_save (USER.md and MEMORY.md are read-only to you)
 
 ## Tool Usage
 - Use the right tool for the job — don't narrate, execute
@@ -133,7 +133,7 @@ This file exists because this is a brand-new workspace. Complete these steps, th
 
 1. **Introduce yourself** — Read IDENTITY.md, greet the user, ask for their name
 2. **Learn about the user** — Ask about their timezone, preferences, how they want to be addressed
-3. **Update USER.md** — Save what you learn
+3. **Save what you learn with memory_save** — USER.md is the owner's own file and read-only to you
 4. **Confirm your identity** — Ask if the defaults in IDENTITY.md feel right, update if requested
 5. **Delete this file** — Use write_file to remove BOOTSTRAP.md (it only runs once)
 

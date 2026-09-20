@@ -520,6 +520,17 @@ export class Orchestrator {
             '',
             'If nothing worth remembering, return [].',
             ...((() => {
+              // USER.md is the authoritative owner profile — hand-written, read-only
+              // to the agent. Anything already in it must never become a graph fact:
+              // that is the two-stores-one-truth seam, and the duplicate would carry
+              // a weaker provenance than the file it copied.
+              try {
+                const profile = readFileSync(join(resolveWorkspacePath(this.config.agents.default, this.config), 'USER.md'), 'utf-8').trim();
+                if (profile) return ['', 'OWNER PROFILE (authoritative — do NOT extract anything already stated here):', profile.slice(0, 2000)];
+              } catch { /* no USER.md is fine */ }
+              return [];
+            })()),
+            ...((() => {
               // Show existing facts so the LLM avoids re-extracting them
               if (this.factStore && senderId) {
                 try {

@@ -2,12 +2,19 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { InvarailTool, ToolContext } from './types.js';
 
-const WRITABLE_FILES = ['TOOLS.md', 'USER.md', 'HEARTBEAT.md'] as const;
+// USER.md is deliberately NOT here (2026-09-20). It is the owner's hand-written
+// identity card — name, family, company — and the agent used to be able to
+// overwrite the whole file. That made two stores of overlapping facts with no
+// rule for which wins, and put identity one bad model turn from erasure.
+// Identity is a rule, not an observation: the file is authoritative and the
+// agent reads it. What the agent learns goes through memory_save.
+const WRITABLE_FILES = ['TOOLS.md', 'HEARTBEAT.md'] as const;
+const PROTECTED_FILES = ['USER.md', 'SOUL.md', 'IDENTITY.md', 'AGENTS.md', 'BOOTSTRAP.md'] as const;
 
 export function createWorkspaceWriteTool(): InvarailTool {
   return {
     name: 'workspace_write',
-    description: `Write to a workspace file. Writable files: ${WRITABLE_FILES.join(', ')}. Protected files (SOUL.md, IDENTITY.md, AGENTS.md, BOOTSTRAP.md) are read-only.`,
+    description: `Write to a workspace file. Writable files: ${WRITABLE_FILES.join(', ')}. Protected files (${PROTECTED_FILES.join(', ')}) are read-only. DO NOT use this to record things you learn about the user — USER.md is theirs; use memory_save.`,
     parameterDescription: `file (required): Filename to write. One of: ${WRITABLE_FILES.join(', ')}. content (required): New file content (full overwrite).`,
     example: 'workspace_write[{"file": "TOOLS.md", "content": "# Tools\\n\\nUpdated tool documentation..."}]',
     parameters: {
@@ -27,7 +34,8 @@ export function createWorkspaceWriteTool(): InvarailTool {
       if (content === undefined) return 'Error: content parameter is required';
 
       if (!WRITABLE_FILES.includes(file as any)) {
-        return `Error: "${file}" is not writable. Writable files: ${WRITABLE_FILES.join(', ')}. SOUL.md, IDENTITY.md, AGENTS.md, and BOOTSTRAP.md are protected.`;
+        const hint = file === 'USER.md' ? ' USER.md is the owner\'s own profile — save what you learned with memory_save instead.' : '';
+        return `Error: "${file}" is not writable. Writable files: ${WRITABLE_FILES.join(', ')}. Protected: ${PROTECTED_FILES.join(', ')}.${hint}`;
       }
 
       const workspace = ctx.workspacePath;
