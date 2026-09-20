@@ -852,13 +852,18 @@ export class Orchestrator {
         const pending = JSON.parse(raw) as { facts: FactInput[]; senderId?: string };
         const senderId = pending.senderId ?? principal;
 
+        // !save is the ONLY path where a human reads the extracted facts and
+        // confirms them, so it is the only one that may claim 'stated'. Every
+        // other writer leaves the conservative 'observed' default.
+        const facts: FactInput[] = pending.facts.map(f => ({ ...f, provenance: 'stated' as const }));
+
         // Write through FactStore (flat) + GraphMemory (graph)
         if (this.factStore) {
-          await this.factStore.writeFactsBatch(pending.facts, senderId, 'user/approved');
+          await this.factStore.writeFactsBatch(facts, senderId, 'user/approved');
           this.factStore.rebuildFacts(senderId);
         }
         if (this.graphMemory) {
-          for (const fact of pending.facts) {
+          for (const fact of facts) {
             try {
               await this.graphMemory.addFact(fact, senderId, route.sessionKey);
             } catch (err) {

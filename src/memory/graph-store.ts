@@ -1,6 +1,6 @@
 import { FalkorDB, Graph } from 'falkordb';
 import { DEFAULT_EMBED_MODEL, type OllamaClient } from '../ollama/client.js';
-import type { FactEntry, FactInput } from '../config/types.js';
+import type { FactEntry, FactInput, FactProvenance } from '../config/types.js';
 
 export interface GraphMemoryConfig {
   host: string;
@@ -23,6 +23,34 @@ export interface GraphSearchResult {
   similarity?: number;
   createdAt: string;
   entities: string[];
+  /** How we know this fact. Nodes written before the field existed read as
+   *  'observed' — the conservative default, never 'stated'. */
+  provenance: FactProvenance;
+}
+
+/** Fact nodes predating the provenance field return null from Cypher. Coalesce
+ *  DOWN to 'observed': an unknown-origin fact must never be presented to the
+ *  model as something the owner confirmed. */
+export function readProvenance(value: unknown): FactProvenance {
+  return value === 'stated' || value === 'inferred' ? value : 'observed';
+}
+
+/** Every read path builds the same object out of a Cypher row — the shape was
+ *  already copy-pasted at six call sites before provenance made it eight fields,
+ *  which is exactly how a field ends up populated on some paths and not others.
+ *  `prefix` is the return alias: 'f.', 'related.', or '' when the query used AS. */
+function rowToResult(row: Record<string, unknown>, prefix: string, score: number): GraphSearchResult {
+  const at = (field: string) => row[`${prefix}${field}`];
+  return {
+    text: at('text') as string,
+    importance: (at('importance') as number) ?? 2,
+    category: (at('category') as string) ?? 'stable',
+    confidence: (at('confidence') as number) ?? 0.8,
+    score,
+    createdAt: (at('createdAt') as string) ?? '',
+    entities: [],
+    provenance: readProvenance(at('provenance')),
+  };
 }
 
 const DEFAULT_CONFIG: GraphMemoryConfig = {
@@ -212,13 +240,14 @@ export class GraphMemoryStore {
       `CREATE (:Fact {
         id: $id, text: $text, senderId: $senderId,
         importance: $importance, category: $category, confidence: $confidence,
-        createdAt: $createdAt, source: $source,
+        createdAt: $createdAt, source: $source, provenance: $provenance,
         embedding: vecf32($emb)
       })`,
       {
         params: {
           id, text, senderId, importance, category, confidence,
           createdAt: now, source: input.source ?? 'unknown',
+          provenance: readProvenance(input.provenance),
           emb: embedding,
         },
       }
@@ -351,6 +380,9 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
      *  scoring only ORDERS results — without a floor, a fresh high-importance fact
      *  passes with zero relevance to the query. */
     minSimilarity?: number;
+    /** Restrict to these epistemic classes (e.g. ['stated'] for "only what the
+     *  owner actually confirmed"). Omitted = all classes. */
+    provenance?: FactProvenance[];
   }): Promise<GraphSearchResult[]> {
     if (!this.graph) await this.connect();
 
@@ -374,6 +406,12 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
       whereClauses.push('node.createdAt >= $since');
       filterParams.since = since;
     }
+    if (filters?.provenance?.length) {
+      // coalesce, not a bare IN: pre-field nodes hold null and must filter as
+      // 'observed' rather than silently dropping out of every provenance query.
+      whereClauses.push(`coalesce(node.provenance, 'observed') IN $provs`);
+      filterParams.provs = filters.provenance;
+    }
 
     // Vector KNN + metadata filters
     const result = await this.graph!.query(
@@ -381,7 +419,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
        YIELD node, score
        WHERE ${whereClauses.join(' AND ')}
        RETURN node.text, node.importance, node.category, node.confidence,
-              node.createdAt, score, node.id`,
+              node.createdAt, node.provenance, score, node.id`,
       { params: filterParams }
     );
 
@@ -403,6 +441,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
         similarity,
         createdAt: row['node.createdAt'] ?? '',
         entities: [],
+        provenance: readProvenance(row['node.provenance']),
       };
     }).filter((r: GraphSearchResult) =>
       filters?.minSimilarity === undefined || (r.similarity ?? 0) >= filters.minSimilarity);
@@ -431,21 +470,13 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
     const result = await this.graph!.query(
       `MATCH (f:Fact {senderId: $senderId})
        WHERE f.importance >= $minImp
-       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt
+       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt, f.provenance
        ORDER BY f.importance DESC, f.confidence DESC
        LIMIT 10`,
       { params: { senderId, minImp: minImportance } }
     );
 
-    return (result.data ?? []).map((row: any) => ({
-      text: row['f.text'],
-      importance: row['f.importance'],
-      category: row['f.category'],
-      confidence: row['f.confidence'],
-      score: 1,
-      createdAt: row['f.createdAt'] ?? '',
-      entities: [],
-    }));
+    return (result.data ?? []).map((row: any) => rowToResult(row, 'f.', 1));
   }
 
   /**
@@ -457,20 +488,12 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
     const result = await this.graph!.query(
       `MATCH (f:Fact {senderId: $senderId})-[:ABOUT]->(e:Entity)<-[:ABOUT]-(related:Fact)
        WHERE f.text = $text AND related.text <> $text
-       RETURN DISTINCT related.text, related.importance, related.category, related.confidence, related.createdAt
+       RETURN DISTINCT related.text, related.importance, related.category, related.confidence, related.createdAt, related.provenance
        LIMIT 5`,
       { params: { text: factText, senderId } }
     );
 
-    return (result.data ?? []).map((row: any) => ({
-      text: row['related.text'],
-      importance: row['related.importance'],
-      category: row['related.category'],
-      confidence: row['related.confidence'],
-      score: 0.5,
-      createdAt: row['related.createdAt'] ?? '',
-      entities: [],
-    }));
+    return (result.data ?? []).map((row: any) => rowToResult(row, 'related.', 0.5));
   }
 
   /**
@@ -536,20 +559,12 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
 
     const result = await this.graph!.query(
       `MATCH (f:Fact {senderId: $senderId})
-       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt
+       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt, f.provenance
        ORDER BY f.createdAt DESC`,
       { params: { senderId } }
     );
 
-    return (result.data ?? []).map((row: any) => ({
-      text: row['f.text'],
-      importance: row['f.importance'],
-      category: row['f.category'],
-      confidence: row['f.confidence'],
-      score: 1,
-      createdAt: row['f.createdAt'] ?? '',
-      entities: [],
-    }));
+    return (result.data ?? []).map((row: any) => rowToResult(row, 'f.', 1));
   }
 
   /**
@@ -796,20 +811,12 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
        WHERE s.at <= $asOf
        WITH f, newer
        WHERE newer IS NULL
-       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt
+       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt, f.provenance
        ORDER BY f.importance DESC, f.createdAt DESC`,
       { params: { senderId, asOf: asOf.toISOString() } }
     );
 
-    return (result.data ?? []).map((row: any) => ({
-      text: row['f.text'],
-      importance: row['f.importance'],
-      category: row['f.category'],
-      confidence: row['f.confidence'],
-      score: 1,
-      createdAt: row['f.createdAt'] ?? '',
-      entities: [],
-    }));
+    return (result.data ?? []).map((row: any) => rowToResult(row, 'f.', 1));
   }
 
   /**
@@ -828,7 +835,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
        WHERE f.createdAt >= $since AND f.createdAt <= $until
        OPTIONAL MATCH (f)-[:SUPERSEDES]->(old:Fact)
        WITH f, old WHERE old IS NULL
-       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt
+       RETURN f.text, f.importance, f.category, f.confidence, f.createdAt, f.provenance
        ORDER BY f.createdAt DESC`,
       { params: { senderId, since: since.toISOString(), until: untilStr } }
     );
@@ -843,15 +850,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
     );
 
     return {
-      added: (addedResult.data ?? []).map((row: any) => ({
-        text: row['f.text'],
-        importance: row['f.importance'],
-        category: row['f.category'],
-        confidence: row['f.confidence'],
-        score: 1,
-        createdAt: row['f.createdAt'] ?? '',
-        entities: [],
-      })),
+      added: (addedResult.data ?? []).map((row: any) => rowToResult(row, 'f.', 1)),
       superseded: (supersededResult.data ?? []).map((row: any) => ({
         oldText: row['old.text'],
         newText: row['new.text'],
@@ -890,7 +889,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
        WHERE related.senderId = $senderId AND related.id <> $seedId
        RETURN DISTINCT related.text AS text, related.importance AS importance,
               related.category AS category, related.confidence AS confidence,
-              related.createdAt AS createdAt, 1 AS hops
+              related.createdAt AS createdAt, related.provenance AS provenance, 1 AS hops
        LIMIT $topK`,
       { params: { seedId, senderId, topK } }
     );
@@ -901,7 +900,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
        WHERE far.senderId = $senderId AND far.id <> $seedId AND mid.id <> $seedId
        RETURN DISTINCT far.text AS text, far.importance AS importance,
               far.category AS category, far.confidence AS confidence,
-              far.createdAt AS createdAt, 2 AS hops
+              far.createdAt AS createdAt, far.provenance AS provenance, 2 AS hops
        LIMIT $topK`,
       { params: { seedId, senderId, topK } }
     );
@@ -913,15 +912,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
       .map((row: any) => {
         if (seen.has(row.text)) return null;
         seen.add(row.text);
-        return {
-          text: row.text,
-          importance: row.importance ?? 2,
-          category: row.category ?? 'stable',
-          confidence: row.confidence ?? 0.8,
-          score: 1 / (row.hops ?? 1),
-          createdAt: row.createdAt ?? '',
-          entities: [],
-        };
+        return rowToResult(row, '', 1 / (row.hops ?? 1));
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
   }

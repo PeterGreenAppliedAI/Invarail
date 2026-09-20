@@ -118,6 +118,7 @@ export class FactStore {
       category: parsed.category,
       confidence: parsed.confidence,
       source: sourceOverride ?? parsed.source ?? `${dateStr}/mem_${ts}.md`,
+      provenance: parsed.provenance,
       createdAt,
       expiresAt,
       hash,

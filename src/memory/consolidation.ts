@@ -1,7 +1,7 @@
 import type { OllamaClient } from '../ollama/client.js';
 import type { EmbeddingStore, MemorySearchResult } from './embeddings.js';
 import type { FactStore } from './fact-store.js';
-import type { FactEntry } from '../config/types.js';
+import type { FactEntry, FactInput } from '../config/types.js';
 
 export type ConsolidationAction = 'MERGE' | 'REPLACE' | 'KEEP_SEPARATE';
 
@@ -205,7 +205,7 @@ export async function consolidateFactsWithLLM(
   console.log(`[Consolidation] Found ${candidates.length} candidate pairs, processing top ${toProcess.length}`);
 
   const removedIds = new Set<string>();
-  const mergedFacts: Array<{ text: string; category: string; source: string }> = [];
+  const mergedFacts: FactInput[] = [];
 
   for (const pair of toProcess) {
     // Skip if either fact was already removed in this run
@@ -220,6 +220,9 @@ export async function consolidateFactsWithLLM(
         text: decision.mergedText,
         category: pair.a.category,
         source: 'consolidation/llm-merge',
+        // A merge is model-authored prose, not a sentence anyone said — even when
+        // both inputs were 'stated'. Merging must never launder provenance upward.
+        provenance: 'inferred',
       });
       console.log(`[Consolidation] MERGE: "${pair.a.text.slice(0, 50)}..." + "${pair.b.text.slice(0, 50)}..."`);
     } else if (decision.action === 'REPLACE') {
@@ -234,11 +237,9 @@ export async function consolidateFactsWithLLM(
 
   // Write merged facts as new entries (appends to index files)
   for (const merged of mergedFacts) {
-    await factStore.writeFact(
-      { text: merged.text, category: merged.category as any, confidence: 0.9, source: merged.source },
-      senderId,
-      merged.source,
-    );
+    // Spread, don't re-list fields: the old hand-copied literal silently dropped
+    // whatever the writer set that it didn't know about (provenance, most recently).
+    await factStore.writeFact({ ...merged, confidence: 0.9 }, senderId, merged.source);
   }
 
   // Rebuild — this re-reads all index files.

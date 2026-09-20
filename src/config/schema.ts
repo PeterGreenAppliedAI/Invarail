@@ -509,12 +509,26 @@ export const BriefingConfigSchema = z.object({
 
 export const FactCategorySchema = z.enum(['stable', 'context', 'decision', 'question']);
 
+/** Epistemic provenance — HOW we know a fact. Orthogonal to `source`, which is a
+ *  free-text WHERE ("session/foo.json", "consolidation/llm-merge") and cannot carry
+ *  this distinction. Retrieval and injection need it: "the owner confirmed this" is
+ *  a different claim from "the heartbeat noticed it" or "a model merged it out of
+ *  two other facts", and a model that can't tell them apart will assert all three
+ *  with equal confidence.
+ *    stated   — the owner asserted or explicitly confirmed it (the !save gate)
+ *    observed — extracted autonomously from what was said or done, never confirmed
+ *    inferred — a model derived it rather than reading it off a turn
+ *  Defaults to 'observed': the conservative read for any writer that doesn't
+ *  declare, and for every fact written before this field existed. */
+export const FactProvenanceSchema = z.enum(['stated', 'observed', 'inferred']);
+
 export const FactEntrySchema = z.object({
   id: z.string(),
   text: z.string(),
   category: FactCategorySchema.default('stable'),
   confidence: z.number().min(0).max(1).default(0.8),
   source: z.string(),
+  provenance: FactProvenanceSchema.default('observed'),
   createdAt: z.string(),
   expiresAt: z.string().optional(),
   hash: z.string(),
@@ -533,6 +547,7 @@ export const FactInputSchema = z.object({
   category: FactCategorySchema.default('stable'),
   confidence: z.number().min(0).max(1).default(0.8),
   source: z.string().optional(),
+  provenance: FactProvenanceSchema.default('observed'),
   expiresAt: z.string().optional(),
   tags: z.array(z.string()).default([]),
   entities: z.array(z.string()).default([]),

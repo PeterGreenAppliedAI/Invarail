@@ -1,6 +1,6 @@
 import type { OllamaClient } from './ollama/client.js';
 import type { ToolRegistry } from './tools/registry.js';
-import type { InvarailConfig, SpecialistConfig, ChannelSecurity } from './config/types.js';
+import type { InvarailConfig, SpecialistConfig, ChannelSecurity, FactProvenance } from './config/types.js';
 import type { ToolContext, ToolExecutor } from './tools/types.js';
 import type { OllamaMessage } from './ollama/types.js';
 import { classifyMessage, type ClassifyResult } from './router/classifier.js';
@@ -240,6 +240,22 @@ function resolveConfirmSet(
  * Build user priming context from graph memory or flat store.
  * Runs in parallel with router classification for latency savings.
  */
+/**
+ * Render one fact for injection, carrying HOW we know it.
+ *
+ * 'stated' renders bare — it's the owner's own confirmed word and the model may
+ * use it directly. The weaker two are marked, because the failure this fixes is
+ * the model asserting its own guess back at the owner in the same voice as
+ * something they actually said. Markers are three words; the class distinction
+ * is worth that much of the budget.
+ */
+function formatPrimingFact(fact: { text: string; provenance: FactProvenance }): string {
+  const mark = fact.provenance === 'stated' ? ''
+    : fact.provenance === 'inferred' ? ' [inferred]'
+    : ' [observed, unconfirmed]';
+  return `- ${fact.text}${mark}`;
+}
+
 async function buildUserPriming(params: DispatchParams, message: string, senderId: string): Promise<string> {
   try {
     let stableFacts: string[] = [];
@@ -247,7 +263,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
 
     if (params.graphMemory) {
       const stable = await params.graphMemory.getStableFacts(senderId, 4);
-      stableFacts = stable.slice(0, 5).map(f => `- ${f.text}`);
+      stableFacts = stable.slice(0, 5).map(formatPrimingFact);
 
       if (message.length > 10) {
         // Relevance floor: multi-signal scoring only orders results — without a
@@ -261,7 +277,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         contextFacts = results
           .filter(r => !stableFacts.some(s => s.includes(r.text)))
           .slice(0, MAX_CONTEXT_FACTS)
-          .map(r => `- ${r.text}`);
+          .map(formatPrimingFact);
 
         // Lazy multi-hop: only when the query IS memory-relevant (some results
         // passed the floor) but sparse. Firing on zero relevant hits would add
@@ -271,7 +287,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
             const hops = await params.graphMemory.findMultiHop(message, senderId, 2, 3);
             const hopFacts = hops
               .filter(h => !stableFacts.some(s => s.includes(h.text)) && !contextFacts.some(c => c.includes(h.text)))
-              .map(h => `- ${h.text}`);
+              .map(formatPrimingFact);
             contextFacts.push(...hopFacts.slice(0, MAX_CONTEXT_FACTS - contextFacts.length));
           } catch { /* multi-hop optional */ }
         }
@@ -282,7 +298,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         .filter(f => (f.importance ?? 2) >= 4 && f.confidence >= 0.7)
         .sort((a, b) => (b.importance ?? 2) - (a.importance ?? 2))
         .slice(0, 5)
-        .map(f => `- ${f.text}`);
+        .map(formatPrimingFact);
     }
 
     let modelSummary: string | null = null;
@@ -293,7 +309,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     const allPriming = [...new Set([...stableFacts, ...contextFacts])];
     const primingParts: string[] = [];
     if (allPriming.length > 0) {
-      primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${allPriming.join('\n')}\nThese facts reflect when they were written — a file, URL, or plan they mention may have changed since; verify before relying on one.`);
+      primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${allPriming.join('\n')}\nThese facts reflect when they were written — a file, URL, or plan they mention may have changed since; verify before relying on one. An unmarked line is something they told you directly. A line marked [observed, unconfirmed] or [inferred] is something you worked out on your own and they never confirmed — you may use it, but ask rather than assert it back to them as fact.`);
     }
 
     // Lessons: floor-gated one-liners from past failures that have RECURRED

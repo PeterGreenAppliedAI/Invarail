@@ -34,6 +34,7 @@ import type {
   HeartbeatConfigSchema,
   VoiceConfigSchema,
   FactCategorySchema,
+  FactProvenanceSchema,
   FactEntrySchema,
   FactInputSchema,
 } from './schema.js';
@@ -72,5 +73,6 @@ export type VisionConfig = z.infer<typeof VisionConfigSchema>;
 export type HeartbeatConfig = z.infer<typeof HeartbeatConfigSchema>;
 export type VoiceConfig = z.infer<typeof VoiceConfigSchema>;
 export type FactCategory = z.infer<typeof FactCategorySchema>;
+export type FactProvenance = z.infer<typeof FactProvenanceSchema>;
 export type FactEntry = z.infer<typeof FactEntrySchema>;
 export type FactInput = z.input<typeof FactInputSchema>;
