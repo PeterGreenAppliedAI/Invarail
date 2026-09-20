@@ -1885,6 +1885,13 @@ export class Orchestrator {
       } else {
         // Non-voice path: Discord text streaming (existing behavior)
         let streamMsg: any = null;
+        // The bubble is created by an un-awaited send() inside onStream. When the
+        // final answer is the FIRST stream event (a no-tool arena answer), delivery
+        // runs before that send resolves, sees streamMsg === null, sends the answer
+        // as a fresh message — and the bubble then lands as a second copy ending in
+        // " ..." (live 2026-09-20: every short follow-up in the memory arena). Track
+        // the in-flight creation so delivery can wait for it.
+        let streamMsgPending: Promise<void> | null = null;
         let streamBuffer = '';
         let lastEditAt = 0;
         const EDIT_THROTTLE_MS = 1000;
@@ -1911,10 +1918,12 @@ export class Orchestrator {
                   const initContent = scrubbed.length > 1990
                     ? scrubbed.slice(0, 1990) + ' ...'
                     : scrubbed + ' ...';
-                  streamMsg = await (ch as any).send({
+                  const creation = (ch as any).send({
                     content: initContent,
                     reply: { messageReference: msg.id },
-                  });
+                  }) as Promise<any>;
+                  streamMsgPending = creation.then(m => { streamMsg = m; }, () => undefined);
+                  await streamMsgPending;
                 }
               }
             } else {
@@ -1942,6 +1951,12 @@ export class Orchestrator {
         const result = await dispatchMessage({ ...dispatchBase, onStream, onProgress });
 
         console.log(`[Orchestrator] → ${result.category} (${result.iterations} steps)`);
+
+        // Let an in-flight bubble creation settle before deciding edit-vs-send
+        // (bounded: a stuck Discord call must not hold the reply hostage).
+        if (streamMsgPending) {
+          await Promise.race([streamMsgPending, new Promise<void>(r => setTimeout(r, 3000))]);
+        }
 
         if (streamMsg) {
           const media = extractMediaAttachments(result.answer);

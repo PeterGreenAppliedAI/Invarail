@@ -918,7 +918,13 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
     // no tool serves — an unconditional "you MUST use tools" order sends most
     // models spiraling through irrelevant calls (2026-08 eval: 13/16 models
     // fabricated web fetches for a unit conversion rather than defy the order).
-    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted) {
+    // Not on short conversational follow-ups mid-session ("Awesome", "interesting"):
+    // sticky routing keeps those in the tool arena on purpose, and a direct reply
+    // is the right answer there. Repairing it cost a wasted 27B round trip per
+    // acknowledgment and, with the stream race, a duplicated reply (2026-09-20).
+    // Same 30-char heuristic the router's conversational guard uses.
+    const shortFollowUp = (history?.length ?? 0) > 0 && userMessage.trim().length < 30;
+    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted && !shortFollowUp) {
       console.log(`[ReAct] Step ${i + 1}: premature answer without tool use — "${answer.slice(0, 80)}..."`);
       if (answer.trim()) lastRejectedAnswer = answer;
       messages.push(msg);
