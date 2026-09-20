@@ -1408,14 +1408,19 @@ export class Orchestrator {
         const fullDeckPath = join(workspacePath, deckPath);
         const deckExists = existsSync(fullDeckPath);
 
-        let response = result.answer;
+        // [FILE:] tokens must become ATTACHMENTS here like every other delivery path —
+        // this handler sent result.answer raw, so a finished research PDF arrived in
+        // Discord as the literal text "[FILE:data/media/documents/....pdf]" and the
+        // report was never delivered (live-caught 2026-09-19).
+        const media = extractMediaAttachments(result.answer);
+        let response = media.cleanText || result.answer;
         if (deckExists) {
           response += `\n\n📊 **View your deck:** /console/api/files/${deckPath}`;
         }
 
         await this.channelRegistry.send(
           { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId },
-          { text: response },
+          { text: response, attachments: media.attachments.length > 0 ? media.attachments : undefined },
         );
       } catch (err) {
         const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Research pipeline failed', err);
@@ -1767,16 +1772,22 @@ export class Orchestrator {
 
         console.log(`[Orchestrator] → ${result.category} (${result.iterations} steps, voice)`);
 
+        // Strip [FILE:] tokens before TTS — an unstripped token gets SPOKEN ALOUD,
+        // and the file never arrives. Same class as the !research leak (2026-09-19).
+        const voiceMedia = extractMediaAttachments(result.answer);
+        const voiceText = voiceMedia.cleanText || result.answer;
+
         msg.onProgress?.('tts');
-        const audioBuffer = await this.ttsService.synthesize(result.answer);
+        const audioBuffer = await this.ttsService.synthesize(voiceText);
         const target = { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id };
+        const voiceAttachments = voiceMedia.attachments.length > 0 ? voiceMedia.attachments : undefined;
 
         if (audioBuffer) {
           console.log(`[Orchestrator] TTS: ${audioBuffer.length} bytes`);
-          await this.channelRegistry.send(target, { text: result.answer, audio: { data: audioBuffer, mimeType: audioMime } });
+          await this.channelRegistry.send(target, { text: voiceText, audio: { data: audioBuffer, mimeType: audioMime }, attachments: voiceAttachments });
         } else {
           console.warn('[Orchestrator] TTS synthesis failed');
-          await this.channelRegistry.send(target, { text: result.answer });
+          await this.channelRegistry.send(target, { text: voiceText, attachments: voiceAttachments });
         }
       } else {
         // Non-voice path: Discord text streaming (existing behavior)
