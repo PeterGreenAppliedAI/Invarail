@@ -2002,6 +2002,10 @@ export class Orchestrator {
           const media = extractMediaAttachments(result.answer);
           const text = media.cleanText || result.answer;
           const chunks = splitFinalMessage(text, 2000);
+          // Same guard the streaming branch has had since 2026-08-21 — this branch
+          // never got it. An empty arena answer (qwen3.8 task_add, 2026-09-20) hit
+          // Discord's empty-send rejection here and surfaced as a generic error.
+          if (!chunks[0]?.trim()) chunks[0] = '⚠️ I produced no usable answer for that — please try again.';
           const target = { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id };
           const actions = this.confirmActionsFor(result);
           await this.channelRegistry.send(target, {

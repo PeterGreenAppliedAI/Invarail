@@ -143,6 +143,13 @@ export class OllamaClient {
     // back to `message.thinking` when content is empty, and chat() now routes through
     // here — dropping it would silently break those callers.
     let fullThinking = '';
+    // Tool calls arrive in a MIDDLE chunk; the final `done:true` chunk carries only
+    // token stats and an empty message. Reading them off the last chunk (as this did
+    // until 2026-09-20) returned undefined for every native tool call the moment
+    // chat() started routing through here — the engine saw "empty completion" three
+    // times on a task_add the model had answered correctly. Accumulate, like the
+    // OpenAI-compat client does with its deltas.
+    const toolCalls: NonNullable<OllamaChatResponse['message']['tool_calls']> = [];
     let lastChunk: OllamaChatResponse | null = null;
 
     while (true) {
@@ -160,6 +167,7 @@ export class OllamaClient {
           // Thinking accumulates but is NEVER sent to onDelta — stream previews stay
           // clean by construction (same rule as the OpenAI-compat path).
           if (chunk.message?.thinking) fullThinking += chunk.message.thinking;
+          if (chunk.message?.tool_calls?.length) toolCalls.push(...chunk.message.tool_calls);
           if (chunk.message?.content) {
             fullContent += chunk.message.content;
             onDelta(chunk.message.content);
@@ -177,7 +185,7 @@ export class OllamaClient {
         role: 'assistant',
         content: fullContent,
         ...(fullThinking ? { thinking: fullThinking } : {}),
-        tool_calls: lastChunk?.message?.tool_calls,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
       },
       done: true,
       eval_count: lastChunk?.eval_count,
