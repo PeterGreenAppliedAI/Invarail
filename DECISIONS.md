@@ -4,6 +4,59 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Facts Carry How We Know Them — Epistemic Provenance (September 20 2026)
+
+### The complaint that produced it
+Asked "how can I make your brain better," the resident agent gave a seven-item graph-memory wishlist. Five items already existed (`SUPERSEDES` edges, `confidence`, `source`, `createdAt`, `expiresAt`, and the as-of time-travel query in `getFactsAt`) — it was introspecting on a schema it has no read access to, so it produced a competent GENERIC wishlist rather than one about its own graph. **The standing lesson: self-assessment quality is a context problem, not a model problem.** Asking an agent what it needs, without showing it what it has, returns the blog-post answer.
+
+One item was real and buried in its weakest bullet: *"I can't tell the difference between you saying 'I like this' and me pattern-matching 'he mentioned it twice.'"*
+
+### The gap
+`source` is a free-text WHERE (`session/foo.json`, `consolidation/llm-merge`). It cannot carry HOW we know something. So a heartbeat's autonomous guess and a sentence Peter actually typed arrived in the prompt in the same voice, and the model asserted both back at him with equal confidence.
+
+`FactProvenance` = `stated | observed | inferred`, on `FactEntry`/`FactInput` and the graph Fact node, filterable in `search()`.
+- **`stated`** — only `!save`, the one path where a human reads the extracted list and confirms it.
+- **`inferred`** — consolidation merges. A merge is model-authored prose even when both inputs were `stated`: **merging must never launder provenance upward.**
+- **`observed`** — everything else, by default.
+
+Injection marks the two weak classes (`[observed, unconfirmed]`, `[inferred]`) and tells the model what the marks mean: unmarked it may use directly, marked it should ask about rather than assert. Legacy nodes return null and coalesce **DOWN** to `observed` — coalescing up would retroactively present every autonomous extraction as confirmed.
+
+### Rejected from the same list, with reasons
+- **Causal edges (`causes`, `context_for`)** — the most exciting item and the most dangerous. Inferring causation from co-occurrence is the highest-error operation available to a 12-30B model, and a wrong causal edge is worse than none because traversal PROPAGATES it into retrieval. Two facts landing in the same week is not a cause.
+- **Inference at retrieval time** — right principle (same doctrine as "experience informs execution, never expands authority"), wrong budget. Retrieval runs on every message under an 8s priming cap that already failed silently under VRAM pressure. If it ships, it belongs at heartbeat time, which is already paid for.
+- **USER.md as a rendered query over tier ≥ 4 facts** — right about the seam, wrong direction. It would make Peter's identity card a function of extraction quality; one bad heartbeat and his wife's name leaves context. This is the `enforceCharBound` bug class exactly. Identity is a rule, not an observation — the file stays authoritative.
+
+### Incidental
+`GraphSearchResult` row-mapping was copy-pasted at six call sites (now `rowToResult`), and consolidation held a hand-written `FactInput` duplicate plus a field-by-field re-list that silently dropped the new field the moment it was added. Both are the same failure: a shape written down twice drifts at the first change.
+
+---
+
+## The A5000 Settles the Fleet — qwen3.8:27B Foreground (September 19 2026, later)
+
+Supersedes the gemma4/3060 entry below, same day. Peter bought a used A5000 (24GB) over a 3090 for power draw.
+
+### Why gemma4:12b lost the foreground it had just won
+It passed 7/7 on the oracle duel and then failed the job. A two-step cron tool call failed **three times with both repair guards firing** — the duel measures task completion, not tool-call reliability under real chained work. **Standing lesson: a 7/7 duel score does not license production; the duel is an oracle for capability, not for dependability.**
+
+### Fleet, current
+| box | role |
+|---|---|
+| **A5000 (10.9.8.19)** | `qwen3.8:27B` foreground — 921 tok/s prefill on a 2x larger model, native tool calls clean, think honored |
+| **3060 (10.9.8.14)** | utility: `phi4:latest` (router/steward/extraction), `phi4-mini` (NER), `qwen2.5:7b` (voice) |
+| **Mini (192.168.77.221)** | `qwen3-embedding:8b`, resident. Plus gemma4:12b-mlx for short-prompt/batch |
+| **Sparks (10.9.8.15)** | GLM-5.3-flash — `code_gen` + `pi.model` only |
+
+### Embeddings got their own box, and that needed a code change
+`embed()` was inherited and ALWAYS hit the primary gateway, so the embedder could not be placed anywhere but beside the router. That mattered more than it sounds: **memory priming embeds on EVERY message under an 8s cap**, so when embedder and router can't both stay resident, the reload blows the cap and memory injection is *silently skipped* — an agent that quietly stops remembering, with no error anywhere. `MultiBackendClient.embed()` now routes by model id like chat does.
+
+### Config, not code
+Two violations caught and fixed in the same pass: the embed model tag was a duplicated literal (now `DEFAULT_EMBED_MODEL`, one place), and `embeddingModel`/`embeddingDims` existed on the config object but were **decorative — never passed to `embed()`**. A config field that nothing reads is worse than no field: it documents a control that doesn't exist.
+
+### Watch list
+`research` inherits qwen3.8:27B at `contextSize: 32768`, and verification passes full cached pages (up to ~30K tokens for 3 sources). Overflow-retry lines in the verify stage are the signal; a one-line `model:` override moves it to GLM's 160K if depth drops.
+
+---
+
 ## gemma4:12b Takes the Foreground — a 12B on a Mac Mini Matches the Flagship (September 19 2026)
 
 ### The measurement
