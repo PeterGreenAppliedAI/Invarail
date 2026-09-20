@@ -10,6 +10,11 @@ export interface GraphMemoryConfig {
   embeddingDims?: number;
   /** Small fast model for NER (entity typing) + contradiction checks. */
   nerModel?: string;
+  /** The owner's own names/aliases, from config principals. The owner is the
+   *  SUBJECT of nearly every stored fact, so their name entity connects the whole
+   *  corpus and distinguishes nothing — it must never be treated as a theme.
+   *  Config, not a literal: the name belongs to the deployment, not the code. */
+  ownerNames?: string[];
 }
 
 export interface GraphSearchResult {
@@ -33,6 +38,50 @@ export interface GraphSearchResult {
  *  model as something the owner confirmed. */
 export function readProvenance(value: unknown): FactProvenance {
   return value === 'stated' || value === 'inferred' ? value : 'observed';
+}
+
+export interface ClusterCandidate {
+  entity: string;
+  type?: string;
+  facts: string[];
+  importance: number;
+}
+
+/**
+ * Drop entity clusters that carry no information.
+ *
+ * Measured on the live graph (24 facts, 52 entities) before this existed: the top
+ * "cluster" was the owner's own name holding half the corpus, second was the
+ * concept "AI" holding a fifth. Neither is a theme — they are hubs that everything
+ * attaches to, and any downstream reasoning over them just restates the inputs.
+ *
+ * Two rules, both structural:
+ *  - **Owner names** are excluded outright. The owner is the grammatical subject of
+ *    nearly every fact; their entity is guaranteed degenerate at any corpus size.
+ *  - **Document frequency.** An entity attached to more than `maxDocFrequency` of
+ *    the corpus is a stopword FOR THIS CORPUS. This is measured, not a blocklist,
+ *    so it keeps working as the subject matter drifts — "AI" is a stopword in
+ *    Peter's graph and would be a real theme in someone else's.
+ *
+ * The frequency rule needs a corpus to be a ratio at all: with 3 facts, any 2-fact
+ * entity is 67% and everything would be dropped. Below `minCorpusForDf` only the
+ * name rule applies.
+ */
+export function filterDegenerateClusters(
+  clusters: ClusterCandidate[],
+  totalFacts: number,
+  opts: { maxDocFrequency?: number; ownerNames?: string[]; minCorpusForDf?: number } = {},
+): ClusterCandidate[] {
+  const maxDf = opts.maxDocFrequency ?? 0.5;
+  const minCorpus = opts.minCorpusForDf ?? 8;
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const excluded = new Set((opts.ownerNames ?? []).map(norm).filter(Boolean));
+
+  return clusters.filter(c => {
+    if (excluded.has(norm(c.entity))) return false;
+    if (totalFacts >= minCorpus && c.facts.length / totalFacts > maxDf) return false;
+    return true;
+  });
 }
 
 /** Every read path builds the same object out of a Cypher row — the shape was
@@ -923,23 +972,40 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
    * Find clusters of related facts by entity co-occurrence.
    * Returns groups of facts that share entities.
    */
-  async getClusters(senderId: string): Promise<Array<{ entity: string; facts: string[]; importance: number }>> {
+  async getClusters(senderId: string): Promise<ClusterCandidate[]> {
     if (!this.graph) await this.connect();
 
     const result = await this.graph!.query(
       `MATCH (f:Fact {senderId: $senderId})-[:ABOUT]->(e:Entity)
        WITH e, collect(f.text) AS facts, max(f.importance) AS maxImp, count(f) AS cnt
        WHERE cnt >= 2
-       RETURN e.name, facts, maxImp
+       RETURN e.name, e.type, facts, maxImp
        ORDER BY maxImp DESC, cnt DESC`,
       { params: { senderId } }
     );
 
-    return (result.data ?? []).map((row: any) => ({
+    const raw: ClusterCandidate[] = (result.data ?? []).map((row: any) => ({
       entity: row['e.name'],
+      type: row['e.type'],
       facts: row['facts'] ?? [],
       importance: row['maxImp'] ?? 2,
     }));
+
+    // Hub and stopword entities are the majority of what this query returns on a
+    // real corpus — filtering them here rather than at each caller means no caller
+    // can forget. See filterDegenerateClusters for the measurement that motivated it.
+    const totalRes = await this.graph!.query(
+      `MATCH (f:Fact {senderId: $senderId}) RETURN count(f) AS n`,
+      { params: { senderId } }
+    );
+    const totalFacts = Number((totalRes.data?.[0] as any)?.n ?? 0);
+
+    const kept = filterDegenerateClusters(raw, totalFacts, { ownerNames: this.config.ownerNames });
+    if (kept.length !== raw.length) {
+      const dropped = raw.filter(c => !kept.includes(c)).map(c => `${c.entity}(${c.facts.length})`);
+      console.log(`[GraphMemory] Clusters: ${kept.length}/${raw.length} kept, dropped as degenerate: ${dropped.join(', ')}`);
+    }
+    return kept;
   }
 
   /**

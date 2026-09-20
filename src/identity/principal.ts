@@ -67,3 +67,20 @@ export function selfIdentityLine(senderId: string | undefined, config: InvarailC
   parts.push('Calendar entries "booked by" or emails "from" these identities are the user\'s own actions.');
   return parts.join(' ');
 }
+
+/**
+ * Every name the owner is known by — principal keys plus their display names.
+ *
+ * Used to keep the owner's own entity out of memory clustering: they are the
+ * grammatical subject of nearly every stored fact, so their name node connects
+ * the entire corpus and separates nothing. Derived from config rather than
+ * written down anywhere, because the name belongs to the deployment.
+ */
+export function ownerNames(config: InvarailConfig): string[] {
+  const names = new Set<string>();
+  for (const [key, principal] of Object.entries(config.principals ?? {})) {
+    if (key) names.add(key);
+    if (principal?.displayName) names.add(principal.displayName);
+  }
+  return [...names];
+}

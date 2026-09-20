@@ -22,7 +22,7 @@ import { appendRunRecord, appendDeadLetter, scanArtifacts, listDeadLetters } fro
 import { handleConfirmation } from './security/confirm-handler.js';
 import { PrepContextStore, captureBriefingAnswer } from './services/prep-context.js';
 import { buildAutonomyReport } from './metrics/autonomy-report.js';
-import { resolvePrincipal } from './identity/principal.js';
+import { resolvePrincipal, ownerNames } from './identity/principal.js';
 import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
 import { bootstrapWorkspace } from './agents/workspace.js';
@@ -136,6 +136,7 @@ export class Orchestrator {
       nerModel: this.config.memory?.nerModel,
       embeddingModel: this.config.memory?.embeddingModel,
       embeddingDims: this.config.memory?.embeddingDims,
+      ownerNames: ownerNames(this.config),
       ...this.config.memory.falkordb,
     });
     this.graphMemory.connect().then(() => {
