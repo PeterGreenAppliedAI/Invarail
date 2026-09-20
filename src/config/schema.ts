@@ -197,6 +197,26 @@ export const MemoryConfigSchema = z.object({
   experiences: z.object({
     enabled: z.boolean().default(true),
   }).default({}),
+  /** Incremental capture — the fix for the two-hour hole between "Peter says it"
+   *  and "it is in the graph". Extraction used to run ONLY at !reset and on the 2h
+   *  heartbeat, so anything said in between existed only in the context window and
+   *  vanished at session end; a month of Invarail being off left 24 facts total.
+   *
+   *  The trigger is CODE, not model judgment: every N turns, on the unprocessed
+   *  window only, after the reply is already delivered. The heartbeat still owns
+   *  the heavy reconciliation pass (consolidation, contradiction, review) — this
+   *  only closes the capture gap. Facts land as 'observed', never 'stated'. */
+  capture: z.object({
+    enabled: z.boolean().default(true),
+    /** Fire once this many unprocessed turns have accumulated in a session. */
+    everyTurns: z.number().int().min(2).default(8),
+    /** Turns of context to re-read before the window so a fact spanning the
+     *  boundary is still legible. Re-extraction is caught by dedup. */
+    overlapTurns: z.number().int().min(0).default(2),
+    /** Hard bound — capture is fire-and-forget off the hot path, so a hung
+     *  utility model must never accumulate handlers. */
+    timeoutMs: z.number().int().positive().default(60_000),
+  }).default({}),
   /** Minimum hours between heartbeat memory-review prompts ("still accurate? !heartbeat yes/no").
    *  The heartbeat runs every ~2h, but nagging the user that often is review fatigue — gate the
    *  prompt to at most once per this interval. Default once a day. */

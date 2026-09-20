@@ -27,6 +27,7 @@ import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
 import { bootstrapWorkspace } from './agents/workspace.js';
 import { resolveWorkspacePath } from './agents/scope.js';
+import { MemoryCapture } from './services/memory-capture.js';
 import type { EmbeddingStore } from './memory/embeddings.js';
 import { FactStore } from './memory/fact-store.js';
 import type { FactInput } from './config/types.js';
@@ -84,6 +85,8 @@ export class Orchestrator {
   private cancelRequests = new Set<string>();
   private factStore?: FactStore;
   private graphMemory?: GraphMemoryStore;
+  /** Built in start(), so optional — handleMessage only runs after start(). */
+  private memoryCapture?: MemoryCapture;
   private taskStore?: TaskStore;
   private pipelineRegistry: PipelineRegistry;
   executionMetrics: ExecutionMetricsStore;
@@ -140,6 +143,17 @@ export class Orchestrator {
     }).catch(err => {
       console.warn('[Orchestrator] Graph memory unavailable, using flat FactStore:', err instanceof Error ? err.message : err);
       this.graphMemory = undefined;
+    });
+
+    // Incremental capture — closes the 2h hole between "said" and "in the graph".
+    // Stores are passed as thunks: graphMemory becomes undefined if connect fails.
+    this.memoryCapture = new MemoryCapture({
+      config: this.config,
+      factStore: () => this.factStore,
+      graphMemory: () => this.graphMemory,
+      loadTranscript: (agentId, sessionKey) => this.sessionStore.loadTranscript(agentId, sessionKey),
+      extract: (transcript, recentlyRemoved, senderId) => this.extractFacts(transcript, recentlyRemoved, senderId),
+      workspacePathFor: (agentId) => resolveWorkspacePath(agentId, this.config),
     });
 
     // Set up cron service
@@ -1965,6 +1979,12 @@ export class Orchestrator {
             console.warn('[Orchestrator] Steering replay failed:', err instanceof Error ? err.message : err));
         }
       }
+
+      // Incremental capture: AFTER the reply is delivered, never in front of it.
+      // Fire-and-forget by design — this must not extend the turn, and a failure
+      // here is a missed capture, not a failed message. Runs in `finally` so an
+      // errored turn still banks whatever the user said before it broke.
+      this.memoryCapture?.schedule(route.agentId, route.sessionKey, principal);
     }
   }
 }
