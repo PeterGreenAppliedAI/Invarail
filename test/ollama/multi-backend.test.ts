@@ -43,3 +43,33 @@ describe('MultiBackendClient routing', () => {
     expect(c).not.toBeInstanceOf(MultiBackendClient);
   });
 });
+
+describe('embedding routing (memory priming must not fight the router for VRAM)', () => {
+  it('routes embed() by model id to an Ollama-native backend', async () => {
+    const c = new MultiBackendClient('http://gateway:11434', '30m', [],
+      [{ url: 'http://mini:11434', models: ['qwen3-embedding:8b'] } as any]);
+    const route = (c as any).routes.get('qwen3-embedding:8b');
+    route.embed = vi.fn(async () => [[1, 2, 3]]);
+    const gatewayEmbed = vi.spyOn(OllamaClient.prototype, 'embed').mockResolvedValue([[9]]);
+
+    const out = await c.embed('hello', 'qwen3-embedding:8b');
+    expect(out).toEqual([[1, 2, 3]]);          // went to the Mini
+    expect(gatewayEmbed).not.toHaveBeenCalled(); // not the gateway
+    gatewayEmbed.mockRestore();
+  });
+
+  it('an unrouted embedding model still falls through to the gateway', async () => {
+    const c = new MultiBackendClient('http://gateway:11434', '30m', [], []);
+    const gatewayEmbed = vi.spyOn(OllamaClient.prototype, 'embed').mockResolvedValue([[7]]);
+    expect(await c.embed('hi', 'some-other-embedder')).toEqual([[7]]);
+    gatewayEmbed.mockRestore();
+  });
+
+  it('never routes embeddings to an OpenAI-compat backend (no embed endpoint there)', async () => {
+    const c = new MultiBackendClient('http://gateway:11434', '30m',
+      [{ url: 'http://vllm:8000', models: ['some-embed'], supportsThink: false, thinkStyle: 'native' } as any], []);
+    const gatewayEmbed = vi.spyOn(OllamaClient.prototype, 'embed').mockResolvedValue([[5]]);
+    expect(await c.embed('hi', 'some-embed')).toEqual([[5]]);  // fell through, did not call vLLM
+    gatewayEmbed.mockRestore();
+  });
+});

@@ -60,6 +60,11 @@ export function retryDelayMs(res: { headers?: { get(name: string): string | null
   return Math.round(base * (0.7 + Math.random() * 0.6));
 }
 
+/** Last-resort fallback when a caller has no config in scope. The configured value
+ *  (config.memory.embeddingModel) must win everywhere it is reachable — this literal
+ *  exists in exactly ONE place so a swap can't leave a stale copy behind. */
+export const DEFAULT_EMBED_MODEL = 'qwen3-embedding:8b';
+
 export class OllamaClient {
   constructor(
     private readonly baseUrl: string,
@@ -191,9 +196,9 @@ export class OllamaClient {
   }
 
   /** Callers should pass the configured embedding model (config.memory.embeddingModel).
-   *  The literal default is a last-resort fallback only — a mismatch here silently
+   *  DEFAULT_EMBED_MODEL is a last-resort fallback only — a mismatch here silently
    *  produces vectors of the wrong width for the index (2026-09-19). */
-  async embed(input: string | string[], model = 'qwen3-embedding:8b'): Promise<number[][]> {
+  async embed(input: string | string[], model = DEFAULT_EMBED_MODEL): Promise<number[][]> {
     // Try /api/embed first (standard Ollama), fall back to /api/embeddings (gateway compat)
     await embedThrottle();
     try {

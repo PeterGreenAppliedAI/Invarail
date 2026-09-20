@@ -1,5 +1,5 @@
 import { FalkorDB, Graph } from 'falkordb';
-import type { OllamaClient } from '../ollama/client.js';
+import { DEFAULT_EMBED_MODEL, type OllamaClient } from '../ollama/client.js';
 
 /**
  * Graph experience memory — the agent's record of what approaches worked,
@@ -64,7 +64,7 @@ const DEFAULT_CONFIG: ExperienceStoreConfig = {
   // edges cannot cross graphs. (The pre-rename historical graph is 'localclaw_memory';
   // set memory.falkordb.graphName in config to point both stores at it.)
   graphName: 'invarail_memory',
-  embeddingModel: 'qwen3-embedding:8b',
+  embeddingModel: DEFAULT_EMBED_MODEL,
   embeddingDims: 4096,
 };
 

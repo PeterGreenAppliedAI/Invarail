@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { OllamaClient } from './client.js';
+import { OllamaClient, DEFAULT_EMBED_MODEL } from './client.js';
 import { OpenAICompatClient } from './openai-client.js';
 import type { OllamaChatParams, OllamaChatResponse } from './types.js';
 import type { VllmBackendSchema, OllamaBackendSchema } from '../config/schema.js';
@@ -55,6 +55,20 @@ export class MultiBackendClient extends OllamaClient {
   ): Promise<OllamaChatResponse> {
     const route = this.routes.get(params.model);
     return route ? route.chatStream(params, onDelta) : super.chatStream(params, onDelta);
+  }
+
+  /**
+   * Embeddings route by model id too (2026-09-19). Previously embed() was inherited
+   * and ALWAYS hit the primary gateway, so an embedding model could not be placed on
+   * its own host — it had to share VRAM with the router. That mattered: memory priming
+   * embeds on EVERY message, and when the embedder and router can't both stay resident
+   * the reload blows past priming's 8s cap and memory injection is silently skipped.
+   * OpenAI-compat backends have no embed endpoint here, so only Ollama-native routes
+   * are eligible; anything else falls through to the gateway exactly as before.
+   */
+  override async embed(input: string | string[], model = DEFAULT_EMBED_MODEL): Promise<number[][]> {
+    const route = this.routes.get(model);
+    return route instanceof OllamaClient ? route.embed(input, model) : super.embed(input, model);
   }
 }
 

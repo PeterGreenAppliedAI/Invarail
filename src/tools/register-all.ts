@@ -47,6 +47,7 @@ import { createCalendarListTool, createCalendarSearchTool } from './calendar-rea
 import { createImageGenerateTool } from './image-generate.js';
 import { createDiagramGenerateTool } from './diagram-generate.js';
 import { createPiBuildTool } from './pi-build.js';
+import { DEFAULT_EMBED_MODEL } from '../ollama/client.js';
 
 export interface RegisterToolsOptions {
   cronService?: CronService;
@@ -96,13 +97,13 @@ export async function registerAllTools(
       config: config.localIndex,
       embeddings: embeddingStore,
       client: options.ollamaClient,
-      embedModel: config.memory?.embeddingModel ?? 'qwen3-embedding:8b',
+      embedModel: config.memory?.embeddingModel ?? DEFAULT_EMBED_MODEL,
       timezone: config.timezone,
     });
     registry.register(createLocalSearchTool({
       embeddings: embeddingStore,
       client: options.ollamaClient,
-      embedModel: config.memory?.embeddingModel ?? 'qwen3-embedding:8b',
+      embedModel: config.memory?.embeddingModel ?? DEFAULT_EMBED_MODEL,
       index: webIndex,
       maxAgeDays: config.localIndex.maxAgeDays,
     }));

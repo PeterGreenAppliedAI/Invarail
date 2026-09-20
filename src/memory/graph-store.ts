@@ -1,5 +1,5 @@
 import { FalkorDB, Graph } from 'falkordb';
-import type { OllamaClient } from '../ollama/client.js';
+import { DEFAULT_EMBED_MODEL, type OllamaClient } from '../ollama/client.js';
 import type { FactEntry, FactInput } from '../config/types.js';
 
 export interface GraphMemoryConfig {
@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: GraphMemoryConfig = {
   host: 'localhost',
   port: 6379,
   graphName: 'invarail_memory',
-  embeddingModel: 'qwen3-embedding:8b',
+  embeddingModel: DEFAULT_EMBED_MODEL,
   embeddingDims: 4096,
   nerModel: 'phi4-mini:latest',
 };
