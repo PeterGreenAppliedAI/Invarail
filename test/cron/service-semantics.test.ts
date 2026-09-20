@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Cron } from 'croner';
 import { CronService } from '../../src/cron/service.js';
 import { CronStore } from '../../src/cron/store.js';
 
@@ -40,14 +41,19 @@ describe('CronService semantics', () => {
     const onTrigger = vi.fn().mockResolvedValue(undefined);
     const { store, service } = makeService(onTrigger);
     // Downtime SHORT relative to the job's period — the case the catch-up exists for
-    // ("a reboot at 8:59 must not eat a 9:00 reminder"). Hourly job, ~70min down:
-    // exactly one fire missed and the next cycle is still ahead.
-    // (Was every-minute + 1h down = 60 missed fires; the 2026-09-19 staleness bound
-    // now skips that as stale, which is the intended new behavior — see below.)
+    // ("a reboot at 8:59 must not eat a 9:00 reminder"): EXACTLY one fire missed, next
+    // cycle still ahead. lastRunAt is derived from the schedule rather than a fixed
+    // offset — a wall-clock offset made this flaky (at 22:09 a "70 minutes ago" hourly
+    // fixture has missed TWO fires, which is correctly stale).
     const job = store.add({ name: 'missed', schedule: '0 * * * *', category: 'chat', message: 'm', delivery: { channel: 'discord', target: '' } });
     store.updateLastRun(job.id);
     const raw = store.get(job.id)!;
-    raw.lastRunAt = new Date(Date.now() - 70 * 60 * 1000).toISOString();
+    const probe = new Cron('0 * * * *', { paused: true, timezone: 'America/New_York' });
+    const nextFire = probe.nextRun(new Date())!;                     // upcoming fire
+    probe.stop();
+    const HOUR = 60 * 60 * 1000;
+    const lastFire = nextFire.getTime() - HOUR;                      // the one just missed
+    raw.lastRunAt = new Date(lastFire - 1000).toISOString();         // ran 1s before it
     (store as unknown as { save: () => void }).save();
 
     await service.start();
