@@ -511,6 +511,20 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
   }
 
   /**
+   * Relabel one fact's epistemic class. The only caller is `!save`, promoting a
+   * session's captures observed→stated once the owner has read the list — the
+   * only way a fact that entered as 'observed' ever becomes 'stated'.
+   */
+  async setProvenance(id: string, provenance: FactProvenance): Promise<boolean> {
+    if (!this.graph) await this.connect();
+    const result = await this.graph!.query(
+      `MATCH (f:Fact {id: $id}) SET f.provenance = $provenance RETURN f.id`,
+      { params: { id, provenance } }
+    );
+    return (result.data ?? []).length > 0;
+  }
+
+  /**
    * Get high-importance facts for a user (for user priming / stable injection).
    */
   async getStableFacts(senderId: string, minImportance = 4): Promise<GraphSearchResult[]> {

@@ -175,6 +175,12 @@ export const MemoryConfigSchema = z.object({
   consolidation: MemoryConsolidationSchema.optional(),
   /** Model for fact extraction from transcripts. Defaults to router model. */
   extractionModel: z.string().optional(),
+  /** Context window (num_ctx) for extraction calls. Was never set, so Ollama used
+   *  its 4096 default: an 80-turn !reset transcript (30K chars) overflowed, Ollama
+   *  front-truncated the INSTRUCTIONS away, and phi4 just continued the chat in
+   *  the assistant's voice (2026-09-20). The transcript is now bounded to fit this
+   *  window (oldest turns dropped, loudly). 8192 is safe for any utility model. */
+  extractionContextSize: z.number().int().positive().default(8192),
   /** Small fast model for graph NER (entity typing) + contradiction checks. Defaults to phi4-mini:latest. */
   nerModel: z.string().default('phi4-mini:latest'),
   /** Embedding model for ALL vector work — graph facts, experiences, knowledge import,

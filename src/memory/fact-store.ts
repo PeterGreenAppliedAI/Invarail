@@ -200,6 +200,46 @@ export class FactStore {
     return removed;
   }
 
+  /**
+   * Relabel the epistemic class of facts matched by exact text. Text, not id:
+   * the flat store mints its own ids, so a fact the graph knows by id is only
+   * addressable here by what it says. Caller is `!save` promoting session
+   * captures observed→stated. Returns the number of entries changed.
+   */
+  setProvenanceByText(texts: string[], senderId: string | undefined, provenance: FactEntry['provenance']): number {
+    const memDir = this.memDir(senderId);
+    const indexDir = join(memDir, 'index');
+    if (!existsSync(indexDir) || texts.length === 0) return 0;
+
+    const wanted = new Set(texts.map(t => t.trim()));
+    let changed = 0;
+
+    for (const file of readdirSync(indexDir).filter(f => f.endsWith('.jsonl'))) {
+      const filePath = join(indexDir, file);
+      const lines = readFileSync(filePath, 'utf-8').split('\n');
+      let touched = false;
+      const out = lines.map(line => {
+        if (!line.trim()) return line;
+        try {
+          const entry = JSON.parse(line) as FactEntry;
+          if (wanted.has(entry.text?.trim()) && entry.provenance !== provenance) {
+            changed++;
+            touched = true;
+            return JSON.stringify({ ...entry, provenance });
+          }
+        } catch { /* keep malformed lines to avoid data loss */ }
+        return line;
+      });
+      if (touched) writeFileSync(filePath, out.join('\n'));
+    }
+
+    if (changed > 0) {
+      this.factsCache.delete(senderId ?? '__shared__');
+      this.rebuildFacts(senderId);
+    }
+    return changed;
+  }
+
   rebuildFacts(senderId?: string): void {
     const memDir = this.memDir(senderId);
     const indexDir = join(memDir, 'index');

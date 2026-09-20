@@ -27,7 +27,8 @@ import { resolveRoute } from './agents/resolve-route.js';
 import { registerAllTools } from './tools/register-all.js';
 import { bootstrapWorkspace } from './agents/workspace.js';
 import { resolveWorkspacePath } from './agents/scope.js';
-import { MemoryCapture } from './services/memory-capture.js';
+import { MemoryCapture, type CapturedFact } from './services/memory-capture.js';
+import { fitLinesToTokenBudget } from './memory/extraction-window.js';
 import type { EmbeddingStore } from './memory/embeddings.js';
 import { FactStore } from './memory/fact-store.js';
 import type { FactInput } from './config/types.js';
@@ -468,13 +469,27 @@ export class Orchestrator {
     // Build a condensed version of the conversation
     // Strip thinking from assistant turns — <think> blocks are preserved in transcripts
     // for model continuity but shouldn't be fed to the fact extraction model.
-    const condensed = transcript
+    const lines = transcript
       .filter(t => t.role === 'user' || t.role === 'assistant')
       .map(t => {
         const content = t.role === 'assistant' ? stripThinkingTags(t.content) : t.content;
         return `${t.role === 'user' ? 'User' : 'Assistant'}: ${content.slice(0, 1000)}`;
-      })
-      .join('\n');
+      });
+
+    // Bound the transcript to the extraction model's window. The instruction block
+    // (incl. the USER.md profile and the already-stored list) is reserved for up
+    // front; whatever remains is the transcript's. Overflow here is not a quality
+    // degradation, it is a mode failure: Ollama truncates from the FRONT, so the
+    // instructions vanish first and the model continues the chat instead of
+    // extracting from it (2026-09-20, 80-turn !reset).
+    const numCtx = this.config.memory?.extractionContextSize ?? 8192;
+    const EXTRACTION_PROMPT_RESERVE_TOKENS = 2500;
+    const EXTRACTION_OUTPUT_TOKENS = 1024;
+    const { kept, dropped } = fitLinesToTokenBudget(lines, numCtx - EXTRACTION_PROMPT_RESERVE_TOKENS - EXTRACTION_OUTPUT_TOKENS);
+    if (dropped > 0) {
+      console.warn(`[Facts] Transcript exceeds extraction window (num_ctx=${numCtx}) — dropped the oldest ${dropped} of ${lines.length} turns`);
+    }
+    const condensed = kept.join('\n');
 
     // Guard against prompt injection — skip turns with suspiciously long content
     if (userTurns.some(t => t.content.length > 10_000)) {
@@ -553,7 +568,7 @@ export class Orchestrator {
         },
         { role: 'user', content: condensed },
       ],
-      options: { temperature: 0.1, num_predict: 1024 },
+      options: { temperature: 0.1, num_predict: EXTRACTION_OUTPUT_TOKENS, num_ctx: numCtx },
     });
 
     const raw = response.message.content.trim();
@@ -834,11 +849,16 @@ export class Orchestrator {
       clearWorkspaceCache(route.sessionKey);
       clearCompactionCache(route.agentId, route.sessionKey);
 
-      // Extract facts from the conversation
+      // Extract facts from what incremental capture has NOT already read — the
+      // tail is capture-window-sized, so this never re-reads (and overflows on)
+      // a whole long session. Everything capture stored during the session comes
+      // along so !save can promote it: this is the review gate for those facts.
+      const { tail, captured } = this.memoryCapture?.takeSessionTail(route.agentId, route.sessionKey, transcript)
+        ?? { tail: transcript, captured: [] as CapturedFact[] };
       let replyText = 'Session cleared. Starting fresh!';
       try {
-        const facts = await this.extractFacts(transcript, undefined, principal);
-        if (facts.length > 0) {
+        const facts = await this.extractFacts(tail, undefined, principal);
+        if (facts.length > 0 || captured.length > 0) {
           const userMemDir = join(workspacePath, 'memory', principal);
           mkdirSync(userMemDir, { recursive: true });
           const pending = {
@@ -847,10 +867,20 @@ export class Orchestrator {
             channelId: msg.channelId,
             senderId: principal,
             facts,
+            captured,
           };
           writeFileSync(this.pendingPath(workspacePath, principal), JSON.stringify(pending, null, 2));
-          const factList = facts.map((f, i) => `${i + 1}. [${f.category}] ${f.text} (conf: ${f.confidence})`).join('\n');
-          replyText = `Session cleared. I noticed some things worth remembering:\n\n${factList}\n\nReply **!save** to keep or **!discard** to skip.`;
+          const parts: string[] = ['Session cleared.'];
+          if (facts.length > 0) {
+            const factList = facts.map((f, i) => `${i + 1}. [${f.category}] ${f.text} (conf: ${f.confidence})`).join('\n');
+            parts.push(`I noticed some things worth remembering:\n\n${factList}`);
+          }
+          if (captured.length > 0) {
+            const capturedList = captured.map((c, i) => `${i + 1}. ${c.text}`).join('\n');
+            parts.push(`Captured during this session (currently unconfirmed):\n\n${capturedList}`);
+          }
+          parts.push('Reply **!save** to keep these as things you told me, or **!discard** to skip (captured ones stay, marked unconfirmed).');
+          replyText = parts.join('\n\n');
         }
       } catch (err) {
         console.warn('[Orchestrator] Fact extraction failed:', err instanceof Error ? err.message : err);
@@ -876,8 +906,9 @@ export class Orchestrator {
       let replyText: string;
       try {
         const raw = readFileSync(pendingFile, 'utf-8');
-        const pending = JSON.parse(raw) as { facts: FactInput[]; senderId?: string };
+        const pending = JSON.parse(raw) as { facts: FactInput[]; senderId?: string; captured?: CapturedFact[] };
         const senderId = pending.senderId ?? principal;
+        const captured = pending.captured ?? [];
 
         // !save is the ONLY path where a human reads the extracted facts and
         // confirms them, so it is the only one that may claim 'stated'. Every
@@ -899,9 +930,33 @@ export class Orchestrator {
           }
         }
 
+        // Promote what capture stored during the session: the owner has now read
+        // the list, so observed → stated. Graph by id, flat store by text (it mints
+        // its own ids). Best-effort per fact — a miss leaves it 'observed', never
+        // wrongly 'stated'.
+        let promoted = 0;
+        if (captured.length > 0) {
+          if (this.graphMemory) {
+            for (const c of captured) {
+              if (!c.id) continue;
+              try {
+                if (await this.graphMemory.setProvenance(c.id, 'stated')) promoted++;
+              } catch (err) {
+                console.warn(`[Facts] Promote failed for "${c.text.slice(0, 50)}":`, err instanceof Error ? err.message : err);
+              }
+            }
+          }
+          if (this.factStore) {
+            try { this.factStore.setProvenanceByText(captured.map(c => c.text), senderId, 'stated'); }
+            catch (err) { console.warn('[Facts] Flat-store promote failed:', err instanceof Error ? err.message : err); }
+          }
+          console.log(`[Facts] Promoted ${promoted}/${captured.length} captured fact(s) to stated`);
+        }
+
         // Clean up pending
         unlinkSync(pendingFile);
-        replyText = `Saved ${pending.facts.length} fact${pending.facts.length === 1 ? '' : 's'} to memory.`;
+        const n = pending.facts.length;
+        replyText = `Saved ${n} fact${n === 1 ? '' : 's'} to memory.` + (captured.length > 0 ? ` Confirmed ${captured.length} captured during the session.` : '');
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
           replyText = 'Nothing pending to save.';

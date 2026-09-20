@@ -5,8 +5,21 @@ import type { ConversationTurn } from '../sessions/types.js';
 import type { FactStore } from '../memory/fact-store.js';
 import type { GraphMemoryStore } from '../memory/graph-store.js';
 
-/** How many turns of a session we have already extracted from, per session key. */
-type CaptureState = Record<string, number>;
+/** A fact this session's captures produced. Both keys are kept because the two
+ *  stores disagree on identity: the graph keys on its own id, the flat store
+ *  generates a different id and is addressed by text. */
+export interface CapturedFact {
+  id: string;
+  text: string;
+}
+
+interface SessionCapture {
+  /** Turns already extracted from, for this session key. */
+  processed: number;
+  captured: CapturedFact[];
+}
+
+type CaptureState = Record<string, SessionCapture>;
 
 export interface MemoryCaptureDeps {
   config: InvarailConfig;
@@ -45,7 +58,8 @@ export interface MemoryCaptureDeps {
  *    by the message path, hard-bounded by a timeout. Peter's prefill measurements
  *    are the reason: nothing new goes in front of a reply.
  * 3. **It cannot claim 'stated'.** Nobody confirmed these. They land as 'observed'
- *    and render to the model as unconfirmed.
+ *    and render to the model as unconfirmed — until `!reset` lists them and `!save`
+ *    promotes them. That is what `captured` is for: the session's review gate.
  *
  * The heartbeat still owns reconciliation — consolidation, contradiction checks,
  * staleness review. This only closes the capture gap.
@@ -63,11 +77,22 @@ export class MemoryCapture {
   }
 
   private loadState(agentId: string): CaptureState {
+    let raw: Record<string, unknown>;
     try {
-      return JSON.parse(readFileSync(this.statePath(agentId), 'utf-8')) as CaptureState;
+      raw = JSON.parse(readFileSync(this.statePath(agentId), 'utf-8')) as Record<string, unknown>;
     } catch {
       return {};
     }
+    // First shipped shape was a bare turn count per session; carry it forward.
+    const state: CaptureState = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value === 'number') state[key] = { processed: value, captured: [] };
+      else if (value && typeof value === 'object') {
+        const v = value as Partial<SessionCapture>;
+        state[key] = { processed: v.processed ?? 0, captured: Array.isArray(v.captured) ? v.captured : [] };
+      }
+    }
+    return state;
   }
 
   private saveState(agentId: string, state: CaptureState): void {
@@ -89,6 +114,26 @@ export class MemoryCapture {
   }
 
   /**
+   * `!reset` calls this with the transcript it loaded BEFORE clearing the session:
+   * returns the turns capture has not yet extracted from (plus overlap) and every
+   * fact the session's captures stored, then forgets the session. The tail is
+   * capture-window-sized by construction, which is what keeps the !reset
+   * extraction from ever re-reading — and overflowing on — an 80-turn transcript.
+   * With capture disabled the tail is the whole transcript, as before.
+   */
+  takeSessionTail(agentId: string, sessionKey: string, transcript: ConversationTurn[]): { tail: ConversationTurn[]; captured: CapturedFact[] } {
+    const overlapTurns = this.deps.config.memory?.capture?.overlapTurns ?? 2;
+    const state = this.loadState(agentId);
+    const record = state[sessionKey] ?? { processed: 0, captured: [] };
+    delete state[sessionKey];
+    this.saveState(agentId, state);
+    return {
+      tail: transcript.slice(Math.max(0, Math.min(record.processed, transcript.length) - overlapTurns)),
+      captured: record.captured,
+    };
+  }
+
+  /**
    * Returns the number of facts written (0 when the trigger did not fire).
    * Exposed separately from `schedule` so tests can await it.
    */
@@ -104,26 +149,26 @@ export class MemoryCapture {
 
     const transcript = this.deps.loadTranscript(agentId, sessionKey);
     const state = this.loadState(agentId);
-    const processed = state[sessionKey] ?? 0;
+    const record = state[sessionKey] ?? { processed: 0, captured: [] };
 
     // A cleared session (!reset) leaves a shorter transcript than the marker.
     // Rewind rather than waiting for the new session to grow past the old count.
-    if (transcript.length < processed) {
-      state[sessionKey] = transcript.length;
+    if (transcript.length < record.processed) {
+      state[sessionKey] = { processed: transcript.length, captured: [] };
       this.saveState(agentId, state);
       return 0;
     }
 
-    if (transcript.length - processed < everyTurns) return 0;
+    if (transcript.length - record.processed < everyTurns) return 0;
 
     // Re-read a little before the window: a fact stated across the boundary would
     // otherwise be split in half and extracted from neither side. Dedup absorbs
     // the overlap.
-    const window = transcript.slice(Math.max(0, processed - overlapTurns));
+    const window = transcript.slice(Math.max(0, record.processed - overlapTurns));
     if (window.filter(t => t.role === 'user').length < 2) {
       // Not enough user content to be worth a model call, but the turns ARE
       // consumed — otherwise an assistant-heavy stretch re-triggers every turn.
-      state[sessionKey] = transcript.length;
+      state[sessionKey] = { ...record, processed: transcript.length };
       this.saveState(agentId, state);
       return 0;
     }
@@ -136,36 +181,39 @@ export class MemoryCapture {
         timeoutMs,
       );
 
-      // Advance the marker even when extraction yields nothing: the turns were
-      // read. Not advancing would re-send the same window on every later message.
-      state[sessionKey] = transcript.length;
-      this.saveState(agentId, state);
-
-      if (facts.length === 0) return 0;
-
       // 'observed' is the schema default, but say it here: this is the one path
       // where a reader might assume a mid-conversation capture is the user's word.
       const observed: FactInput[] = facts.map(f => ({ ...f, provenance: 'observed' as const }));
+      const captured: CapturedFact[] = [...record.captured];
 
       let written = 0;
       const factStore = this.deps.factStore();
-      if (factStore) {
+      if (factStore && observed.length > 0) {
         const entries = await factStore.writeFactsBatch(observed, senderId, `capture/${sessionKey}`);
         factStore.rebuildFacts(senderId);
         written = entries.length;
       }
       const graphMemory = this.deps.graphMemory();
-      if (graphMemory) {
-        for (const fact of observed) {
+      for (const fact of observed) {
+        let id: string | null = null;
+        if (graphMemory) {
           try {
-            await graphMemory.addFact(fact, senderId, sessionKey);
+            id = await graphMemory.addFact(fact, senderId, sessionKey);
           } catch (err) {
             console.warn(`[Capture] Graph write failed for "${fact.text.slice(0, 50)}":`, err instanceof Error ? err.message : err);
           }
         }
+        captured.push({ id: id ?? '', text: fact.text });
       }
 
-      console.log(`[Capture] ${written || observed.length} fact(s) from ${sessionKey} (turns ${processed}→${transcript.length})`);
+      // Advance the marker even when extraction yields nothing: the turns were
+      // read. Not advancing would re-send the same window on every later message.
+      // Saved AFTER the writes so the captured list is never ahead of the stores.
+      state[sessionKey] = { processed: transcript.length, captured };
+      this.saveState(agentId, state);
+
+      if (observed.length === 0) return 0;
+      console.log(`[Capture] ${written || observed.length} fact(s) from ${sessionKey} (turns ${record.processed}→${transcript.length})`);
       return written || observed.length;
     } finally {
       this.inFlight.delete(guardKey);

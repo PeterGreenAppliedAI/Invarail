@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { MemoryCapture, type MemoryCaptureDeps } from '../../src/services/memory-capture.js';
 import type { InvarailConfig, FactInput } from '../../src/config/types.js';
 import type { ConversationTurn } from '../../src/sessions/types.js';
@@ -34,7 +35,7 @@ function makeCapture(over: Partial<MemoryCaptureDeps> & { captureCfg?: Record<st
   const deps: MemoryCaptureDeps = {
     config: { memory: { capture: over.captureCfg ?? {} } } as unknown as InvarailConfig,
     factStore: () => factStore as never,
-    graphMemory: () => undefined,
+    graphMemory: over.graphMemory ?? (() => undefined),
     loadTranscript: over.loadTranscript ?? (() => conversation(10)),
     extract: extract as MemoryCaptureDeps['extract'],
     workspacePathFor: () => testDir,
@@ -147,5 +148,55 @@ describe('MemoryCapture trigger', () => {
     const { capture } = makeCapture({ extract: extract as never });
     expect(() => capture.schedule('main', 's1', 'peter')).not.toThrow();
     await new Promise(r => setTimeout(r, 20));
+  });
+});
+
+describe('MemoryCapture session review gate', () => {
+  const graphStub = (id: string | null) => () => ({ addFact: async () => id }) as never;
+
+  it('migrates the first-shipped bare-count state shape', async () => {
+    const { writeFileSync, mkdirSync } = await import('node:fs');
+    mkdirSync(join(testDir, 'memory'), { recursive: true });
+    writeFileSync(join(testDir, 'memory', 'capture-state.json'), JSON.stringify({ s1: 10 }));
+    const { capture, extract } = makeCapture({ loadTranscript: () => conversation(18) });
+    await capture.maybeCapture('main', 's1', 'peter');
+    // Fired from the migrated marker (10) with 2 turns of overlap: window = 8..18.
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect((extract.mock.calls[0] as unknown[])[0]).toHaveLength(10);
+  });
+
+  it('records what the graph stored so !save can promote it', async () => {
+    const { capture } = makeCapture({ graphMemory: graphStub('fact_abc') });
+    await capture.maybeCapture('main', 's1', 'peter');
+    const { captured } = capture.takeSessionTail('main', 's1', conversation(10));
+    expect(captured).toEqual([{ id: 'fact_abc', text: 'Peter uses a 3060' }]);
+  });
+
+  it('keeps the text (empty id) when the graph deduped the fact away', async () => {
+    const { capture } = makeCapture({ graphMemory: graphStub(null) });
+    await capture.maybeCapture('main', 's1', 'peter');
+    expect(capture.takeSessionTail('main', 's1', conversation(10)).captured).toEqual([{ id: '', text: 'Peter uses a 3060' }]);
+  });
+
+  it('takeSessionTail returns only the unprocessed turns (plus overlap) and forgets the session', async () => {
+    let transcript = conversation(10);
+    const { capture } = makeCapture({ loadTranscript: () => transcript, graphMemory: graphStub('f1') });
+    await capture.maybeCapture('main', 's1', 'peter');          // processed → 10
+
+    transcript = conversation(14);
+    const first = capture.takeSessionTail('main', 's1', transcript);
+    expect(first.tail).toHaveLength(6);                            // 8..14
+    expect(first.captured).toHaveLength(1);
+
+    const second = capture.takeSessionTail('main', 's1', transcript);
+    expect(second.tail).toHaveLength(14);                          // forgotten → whole transcript
+    expect(second.captured).toEqual([]);
+  });
+
+  it('with capture disabled the tail is the whole transcript, as before', () => {
+    const { capture } = makeCapture({ captureCfg: { enabled: false } });
+    const { tail, captured } = capture.takeSessionTail('main', 's1', conversation(30));
+    expect(tail).toHaveLength(30);
+    expect(captured).toEqual([]);
   });
 });

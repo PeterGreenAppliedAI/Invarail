@@ -61,3 +61,26 @@ describe('FactStore persists provenance', () => {
     expect(entry!.provenance).toBe('observed');
   });
 });
+
+describe('FactStore.setProvenanceByText', () => {
+  it('promotes exactly the named facts and reports the count', async () => {
+    const store = new FactStore(testDir);
+    await store.writeFact({ text: 'Peter uses a 3060' }, 'user1', 'capture/s1');
+    await store.writeFact({ text: 'Peter runs Invarail' }, 'user1', 'capture/s1');
+
+    expect(store.setProvenanceByText(['Peter uses a 3060'], 'user1', 'stated')).toBe(1);
+    const facts = store.loadFactsJson('user1');
+    expect(facts.find(f => f.text === 'Peter uses a 3060')!.provenance).toBe('stated');
+    expect(facts.find(f => f.text === 'Peter runs Invarail')!.provenance).toBe('observed');
+
+    // Already stated — nothing to change.
+    expect(store.setProvenanceByText(['Peter uses a 3060'], 'user1', 'stated')).toBe(0);
+  });
+
+  it('is a no-op for unknown text and an empty list', async () => {
+    const store = new FactStore(testDir);
+    await store.writeFact({ text: 'x' }, 'user1', 's');
+    expect(store.setProvenanceByText(['not there'], 'user1', 'stated')).toBe(0);
+    expect(store.setProvenanceByText([], 'user1', 'stated')).toBe(0);
+  });
+});
