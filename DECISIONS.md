@@ -4,6 +4,34 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Memory Gets Its Intake Fixed — and a Synthesis Pass Is Measured Out (September 20 2026)
+
+### The question that reordered the work
+Peter, mid-build: *"Why does it feel like we might have made our memory cheaper instead of better?"* — and he was right. Provenance, capture and the USER.md fix are all correctness work; the only two items from the agent's own wishlist that would have changed how it THINKS (causal edges, retrieval-time inference) were the two rejected. The honest sequencing answer is that provenance is what makes the ambitious version safe to label — but hygiene alone is the librarian the agent said it didn't want to be.
+
+### What the graph actually contained
+Before building anything on top of it: **24 facts, 52 entities**, all under one principal. Entity clusters (the raw material for any "so what" pass): `Peter Green` holding 12 of 24, `AI` holding 5, and four 2-fact clusters of which two were the SAME spurious NER pairing (`Router` and `LocalClaw` both attached to an unrelated fact about LIT networking events). Not one usable theme. The graph wasn't shallow because the schema was weak; it was shallow because **intake barely ran** — extraction fired only at `!reset` and on the 2h heartbeat, and Invarail had been off for a month.
+
+### Shipped
+- **Incremental capture** (`src/services/memory-capture.ts`): every N unprocessed turns, on the window only, AFTER delivery, fire-and-forget on the utility tier, hard-bounded. The trigger is code — the alternative on the table was a model call to detect topic shifts, i.e. model judgment on the hot path deciding whether to spend another model call. Marker advances on empty extraction (or the window re-sends forever) and rewinds on `!reset`. Facts land `observed`. `memory.capture.enabled: false` is the one-line off switch.
+- **Cluster hygiene** (`filterDegenerateClusters`, applied inside `getClusters`): owner names excluded by rule (from config principals — the name is the deployment's), and a document-frequency stopword rule measured per corpus rather than a blocklist.
+- **USER.md authority inversion**: read-only to the agent, fed to extraction as an authoritative do-not-re-extract block. Identity is a rule, not an observation.
+
+### Caught before it shipped: provenance would have hedged ALL of memory
+Every fact in the graph predates the field and reads as `observed`; nothing is `stated` until the next `!save`. Unconditional marking would have tagged every injected line "unconfirmed" and told the model to ask rather than assert — on day one, for the whole store, a straight downgrade of a system Peter described as already able to "pass information and ask me about things that are happening." Now marks appear only when the injected set is actually MIXED. **A distinction that doesn't distinguish is noise** — the same principle as the frequency rule.
+
+### The synthesis pass: gated, and the gate failed
+Re-ran the cluster check after hygiene. Owner hub dropped. `AI` survived at 21% — the 50% frequency rule only ever catches the owner, which the name rule already handles, so on this corpus it does nothing. Every surviving cluster was a 2-fact restatement or the NER pairing. **Not built.** Feeding these to phi4 and asking what the combination implies produces the inputs with a conjunction. The design stands (heartbeat-time, `(:Synthesis)` node with `provenance: inferred`, structural `DERIVED_FROM` edges so a superseded input invalidates it by code, short expiry, max 1 in priming) — re-run the gate after capture has fed the graph for a few weeks and calibrate the frequency threshold on real volume, not on one 24-fact reading.
+
+### Corrections to the session's own reads
+- The two "deterministic systems" facts are NOT duplicates — they share a phrase and carry different information (podcast vs. job title). Dedup was right; no similarity guard was added.
+- The earlier "59 facts" figure was wrong; it is 24.
+
+### Still open
+NER attaching `Router`/`LocalClaw` to a fact about tech meetups is an entity-typing quality problem, not a clustering one. Unfixed; worth a look once there is volume to judge it against.
+
+---
+
 ## Facts Carry How We Know Them — Epistemic Provenance (September 20 2026)
 
 ### The complaint that produced it
