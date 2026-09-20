@@ -316,8 +316,8 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     // (reaction/deny) are born at 2; inferred ones must recur.
     if (params.config.memory?.experiences?.enabled !== false && message.length > 10) {
       try {
-        const { sharedExperienceStore } = await import('./memory/experience-store.js');
-        const matches = (await sharedExperienceStore(params.client, params.config.memory?.falkordb).searchRelevant(message, 2, 0.6))
+        const { sharedExperienceStore, experienceStoreConfigFrom } = await import('./memory/experience-store.js');
+        const matches = (await sharedExperienceStore(params.client, experienceStoreConfigFrom(params.config.memory)).searchRelevant(message, 2, 0.6))
           .filter(m => m.evidenceCount >= 2);
         if (matches.length > 0) {
           console.log(`[Dispatch] Experience injection: ${matches.length}`);
@@ -677,7 +677,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   if (QUALITY_CATEGORIES.has(effectiveCategory) && result.answer?.length > 100 && !params.cronMode) {
     try {
       const qualityResponse = await client.chat({
-        model: config.router?.model ?? 'phi4:14b',
+        model: config.router?.model ?? 'phi4-mini',   // schema default; :14b was a stale literal
         messages: [{
           role: 'user',
           content: `Rate this response for a ${effectiveCategory} task. User asked: "${message.slice(0, 200)}"\nResponse: "${result.answer.slice(0, 2000)}"\n\nScoring guide (1=bad, 3=adequate, 5=excellent):\n- accuracy: Does it contain correct information? For web_search: are facts sourced? For exec: did the command work?\n- relevance: Does it answer what was asked? Ignore unrelated session context.\n- completeness: Does it cover the topic sufficiently for a ${effectiveCategory} response? A web search summary doesn't need to be a research paper.\n\nScore generously for responses that accomplish the task. A structured answer with sources is at least a 4.\nJSON only: {"accuracy": N, "relevance": N, "completeness": N}`,

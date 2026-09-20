@@ -128,7 +128,13 @@ export class Orchestrator {
     this.factStore = new FactStore(defaultWorkspacePath, this.client);
 
     // Initialize graph memory (FalkorDB) — non-blocking, falls back to FactStore if unavailable
-    this.graphMemory = new GraphMemoryStore(this.client, { nerModel: this.config.memory?.nerModel, ...this.config.memory.falkordb });
+    // Embedding model + dims come from config (were hardcoded in the store, 2026-09-19).
+    this.graphMemory = new GraphMemoryStore(this.client, {
+      nerModel: this.config.memory?.nerModel,
+      embeddingModel: this.config.memory?.embeddingModel,
+      embeddingDims: this.config.memory?.embeddingDims,
+      ...this.config.memory.falkordb,
+    });
     this.graphMemory.connect().then(() => {
       console.log('[Orchestrator] Graph memory connected');
     }).catch(err => {
@@ -237,11 +243,11 @@ export class Orchestrator {
     // Self-modification service (Phase B) — worktree arenas, gate, ledger-confirmed merges.
     // exit(42) is the supervisor handshake: "deploy restart requested" (0 = intentional stop).
     if (this.config.selfMod?.enabled) {
-      const { sharedExperienceStore } = await import('./memory/experience-store.js');
+      const { sharedExperienceStore, experienceStoreConfigFrom } = await import('./memory/experience-store.js');
       this.selfModService = new SelfModService({
         config: this.config,
         graphMemory: this.graphMemory,
-        experienceStore: sharedExperienceStore(this.client, this.config.memory?.falkordb),
+        experienceStore: sharedExperienceStore(this.client, experienceStoreConfigFrom(this.config.memory)),
         client: this.client,
         workspacePath: defaultWorkspace,
         onRestartRequested: () => {
@@ -1198,8 +1204,8 @@ export class Orchestrator {
 
     if (/^!experiences?\b/.test(trimmed)) {
       const args = trimmed.replace(/^!experiences?\s*/, '').trim();
-      const { sharedExperienceStore } = await import('./memory/experience-store.js');
-      const store = sharedExperienceStore(this.client, this.config.memory?.falkordb);
+      const { sharedExperienceStore, experienceStoreConfigFrom } = await import('./memory/experience-store.js');
+      const store = sharedExperienceStore(this.client, experienceStoreConfigFrom(this.config.memory));
       let replyText: string;
       const dropMatch = args.match(/^drop\s+(\S+)$/i);
       if (dropMatch) {

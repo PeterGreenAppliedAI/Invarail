@@ -177,6 +177,14 @@ export const MemoryConfigSchema = z.object({
   extractionModel: z.string().optional(),
   /** Small fast model for graph NER (entity typing) + contradiction checks. Defaults to phi4-mini:latest. */
   nerModel: z.string().default('phi4-mini:latest'),
+  /** Embedding model for ALL vector work — graph facts, experiences, knowledge import,
+   *  lessons. Was hardcoded in four files (graph-store, experience-store, register-all,
+   *  client default), so swapping embedders meant editing source (2026-09-19). */
+  embeddingModel: z.string().default('qwen3-embedding:8b'),
+  /** Vector width of embeddingModel — MUST match it or the FalkorDB index is built wrong.
+   *  qwen3-embedding: 8b=4096, 4b=2560, 0.6b=1024. Changing either requires re-embedding
+   *  every stored vector AND re-measuring the relevance floors (they are per-corpus). */
+  embeddingDims: z.number().default(4096),
   /** Lessons — negative procedural memory ("approach X failed for task-shape Y").
    *  Heartbeat synthesizes from code-detected failure evidence; injection is
    *  gated on recurrence (evidence ≥ 2). Gate covers synthesis AND injection. */

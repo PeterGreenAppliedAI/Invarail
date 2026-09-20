@@ -52,6 +52,8 @@ interface ExperienceStoreConfig {
   host: string;
   port: number;
   graphName: string;
+  /** MUST match GraphMemoryStore's — same graph, same vector space. */
+  embeddingModel: string;
   embeddingDims: number;
 }
 
@@ -62,6 +64,7 @@ const DEFAULT_CONFIG: ExperienceStoreConfig = {
   // edges cannot cross graphs. (The pre-rename historical graph is 'localclaw_memory';
   // set memory.falkordb.graphName in config to point both stores at it.)
   graphName: 'invarail_memory',
+  embeddingModel: 'qwen3-embedding:8b',
   embeddingDims: 4096,
 };
 
@@ -124,7 +127,7 @@ export class ExperienceStore {
       const row = ((existing.data ?? []) as Array<{ id: string }>)[0];
       if (row) return { id: row.id, action: 'exists' };
     }
-    const [embedding] = await this.client.embed(input.text);
+    const [embedding] = await this.client.embed(input.text, this.config.embeddingModel);
     if (!embedding?.length) return null;
     const now = new Date().toISOString();
 
@@ -192,7 +195,7 @@ export class ExperienceStore {
   async searchRelevant(query: string, topK = 2, minSimilarity = 0.6): Promise<ExperienceMatch[]> {
     if (!(await this.ensure())) return [];
     try {
-      const [embedding] = await this.client.embed(query);
+      const [embedding] = await this.client.embed(query, this.config.embeddingModel);
       if (!embedding?.length) return [];
       const res = await this.graph!.query(
         `CALL db.idx.vector.queryNodes('Experience', 'embedding', $k, vecf32($emb)) YIELD node, score
@@ -292,14 +295,26 @@ export class ExperienceStore {
 // Graph identity MUST match GraphMemoryStore's (facts, turns, and experiences are one
 // memory — provenance edges cannot cross graphs): pass config.memory.falkordb where
 // available; first caller with config wins for the singleton.
+/** Build store identity from config.memory — falkordb connection PLUS the embedding
+ *  model/dims that live one level up. Callers passed only `falkordb` and silently got
+ *  the hardcoded embedder (2026-09-19). */
+export function experienceStoreConfigFrom(memory?: {
+  falkordb?: { host?: string; port?: number; graphName?: string };
+  embeddingModel?: string; embeddingDims?: number;
+}): { host?: string; port?: number; graphName?: string; embeddingModel?: string; embeddingDims?: number } {
+  return { ...(memory?.falkordb ?? {}), embeddingModel: memory?.embeddingModel, embeddingDims: memory?.embeddingDims };
+}
+
 let shared: ExperienceStore | null = null;
-export function sharedExperienceStore(client: OllamaClient, falkordb?: { host?: string; port?: number; graphName?: string }): ExperienceStore {
+export function sharedExperienceStore(client: OllamaClient, falkordb?: { host?: string; port?: number; graphName?: string; embeddingModel?: string; embeddingDims?: number }): ExperienceStore {
   if (!shared) {
     shared = new ExperienceStore(client, {
       ...DEFAULT_CONFIG,
       ...(falkordb?.host ? { host: falkordb.host } : {}),
       ...(falkordb?.port ? { port: falkordb.port } : {}),
       ...(falkordb?.graphName ? { graphName: falkordb.graphName } : {}),
+      ...(falkordb?.embeddingModel ? { embeddingModel: falkordb.embeddingModel } : {}),
+      ...(falkordb?.embeddingDims ? { embeddingDims: falkordb.embeddingDims } : {}),
     });
   }
   return shared;

@@ -190,6 +190,9 @@ export class OllamaClient {
     return this.post<OllamaGenerateResponse>('/api/generate', body);
   }
 
+  /** Callers should pass the configured embedding model (config.memory.embeddingModel).
+   *  The literal default is a last-resort fallback only — a mismatch here silently
+   *  produces vectors of the wrong width for the index (2026-09-19). */
   async embed(input: string | string[], model = 'qwen3-embedding:8b'): Promise<number[][]> {
     // Try /api/embed first (standard Ollama), fall back to /api/embeddings (gateway compat)
     await embedThrottle();

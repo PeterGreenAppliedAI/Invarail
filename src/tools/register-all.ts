@@ -96,13 +96,13 @@ export async function registerAllTools(
       config: config.localIndex,
       embeddings: embeddingStore,
       client: options.ollamaClient,
-      embedModel: 'qwen3-embedding:8b',
+      embedModel: config.memory?.embeddingModel ?? 'qwen3-embedding:8b',
       timezone: config.timezone,
     });
     registry.register(createLocalSearchTool({
       embeddings: embeddingStore,
       client: options.ollamaClient,
-      embedModel: 'qwen3-embedding:8b',
+      embedModel: config.memory?.embeddingModel ?? 'qwen3-embedding:8b',
       index: webIndex,
       maxAgeDays: config.localIndex.maxAgeDays,
     }));

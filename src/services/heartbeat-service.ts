@@ -261,7 +261,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
     if (config.memory?.experiences?.enabled !== false) {
       try {
         const { synthesizeExperiences } = await import('../learnings/experience-synthesis.js');
-        const { sharedExperienceStore } = await import('../memory/experience-store.js');
+        const { sharedExperienceStore, experienceStoreConfigFrom } = await import('../memory/experience-store.js');
         let recentTurns;
         const turnPrincipal = hb.delivery?.target ? resolvePrincipal(hb.delivery.target, config) : undefined;
         if (graphMemory && turnPrincipal) {
@@ -270,7 +270,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
         const exp = await synthesizeExperiences({
           client,
           model: config.memory?.extractionModel ?? config.router.model,
-          store: sharedExperienceStore(client, config.memory?.falkordb),
+          store: sharedExperienceStore(client, experienceStoreConfigFrom(config.memory)),
           recentTurns,
         });
         if (exp.created.length > 0 || exp.reinforced > 0 || exp.superseded > 0) {

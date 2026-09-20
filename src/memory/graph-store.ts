@@ -148,7 +148,7 @@ export class GraphMemoryStore {
     if (!text) return null;
 
     // Generate embedding
-    const [embedding] = await this.client.embed(text);
+    const [embedding] = await this.client.embed(text, this.config.embeddingModel);
     if (!embedding) return null;
 
     // Check for semantic duplicates (cosine distance < 0.15 = similarity > 0.85)
@@ -354,7 +354,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
   }): Promise<GraphSearchResult[]> {
     if (!this.graph) await this.connect();
 
-    const [queryEmb] = await this.client.embed(query);
+    const [queryEmb] = await this.client.embed(query, this.config.embeddingModel);
     if (!queryEmb) return [];
 
     // Build metadata filter clauses
@@ -711,7 +711,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
     const oldId = (oldResult.data![0] as any)['f.id'];
 
     // Create the new fact directly (skip dedup — this IS an intentional update)
-    const [embedding] = await this.client.embed(newInput.text);
+    const [embedding] = await this.client.embed(newInput.text, this.config.embeddingModel);
     if (!embedding) return null;
 
     const newId = `fact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -870,7 +870,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
     if (!this.graph) await this.connect();
 
     // First find the most relevant fact via vector search
-    const [queryEmb] = await this.client.embed(query);
+    const [queryEmb] = await this.client.embed(query, this.config.embeddingModel);
     if (!queryEmb) return [];
 
     const seedResult = await this.graph!.query(
