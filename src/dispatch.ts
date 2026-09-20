@@ -240,30 +240,46 @@ function resolveConfirmSet(
  * Build user priming context from graph memory or flat store.
  * Runs in parallel with router classification for latency savings.
  */
+export type PrimingFact = { text: string; provenance: FactProvenance };
+
 /**
- * Render one fact for injection, carrying HOW we know it.
+ * Render the injected fact list, marking HOW we know each one — but ONLY when the
+ * set actually contains more than one class.
  *
- * 'stated' renders bare — it's the owner's own confirmed word and the model may
- * use it directly. The weaker two are marked, because the failure this fixes is
- * the model asserting its own guess back at the owner in the same voice as
- * something they actually said. Markers are three words; the class distinction
- * is worth that much of the budget.
+ * The marks exist to stop the model asserting its own guess back at the owner in
+ * the same voice as something they actually said. That only needs saying when both
+ * kinds are present. When every fact is the same class the mark distinguishes
+ * nothing, and the accompanying "ask, don't assert" instruction is then a blanket
+ * hedging order over the entire memory — which is a straight downgrade of a system
+ * that currently recalls things confidently and usefully.
+ *
+ * This matters immediately rather than theoretically: provenance is new, so every
+ * fact already in the graph reads as 'observed' and nothing is 'stated' until the
+ * owner next runs !save. Marking unconditionally would have hedged all of memory
+ * on day one. The mix turns marking on by itself.
  */
-function formatPrimingFact(fact: { text: string; provenance: FactProvenance }): string {
-  const mark = fact.provenance === 'stated' ? ''
-    : fact.provenance === 'inferred' ? ' [inferred]'
-    : ' [observed, unconfirmed]';
-  return `- ${fact.text}${mark}`;
+export function renderPrimingFacts(facts: PrimingFact[]): { lines: string[]; note: string } {
+  const mixed = new Set(facts.map(f => f.provenance)).size > 1;
+  const mark = (f: PrimingFact) =>
+    !mixed || f.provenance === 'stated' ? ''
+      : f.provenance === 'inferred' ? ' [inferred]'
+      : ' [observed, unconfirmed]';
+  return {
+    lines: facts.map(f => `- ${f.text}${mark(f)}`),
+    note: mixed
+      ? ' An unmarked line is something they told you directly. A line marked [observed, unconfirmed] or [inferred] is something you worked out on your own and they never confirmed — you may use it, but ask rather than assert it back to them as fact.'
+      : '',
+  };
 }
 
 async function buildUserPriming(params: DispatchParams, message: string, senderId: string): Promise<string> {
   try {
-    let stableFacts: string[] = [];
-    let contextFacts: string[] = [];
+    let stableFacts: PrimingFact[] = [];
+    let contextFacts: PrimingFact[] = [];
 
     if (params.graphMemory) {
       const stable = await params.graphMemory.getStableFacts(senderId, 4);
-      stableFacts = stable.slice(0, 5).map(formatPrimingFact);
+      stableFacts = stable.slice(0, 5);
 
       if (message.length > 10) {
         // Relevance floor: multi-signal scoring only orders results — without a
@@ -275,9 +291,8 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         const MAX_CONTEXT_FACTS = 3;
         const results = await params.graphMemory.search(message, senderId, 5, { minSimilarity: MIN_SIMILARITY });
         contextFacts = results
-          .filter(r => !stableFacts.some(s => s.includes(r.text)))
-          .slice(0, MAX_CONTEXT_FACTS)
-          .map(formatPrimingFact);
+          .filter(r => !stableFacts.some(s => s.text === r.text))
+          .slice(0, MAX_CONTEXT_FACTS);
 
         // Lazy multi-hop: only when the query IS memory-relevant (some results
         // passed the floor) but sparse. Firing on zero relevant hits would add
@@ -286,8 +301,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
           try {
             const hops = await params.graphMemory.findMultiHop(message, senderId, 2, 3);
             const hopFacts = hops
-              .filter(h => !stableFacts.some(s => s.includes(h.text)) && !contextFacts.some(c => c.includes(h.text)))
-              .map(formatPrimingFact);
+              .filter(h => !stableFacts.some(s => s.text === h.text) && !contextFacts.some(c => c.text === h.text));
             contextFacts.push(...hopFacts.slice(0, MAX_CONTEXT_FACTS - contextFacts.length));
           } catch { /* multi-hop optional */ }
         }
@@ -297,8 +311,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
       stableFacts = allFacts
         .filter(f => (f.importance ?? 2) >= 4 && f.confidence >= 0.7)
         .sort((a, b) => (b.importance ?? 2) - (a.importance ?? 2))
-        .slice(0, 5)
-        .map(formatPrimingFact);
+        .slice(0, 5);
     }
 
     let modelSummary: string | null = null;
@@ -306,10 +319,16 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
       try { modelSummary = await params.graphMemory.getUserModelSummary(senderId); } catch { /* best-effort */ }
     }
 
-    const allPriming = [...new Set([...stableFacts, ...contextFacts])];
+    const seenText = new Set<string>();
+    const allPriming = [...stableFacts, ...contextFacts].filter(f => {
+      if (seenText.has(f.text)) return false;
+      seenText.add(f.text);
+      return true;
+    });
     const primingParts: string[] = [];
     if (allPriming.length > 0) {
-      primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${allPriming.join('\n')}\nThese facts reflect when they were written — a file, URL, or plan they mention may have changed since; verify before relying on one. An unmarked line is something they told you directly. A line marked [observed, unconfirmed] or [inferred] is something you worked out on your own and they never confirmed — you may use it, but ask rather than assert it back to them as fact.`);
+      const { lines, note } = renderPrimingFacts(allPriming);
+      primingParts.push(`## Background context about this user (do NOT reference unless directly relevant)\n${lines.join('\n')}\nThese facts reflect when they were written — a file, URL, or plan they mention may have changed since; verify before relying on one.${note}`);
     }
 
     // Lessons: floor-gated one-liners from past failures that have RECURRED
