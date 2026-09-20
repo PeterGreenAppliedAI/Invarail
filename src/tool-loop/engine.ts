@@ -547,6 +547,13 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
   let hallucinationRepairAttempted = false;
   let refusalRepairAttempted = false;
   let emptyRetryAttempted = false;
+  // The last NON-EMPTY answer a behavioral repair (hallucination / premature) sent
+  // back for another try. If the retry comes back empty, this is returned instead:
+  // a repair must never convert a usable answer into nothing (live 2026-09-20:
+  // "i know a fair bit about you, peter…" → repair → empty → CHANNEL_SEND_ERROR).
+  // Checkpoint rejections are deliberately NOT remembered — that is an oracle
+  // saying the answer is wrong, not a heuristic about how the model got there.
+  let lastRejectedAnswer = '';
   let driftRepairAttempted = false;
   // Repair prompts don't consume tool-call budget — each one-shot repair
   // extends the loop by one iteration (bounded: each flag fires at most once)
@@ -892,6 +899,7 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
     const recentTools = steps.filter(s => s.action).map(s => s.action!.tool);
     if (hasToolAccess && !hallucinationRepairAttempted && claimsActionWithoutToolCall(answer, recentTools)) {
       console.log(`[ReAct] Step ${i + 1}: action hallucination detected — "${answer.slice(0, 80)}..."`);
+      if (answer.trim()) lastRejectedAnswer = answer;
       messages.push(msg);
       messages.push({
         role: 'user',
@@ -912,6 +920,7 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
     // fabricated web fetches for a unit conversion rather than defy the order).
     if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted) {
       console.log(`[ReAct] Step ${i + 1}: premature answer without tool use — "${answer.slice(0, 80)}..."`);
+      if (answer.trim()) lastRejectedAnswer = answer;
       messages.push(msg);
       messages.push({
         role: 'user',
@@ -945,6 +954,10 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
       }
     }
 
+    if (!answer.trim() && lastRejectedAnswer) {
+      console.log(`[ReAct] Step ${i + 1}: empty after repair — returning the answer the repair rejected`);
+      answer = lastRejectedAnswer;
+    }
     steps.push({ thought: '', finalAnswer: answer });
     const fileAppend = fileTokens.map(p => ` [FILE:${p}]`).join('');
     // Stream the final answer to user (answer already computed, no tool-call risk)
@@ -975,7 +988,7 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
       ? await client.chatStream(finalChatParams, onStream)
       : await client.chat(finalChatParams);
 
-    let answer = stripReActScaffolding(finalResponse.message?.content || '') || 'I was unable to complete the request within the allowed steps.';
+    let answer = stripReActScaffolding(finalResponse.message?.content || '') || lastRejectedAnswer || 'I was unable to complete the request within the allowed steps.';
     // At the cap the checkpoint cannot grant iterations — a rejection converts the
     // synthesized answer into the hook's honest-failure form instead (no loops here).
     if (config.onFinalAnswer) {
