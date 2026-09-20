@@ -23,6 +23,31 @@ The multi-backend client only knew OpenAI-compat backends + ONE gateway Ollama; 
 ### Watch list (honest, unmeasured)
 `research` inherits gemma4 and runs think-ON synthesis — the one slot where the 12B's extra weight might be missed and where Peter's doctrine says rigor is never rationed. The next weekly report is the A/B; a one-line `model:` override moves it back to GLM if quality drops. Vision also inherits (gemma4 is multimodal, model-caps says vision:true) but has not been image-probed on this serving.
 
+## The $300 Card Beat the $600 Mini — Foreground Moves to the 3060 (September 19 2026)
+
+### The head-to-head that settled it
+Identical model (gemma4:12b), identical 9K-token cold prompt, unique prefix so nothing caches:
+
+| box | prefill | a 4,000-tok chat prompt |
+|---|---|---|
+| **3060 (CUDA, 12GB)** | **1,220 tok/s** | **~3.3s** |
+| M4 Mac Mini (MLX) | 123 tok/s | ~33s |
+
+10x on prefill from a card costing half the Mini. Prefill is compute-bound (parallel matmul over every input token) and a context-heavy resident agent spends nearly all its time there — confirmed against published benchmarks, which put a 4090 at "3x+" a M4 Max on prompt processing while decode stays competitive.
+
+### Fleet, settled
+- **3060 (10.9.8.14)** — `defaultModel: gemma4:12b`. Foreground: chat, arena, cron, memory, research, briefing, heartbeat, vision.
+- **Sparks / GLM-5.3** — CODING only (`code_gen` + `pi.model`). Which is what Peter had actually been doing for a month: turning Invarail off to use GLM in Pi exclusively.
+- **.221 Mac Mini** — NOT a brain. Kept routable for short-prompt work (scoped subagent tasks, evals, batch), where it went 7/7 on the duel. Peter's own reframe and the right one: "a subagent that only gets a task not the whole thing" — 400-token prompts cost ~3s there, 4,000-token prompts cost ~33s.
+- **A5000 gateway** — utility tier unchanged (phi4 router, NER, embeddings, whisper).
+- `session.contextSize` 96000 → 32768: the 3060 has 12GB total, so a huge KV allocation competes with the weights.
+
+### What this cost to learn
+A full day, and honestly: a second Mac Mini bought for inference that can't do inference well. Peter, plainly: "the second one was absolutely a waste of money... I could have had something like half of a 1200 GPU card." The counterweight is that the hardware lesson produced two backend-agnostic harness fixes (prefix-cache ordering, Ollama streaming) that make every box faster, and the Mini has a real remaining role as an agent BODY — its own OS, filesystem and state for parallel cells — which is the factory's actual bottleneck.
+
+### Standing note
+Clustering Minis over Thunderbolt does NOT fix this: pipeline parallelism adds capacity, not per-request FLOPS, and tensor parallelism needs ~900GB/s interconnect (NVLink) vs Thunderbolt's ~10GB/s. A clustered 27B would prefill SLOWER than the single-box 12B.
+
 ## Prefill Is the Hidden Axis — and Our Prompt Order Was Throwing It Away (September 19 2026)
 
 ### How we found it
