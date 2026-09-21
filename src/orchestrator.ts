@@ -1614,7 +1614,9 @@ export class Orchestrator {
             const text = pdf.text.trim();
             if (text) {
               console.log(`[Orchestrator] Extracted ${text.length} chars from PDF: ${saved.filename}`);
-              prefixes.push(`[The user attached a PDF: ${saved.filename}. Extracted text below:]\n\n${text}`);
+              // End-delimited so the memory-priming query can strip the body: embedding
+              // 9K chars of document on the Mini blew the 8s priming cap (2026-09-21).
+              prefixes.push(`[The user attached a PDF: ${saved.filename}. Extracted text below:]\n\n${text}\n\n[End of attached PDF text]`);
             } else {
               suffixes.push(`[Attached PDF: ${saved.filename} but no text could be extracted (scanned/image PDF).]`);
             }

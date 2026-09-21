@@ -272,7 +272,30 @@ export function renderPrimingFacts(facts: PrimingFact[]): { lines: string[]; not
   };
 }
 
+/**
+ * What memory priming should EMBED for a message: the user's own words, not the
+ * documents riding along with them.
+ *
+ * The first priming timeout in production (2026-09-21) was a turn where Peter
+ * attached a PDF: the message carried 8,906 chars of extracted text, priming
+ * embedded all of it, and ~2.5K tokens of prefill on the Mini took longer than
+ * the 8s cap — the same compute-bound prefill lesson from the day before, now on
+ * the embedder. It was also the wrong query: a document-sized embedding is a
+ * blurry average that matches nothing well. Page and PDF bodies are stripped
+ * (their headers stay — "attached a PDF: roadmap.pdf" IS signal), then a hard
+ * cap bounds whatever is left. 800 chars ≈ 200 tokens ≈ under 2s worst case.
+ */
+export function primingQueryFrom(message: string, maxChars = 800): string {
+  const stripped = message
+    .replace(/\[PAGE_CONTENT\][\s\S]*?\[\/PAGE_CONTENT\]/g, '')
+    .replace(/(\[The user attached a PDF: [^\]]*\])[\s\S]*?\[End of attached PDF text\]/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.length > maxChars ? stripped.slice(0, maxChars) : stripped;
+}
+
 async function buildUserPriming(params: DispatchParams, message: string, senderId: string): Promise<string> {
+  const query = primingQueryFrom(message);
   try {
     let stableFacts: PrimingFact[] = [];
     let contextFacts: PrimingFact[] = [];
@@ -281,7 +304,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
       const stable = await params.graphMemory.getStableFacts(senderId, 4);
       stableFacts = stable.slice(0, 5);
 
-      if (message.length > 10) {
+      if (query.length > 10) {
         // Relevance floor: multi-signal scoring only orders results — without a
         // similarity floor, fresh high-importance facts inject on EVERY turn
         // regardless of relevance, a topic-drift trap for small models.
@@ -289,7 +312,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         // noise clusters ≤0.49, genuine signal starts ~0.546 on qwen3-embedding.
         const MIN_SIMILARITY = 0.52;
         const MAX_CONTEXT_FACTS = 3;
-        const results = await params.graphMemory.search(message, senderId, 5, { minSimilarity: MIN_SIMILARITY });
+        const results = await params.graphMemory.search(query, senderId, 5, { minSimilarity: MIN_SIMILARITY });
         contextFacts = results
           .filter(r => !stableFacts.some(s => s.text === r.text))
           .slice(0, MAX_CONTEXT_FACTS);
@@ -299,7 +322,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         // tangentially-connected facts exactly when they'd be most distracting.
         if (results.length > 0 && results.length < 3) {
           try {
-            const hops = await params.graphMemory.findMultiHop(message, senderId, 2, 3);
+            const hops = await params.graphMemory.findMultiHop(query, senderId, 2, 3);
             const hopFacts = hops
               .filter(h => !stableFacts.some(s => s.text === h.text) && !contextFacts.some(c => c.text === h.text));
             contextFacts.push(...hopFacts.slice(0, MAX_CONTEXT_FACTS - contextFacts.length));
@@ -333,12 +356,12 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
 
     // Lessons: floor-gated one-liners from past failures that have RECURRED
     // (evidence ≥ 2 — a one-off never steers). Zero hits = zero tokens.
-    if (params.config.memory?.lessons?.enabled !== false && message.length > 10) {
+    if (params.config.memory?.lessons?.enabled !== false && query.length > 10) {
       try {
         const { LessonStore } = await import('./learnings/lesson-store.js');
         const { relevantLessonLines } = await import('./learnings/lesson-semantic.js');
         const workspacePath = resolveWorkspacePath(params.agentId ?? params.config.agents.default, params.config);
-        const lessonLines = await relevantLessonLines(params.client, new LessonStore(workspacePath), message);
+        const lessonLines = await relevantLessonLines(params.client, new LessonStore(workspacePath), query);
         if (lessonLines.length > 0) {
           console.log(`[Dispatch] Lesson injection: ${lessonLines.length}`);
           primingParts.push(`## Lessons from past failures (steer around these)\n${lessonLines.join('\n')}`);
@@ -349,10 +372,10 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     // plain prompt text; never permissions/routing/confirm (the authority
     // boundary, DECISIONS 2026-08-10). Evidence ≥ 2: explicit signals
     // (reaction/deny) are born at 2; inferred ones must recur.
-    if (params.config.memory?.experiences?.enabled !== false && message.length > 10) {
+    if (params.config.memory?.experiences?.enabled !== false && query.length > 10) {
       try {
         const { sharedExperienceStore, experienceStoreConfigFrom } = await import('./memory/experience-store.js');
-        const matches = (await sharedExperienceStore(params.client, experienceStoreConfigFrom(params.config.memory)).searchRelevant(message, 2, 0.6))
+        const matches = (await sharedExperienceStore(params.client, experienceStoreConfigFrom(params.config.memory)).searchRelevant(query, 2, 0.6))
           .filter(m => m.evidenceCount >= 2);
         if (matches.length > 0) {
           console.log(`[Dispatch] Experience injection: ${matches.length}`);
