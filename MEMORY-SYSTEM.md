@@ -142,13 +142,15 @@ ON MATCH SET e.type = CASE WHEN e.type = 'unknown' THEN $type ELSE e.type END
 
 ---
 
-## Fact Extraction: Three Paths
+## Fact Extraction: Four Paths, One Provenance Field
 
-Facts enter the system through three paths, each with different trust levels:
+Facts enter the system through four paths, each with a different trust level — and since 2026-09-20 that trust level is a property on the fact, not folklore. `provenance` is `stated | observed | inferred`: **stated** = the owner asserted or explicitly confirmed it; **observed** = extracted autonomously from what was said, never confirmed; **inferred** = a model derived it (consolidation merges — a merge is model-authored prose even when both inputs were stated, so merging never launders provenance upward). It is orthogonal to `source`, which is a free-text WHERE (`session/foo.json`, `capture/<session>`). Nodes written before the field existed coalesce **down** to `observed`; an unknown-origin fact must never be presented as something the owner confirmed. Search accepts a `provenance` filter.
 
-### Path 1: User-Approved (`!reset` → `!save`)
+### Path 1: User-Approved (`!reset` → `!save`) — the only path to `stated`
 
-When the user clears a session with `!reset`, the extraction model (phi4:14b) analyzes the transcript and proposes facts. The user sees the candidates and explicitly approves with `!save`. This is the highest-trust path.
+When the user clears a session with `!reset`, the extraction model (`memory.extractionModel`, phi4:latest on the utility box) analyzes **only the turns incremental capture has not already read** (see Path 4) and proposes facts; the reply also lists everything capture stored during the session, marked unconfirmed. `!save` writes the new facts as `stated` and **promotes** the session's captures `observed → stated` (graph by id, flat store by text — the two stores mint different ids). This is the highest-trust path and the only way a captured fact ever becomes `stated`. `!discard` leaves captures as they are.
+
+Why the tail only: an 80-turn `!reset` used to hand phi4 the whole 30K-char transcript with no `num_ctx`; Ollama's 4096 default overflowed and truncated from the FRONT, the extraction instructions vanished, and the model continued the chat in the assistant's voice ("No JSON array found", 2026-09-20). The transcript is now bounded to `memory.extractionContextSize` (oldest turns dropped, loudly) as a belt on top of the tail.
 
 The extraction prompt includes:
 
@@ -156,6 +158,8 @@ The extraction prompt includes:
 - **Importance tier reference** (5=critical health/family, 4=identity job/projects, 3=preference, 2=context, 1=ephemeral)
 - **Already-stored facts** — prevents re-extracting what we already know
 - **Recently-removed facts** — prevents re-extracting what the user deleted
+- **The owner profile (`USER.md`) as an authoritative block** — identity is a rule, not an observation. The file is read-only to the agent (it was writable via `workspace_write`, which put the owner's spouse's name one bad model turn from erasure) and anything already in it must never become a weaker-provenance graph fact.
+- **Do NOT infer** — record what was stated, not what it implies. The first live capture turned "my goal is to make me redundant" into "one-time setup rather than recurring revenue"; the user's next message said the opposite (retainer). Provenance labels the path a fact took, not whether its content is a quote or an extrapolation — that line is held in the prompt.
 - **Absolute dates only** — "yesterday"/"next Thursday" are meaningless when a fact is read weeks later; the model must convert to the actual date (relative dates were a real staleness bug class for TTL'd facts)
 
 The model outputs structured JSON:
@@ -185,7 +189,13 @@ Every 2 hours, the heartbeat reviews transcripts modified since the last review.
 
 ### Path 3: Explicit Save (memory_save tool)
 
-The user or a specialist explicitly calls `memory_save` with content. Maps category to importance tier (stable→4, context→2, decision→3, question→1) and writes through both backends.
+The user or a specialist explicitly calls `memory_save` with content. Maps category to importance tier (stable→4, context→2, decision→3, question→1) and writes through both backends. Lands as `observed` — the model decided it was worth saving; nobody confirmed it.
+
+### Path 4: Incremental Capture (every N turns)
+
+Before 2026-09-20, Paths 1 and 2 were the only intake, so anything said between heartbeats lived only in the context window and was lost if the session was never reset — the measured symptom was a graph of **24 facts after months** (the process had been off for a month, and the two-hour cadence had never been enough). `MemoryCapture` (`src/services/memory-capture.ts`) now runs the same extraction on the unprocessed window every `memory.capture.everyTurns` turns (default 8, with 2 turns of overlap so a fact stated across the boundary is not split in half).
+
+Three properties are load-bearing: **the trigger is code** (a model deciding "did the topic shift?" would put a model call on the hot path to decide whether to spend another model call); **it runs after delivery**, fire-and-forget on the utility tier with a hard timeout, so nothing new goes in front of a reply; and **it cannot claim `stated`**. The marker advances even on an empty extraction (otherwise the same window re-sends forever) and rewinds on `!reset`. The heartbeat still owns reconciliation. `memory.capture.enabled: false` is the one-line off switch.
 
 ### Write-Through to Both Stores
 
@@ -335,6 +345,10 @@ The context is injected as a preamble before the specialist's system prompt:
 
 The header "do NOT reference unless directly relevant" is critical — without it, the model tries to work every fact into its response. The block also ends with a staleness caveat — "these facts reflect when they were written; verify a mentioned file/URL/plan still exists before relying on it" — because a fact is a point-in-time observation, not live state.
 
+**Provenance marks (2026-09-20):** lines the owner never confirmed render as `… [observed, unconfirmed]` or `… [inferred]`, with one added sentence telling the model to ask rather than assert those back as fact — but **only when the injected set is mixed**. Every fact predating the field reads as `observed`, so unconditional marking would have hedged all of memory on day one, a straight downgrade of a system that already recalled things confidently. A distinction that distinguishes nothing is noise; the first `!save` turns marking on by itself.
+
+**What gets embedded for retrieval:** the user's words, not the documents riding with them. The first live priming timeout was a turn with an attached PDF — 8,906 chars embedded three times (facts, lessons, experiences) at the Mini's ~120 tok/s prefill, against an 8s cap. `primingQueryFrom` strips `[PAGE_CONTENT]` and attached-PDF bodies (headers stay — "attached a PDF: roadmap.pdf" is signal) and caps at 800 chars.
+
 **Other tenants of the EmbeddingStore:** the same SQLite vector store (`data/memory.db`, scoped by a `source` column) also holds vault document chunks (`source='vault'`), skill embeddings (`source='skill'`, semantic skill matching at a measured 0.65 floor), and lesson embeddings (`source='lesson'`, failure-boundary one-liners injected only at evidence ≥ 2) — one embedding pipeline, four retrieval systems.
 
 ---
@@ -479,13 +493,13 @@ The flat store was good enough for 6 months. But when we needed "find everything
 
 ## Infrastructure
 
-The entire memory system runs on a Mac Mini:
+The memory system is spread across the fleet by what each box is good at (2026-09-19):
 
-- **FalkorDB** — Docker container, ~85MB memory, Redis wire protocol on port 6379
-- **Embedding model** — qwen3-embedding:8b on Ollama, 4096-dimensional vectors
-- **NER model** — phi4-mini on Ollama, fast entity typing
-- **Extraction model** — phi4:14b on Ollama, fact extraction from transcripts
-- **Storage** — Graph in Docker volume, flat files in `data/workspaces/main/memory/`
+- **FalkorDB** — Docker container beside the Invarail process, ~85MB memory, Redis wire protocol on port 6379 (`memory.falkordb` in config)
+- **Embedding model** — qwen3-embedding:8b, resident alone on the Mac Mini (`inference.ollamaBackends[]`; `embed()` routes by model id) — an encoder does one forward pass, so the Mini's weak prefill only bites on document-sized inputs, which priming no longer sends
+- **NER + consolidation model** — phi4-mini on the 3060 utility box
+- **Extraction model** — `memory.extractionModel` (phi4:latest) on the 3060, window bounded by `memory.extractionContextSize`
+- **Storage** — Graph in Docker volume, flat files in `data/workspaces/main/memory/` (plus `capture-state.json` per workspace)
 
 No cloud services. No API costs. No data leaving the machine. The graph, vectors, entity linking, and fact extraction all run locally.
 

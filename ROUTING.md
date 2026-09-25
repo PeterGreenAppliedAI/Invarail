@@ -162,13 +162,13 @@ Note: sticky routing governs *classification* (which category the message lands 
 
 If pre-overrides and sticky routing don't apply, the router model classifies the message.
 
-**Model:** phi4:14b
+**Model:** `router.model` — phi4:latest on the 3060 utility box (the `:14b` tag does not exist there; a stale tag cost one fact extraction to a 404 on 2026-09-19)
 **Temperature:** 0.1 (very low — same message should always produce the same category)
 **Output:** Single word — enum-grammar-constrained via `format` when the backend supports it (the model physically cannot emit an invalid category); plain generation + sanitize otherwise
 **Latency:** ~200ms warm; up to several seconds when the gateway has evicted the model
 **Timeout:** `router.timeout` is ENFORCED (July 2026) — a hung/dead backend costs exactly the configured budget before keyword fallback, not the HTTP client's retry loop (~12s). The abandoned request's result is discarded.
 
-The prompt is intentionally minimal. It lists the 15 categories with one-line descriptions and asks for exactly one word back. The model doesn't see conversation history, tools, or system context — just the message and the category list.
+The prompt is intentionally minimal. It lists the configured categories (12 since the 2026-08-10 trim) with one-line descriptions and asks for exactly one word back. **Those descriptions are the router's whole world** — when `personal` was retired, nothing said where Gmail and Calendar lived, and "check my email" went to `chat`/`memory`/`cron` six times out of six until the `multi` description said so (2026-09-25). The model doesn't see conversation history, tools, or system context — just the message and the category list.
 
 **Why phi4:14b:** Fast classification at 200 tokens per decision. Few-shot capable — understands category descriptions. Dense model — no thinking overhead. The router doesn't need reasoning, it needs pattern matching at scale.
 
@@ -183,14 +183,26 @@ The prompt is intentionally minimal. It lists the 15 categories with one-line de
 | `cron` | Schedule, list, or manage recurring tasks |
 | `message` | Send messages to other channels/users |
 | `website` | URL fetching and summarization |
-| `multi` | Complex requests needing multiple tools or browser automation |
-| `config` | Self-administration — edit cron jobs, workspace files |
+| `multi` | Complex requests chaining several different tools — and the only specialist that reads the owner's Gmail/Calendar (the tools are owner-only and live here) |
 | `task` | Create, list, update, or complete tasks |
-| `research` | Deep research, report/deck generation |
-| `personal` | Email, calendar, schedule queries (owner-only) |
+| `research` | Deep multi-source research that produces a PDF report |
 | `image` | Image generation |
-| `code_gen` | Code project generation via OpenCode |
-| `analytics` | Data file analysis (CSV, Excel, JSON) |
+| `code_gen` | Build/scaffold/implement code (delegated to Pi) |
+| ~~`config`~~ | Retired 2026-08-10 → workspace/cron tools inside the arenas |
+| ~~`personal`~~ | Retired 2026-08-10 → email/calendar reads route to `multi` by capability |
+| ~~`analytics`~~ | Retired 2026-08-10 → data-file uploads route to `exec` |
+
+Browse-a-named-site ("go to meetup.com and find tech events") is `web_search`, not `multi`: `web_search` holds the `browser` tool now, and the router's own rule is *match the capability*. The historical `multi` label for those dates from when only `multi` had the browser — which is exactly the kind of drift a training set collected from the router's own past decisions inherits (see the shadow section below).
+
+---
+
+## Layer 4b: Shadow Router (observation only, 2026-09-25)
+
+A second classifier answers the same question on every message and **never decides**. `router.shadow { enabled, url, timeoutMs, logPath }` points at a System-One decision server (`/v1/systemone`, TypeSafe Jev's wire protocol, served locally by Laya): state = the message, one typed `choice` question whose options are `router.categories` descriptions **verbatim** — the option text is model input, so the checkpoint is trained on exactly that string and config is the single source for both sides.
+
+The hook wraps `classifyMessage` (`src/router/shadow.ts`), so the shadow is compared against whatever actually decided — override, sticky, model, keyword, or fallback — and it is fire-and-forget with a hard bound: it never changes the result, never delays it, and a dead server costs one warning. Every message appends `{ts, preview, decided, decidedBy, shadow, confidence, top, ms}` to `data/router-shadow.jsonl` and prints `[RouterShadow] live=… shadow=… AGREE/DIFFER` with a running agreement rate.
+
+Why it exists: a 421M Laya encoder fine-tuned on the owner's own routing history scored **80.8% vs phi4's 76.9%** on the corrected held-out set at **63ms vs 270ms** (90.8% vs 80.0% weighted by real traffic). A 78-item eval is not a reason to change routers; an agreement rate on the real distribution — and, on the disagreements, which one was right — is. Full method, the dataset cleaning (the collected pairs were phi4's own decisions, not truth), the synthetic-data round-trip filter, and what was disproven (zero-shot; the confidence-gated hybrid) are in DECISIONS.md, "A 421M Encoder Out-Routes phi4".
 
 ---
 
@@ -424,4 +436,9 @@ Browser control failed as a deterministic pipeline but works as guided ReAct. If
 
 ---
 
-*Invarail is an open-source local-model-first AI agent framework. The routing system described here handles 39 tools across 15 categories with 12 deterministic pipelines — all running on personal hardware via Ollama.*
+**9. A router's training data is its own past decisions unless you clean it.**
+`data/training/router-pairs.jsonl` recorded `{message, category}` as routed — phi4's labels, not truth — plus 85 pipeline handoffs and `[SYSTEM]` notices no human typed. Re-labeling under the *current* prompt, ruling on the disagreement patterns, and round-trip-validating synthetic examples was most of the work of beating the incumbent. Even the hand-labeled eval set had rotted as category definitions moved (2026-09-25).
+
+---
+
+*Invarail is an open-source local-model-first AI agent framework. The routing system described here handles ~75 tools across 12 categories — arena dispatch fleet-wide, two deterministic pipelines — all running on personal hardware.*

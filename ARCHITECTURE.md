@@ -2,9 +2,9 @@
 
 ## Overview
 
-Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on ONE swappable model (currently glm-5.3-flash, served by **vLLM**, selected by a single `defaultModel` config line); small utility/modality models run behind an **Ollama-compatible gateway**. It uses a **Router + Specialist** architecture where the default execution mode is the **arena** — an open ReAct loop inside rigid walls — and **deterministic pipelines** survive only where their stages are verification (research claim-checking, system heartbeat). Doctrine, measured not asserted (DECISIONS "The Arena Duel" / "The Harness Duel"): *the loop is a commodity; the walls are the product.*
+Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on ONE swappable model (currently qwen3.8:27B on a 24GB A5000, Ollama-native, selected by a single `defaultModel` config line; glm-5.3-flash on the Spark keeps coding only); the utility tier (router, extraction, NER, voice) runs on a 3060, and the embedder runs alone on a Mac Mini. It uses a **Router + Specialist** architecture where the default execution mode is the **arena** — an open ReAct loop inside rigid walls — and **deterministic pipelines** survive only where their stages are verification (research claim-checking, system heartbeat). Doctrine, measured not asserted (DECISIONS "The Arena Duel" / "The Harness Duel"): *the loop is a commodity; the walls are the product.*
 
-Two inference backends (vLLM + Ollama gateway), ~69 tools (incl. MCP), 2 deterministic pipelines + arena for everything else, 4 channel adapters + Chrome extension with browser control, FalkorDB graph memory, live self-modification rail (SIP), read-only email steward, 881 tests across 84 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
+Three inference backend kinds (OpenAI-compat, Ollama-native hosts, primary Ollama), ~75 tools (incl. MCP), 2 deterministic pipelines + arena for everything else, 4 channel adapters + Chrome extension with browser control, FalkorDB graph memory with epistemic provenance and continuous capture, live self-modification rail (SIP), read-only email steward, a System-One shadow router, ~970 tests across ~95 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
 
 ## Design Principles
 
@@ -46,29 +46,33 @@ Response → channel (thinking stripped) → transcript (thinking preserved)
 ## Multi-Model Strategy (two backends)
 
 Foreground reasoning runs on **ONE model selected by one config line** — `defaultModel` (currently
-**glm-5.3-flash** via **vLLM**, 262K context) is filled into every specialist/briefing/heartbeat/vision
+**qwen3.8:27B**, Ollama-native on a 24GB A5000) is filled into every specialist/briefing/heartbeat/vision
 slot that doesn't override it. A model cutover is that line + the backend entry: the slot has been
-MiniMax-M2.7 → DeepSeek-V4-Flash → qwen3.8-27B → glm-5.3-flash, each swap cheaper than the last
-(the 2026-08-26 cutover motivated the one-line mechanism — 19 scattered model strings violated the
-config-not-code principle). Small utility + modality models run behind the **Ollama-compatible
-gateway**. A `MultiBackendClient` routes each call by model id — purely additive, the Ollama path
-unchanged. Per-model quirks live in **model-caps** (`src/ollama/model-caps.ts`), including think
+MiniMax-M2.7 → DeepSeek-V4-Flash → qwen3.8-27B → glm-5.3-flash → qwen3.8:27B again (2026-09-19, on
+owned hardware), each swap cheaper than the last (the 2026-08-26 cutover motivated the one-line
+mechanism — 19 scattered model strings violated the config-not-code principle). A `MultiBackendClient`
+routes each call by model id across three backend kinds — `inference.backends[]` (OpenAI-compat: the
+Spark's vLLM, coding only), `inference.ollamaBackends[]` (extra Ollama-native hosts: the A5000, the
+3060, the Mini), and the primary Ollama for anything unrouted — and since 2026-09-19 `embed()` routes
+by model id too, so the embedder can live on its own box (router/embedder VRAM contention used to blow
+the 8s priming cap and silently skip memory injection). Per-model quirks live in **model-caps** (`src/ollama/model-caps.ts`), including think
 capability and `noThinkLeaksDeliberation` (glm-5.3 leaks deliberation prose into content when thinking
 is suppressed — the client always enables thinking on such models and routes it to the separated
 reasoning channel, mapped to `<think>` and stripped at delivery).
 
 | Role | Model | Backend | Why |
 |------|-------|---------|-----|
-| Chat + ALL foreground specialists + vision + briefing/heartbeat reasoning | `defaultModel` (glm-5.3-flash) | vLLM / Spark | One model, one line; multimodal; 262K context |
-| Router | phi4:14b | gateway | Fast classification, few-shot |
-| Fact Extraction | phi4:14b | gateway | Dense, reliable JSON |
-| NER | phi4-mini | gateway | Entity typing with bootstrapped graph context |
-| Embedding | qwen3-embedding:8b | gateway | 4096-dim vectors for memory search |
-| Voice fast-path | qwen2.5:7b | gateway | Small + fast for voice-originated messages |
-| Pi coding substrate | `pi.model` (vllm/glm-5.3-flash) | vLLM / Spark | Pi's provider/id format; same box |
+| Chat + ALL foreground specialists + vision + briefing/heartbeat reasoning | `defaultModel` (qwen3.8:27B) | A5000, Ollama-native | One model, one line; 921 tok/s prefill; native tool calls; think honored |
+| `code_gen` + Pi coding substrate | glm-5.3-flash / `pi.model` | vLLM / Spark | Speed where quality compounds and the merge gate catches slop; 262K context |
+| Router · fact extraction · steward judgment | phi4:latest | 3060 | Fast classification, dense JSON (tag is `:latest` — `:14b` 404s there) |
+| NER · consolidation | phi4-mini | 3060 | Entity typing with bootstrapped graph context |
+| Voice fast-path | qwen2.5:7b | 3060 | Small + fast for voice-originated messages (evicts on use — rare) |
+| Embedding | qwen3-embedding:8b | Mac Mini | 4096-dim vectors; resident alone so priming never waits on a reload |
+| Shadow router (observation) | Laya 421M fine-tune | `/v1/systemone` | Same question as the router, logged beside it, never decides |
 
-**Context:** `session.contextSize` (160K) budgets compaction below the served 262K, leaving headroom
-for output + reasoning. Per-specialist `contextSize` override lets small-context models stay low.
+**Context:** `session.contextSize` (32768 — the A5000 has 24GB and a large KV allocation competes with
+the 17.7GB of weights) budgets compaction; `research` is the slot to watch and a one-line `model:`
+override moves it to GLM's 262K if verification depth drops. Per-specialist `contextSize` override lets small-context models stay low.
 Long completions stream by construction (`chat()` rides SSE internally) so generation length can
 never hit undici's response-headers deadline; the only clock is `OLLAMA_CHAT_TIMEOUT_MS`.
 
@@ -113,9 +117,11 @@ JSON5 repair) stay active in both modes as a safety net.
 ## Router Classification (4-tier)
 
 1. **Pre-model overrides** — bare URLs → website (a URL inside a larger request does NOT hijack routing), explicit task/image commands, speculative language → chat
-2. **Model** — phi4:14b classifies into 15 categories, enum-grammar-constrained when the backend supports `format`; bounded by an ENFORCED `router.timeout` (a dead backend costs the timeout, not the client's retry loop)
+2. **Model** — `router.model` (phi4:latest on the 3060) classifies into the 12 configured categories, enum-grammar-constrained when the backend supports `format`; bounded by an ENFORCED `router.timeout` (a dead backend costs the timeout, not the client's retry loop)
 3. **Keywords** — Pattern matching when model fails or times out
 4. **Default** — Falls back to `chat`
+
+**Shadow tier (2026-09-25, observation only):** with `router.shadow` enabled, the final decision — whatever produced it — is compared against a System-One decision model (`src/router/shadow.ts` → `/v1/systemone`, Jev wire protocol) asked the identical question with `router.categories` descriptions as its option text. Both land in `data/router-shadow.jsonl`; the shadow never decides and is never awaited. A fine-tuned Laya (421M) beat phi4 80.8% vs 76.9% at 63ms vs 270ms on the held-out set; the switch (`router.backend`) waits on the disagreement rate over real traffic (DECISIONS "A 421M Encoder Out-Routes phi4").
 
 Post-classification layers: sticky routing (keeps follow-ups on chat), conversational guard (blocks pipeline misroutes), silent re-route (if chat specialist admits capability gap).
 
@@ -147,7 +153,7 @@ Config-gated via the `verification` block (`enabled`, `crossCheck` — both defa
 FalkorDB (Docker, localhost:6379)
   Graph: invarail_memory
 
-  (:Fact {text, importance, embedding, category, confidence})
+  (:Fact {text, importance, embedding, category, confidence, provenance})
     -[:ABOUT]->      (:Entity {name, canonical, type})
     -[:TAGGED]->     (:Tag {name})
     -[:SUPERSEDES]-> (:Fact)           // temporal evolution
@@ -164,6 +170,10 @@ FalkorDB (Docker, localhost:6379)
 **Entity extraction:** NER with typed taxonomy (person, organization, hardware, software, etc.). Bootstrapped from graph — existing typed entities injected as reference for consistent classification. Canonical normalization prevents duplicates.
 
 **Importance tiers:** 5=critical (health/family), 4=identity (job/projects), 3=preference, 2=context, 1=ephemeral. Few-shot examples in extraction prompt.
+
+**Provenance (2026-09-20):** `stated | observed | inferred` — HOW a fact is known, orthogonal to `source` (WHERE). Only `!save` may write `stated`; consolidation merges are `inferred`; everything else is `observed`. Legacy nodes coalesce DOWN to `observed`. Injection marks the weak classes only when the injected set is mixed.
+
+**Intake (2026-09-20):** `MemoryCapture` (`src/services/memory-capture.ts`) extracts from the unprocessed window every N turns, after delivery, fire-and-forget on the utility tier, hard-bounded — the code-triggered alternative to a model deciding when a topic shifted. `!reset` extracts only the tail capture hasn't read (never re-reads an 80-turn transcript into a 4K window — that overflow truncated the instructions and made phi4 continue the chat) and lists the session's captures; `!save` promotes them to `stated`. Extraction receives `USER.md` as an authoritative do-not-re-extract block, is bounded to `memory.extractionContextSize`, and is told not to infer (first live capture turned "make me redundant" into "no recurring revenue"; the next message said the opposite). Priming embeds the user's words only (`primingQueryFrom` strips page/PDF bodies, caps at 800 chars). Entity clusters exclude the owner's names (config principals) and per-corpus stopword entities; a heartbeat synthesis pass is designed but NOT built — the gate (`scripts/memory-cluster-check.ts`) failed on 24 facts.
 
 ## Thinking Tag Handling
 

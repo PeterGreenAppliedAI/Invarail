@@ -76,6 +76,13 @@ qwen3.8 wrote 818 messages in Peter's voice (anchored on real examples per class
 3. **Shadow mode** — Laya served on the Mini (`/v1/systemone`, ~65ms), called alongside phi4 on real traffic, both logged, phi4 still decides. Real distribution, real disagreement rate. Only after that: `router.backend: "systemone"` as an additive backend kind with keyword fallback.
 4. Same recipe for the steward's `needsPeter` (the autonomous_action log is the label source).
 
+### Shipped the same day (observation only — nothing decides)
+- **`router.shadow`** (`src/router/shadow.ts`, `systemone-client.ts`): on every classified message the same routing question goes to the `/v1/systemone` server and live vs shadow land side by side in `data/router-shadow.jsonl` + a `[RouterShadow] … AGREE/DIFFER` console line with a running rate. The hook wraps `classifyMessage`, so the comparison is against whatever ACTUALLY decided (override / sticky / model / keyword / fallback). Fire-and-forget, 3s bound, a dead server costs one warning. Option text = `router.categories` descriptions verbatim — the option head is model input, so the checkpoint is trained on that exact text (config is the single source for both sides).
+- **Email/calendar routing gap closed in config**: `multi`'s description now says it is the only specialist reading Gmail/Calendar. The router had no way to know since `personal` was retired.
+- **`training-collector.ts`** skips synthetic turns (pipeline handoffs, `[SYSTEM]` notices, attachment stubs) — case-sensitive on the pipelines' exact literals so a user merely mentioning the words is kept.
+- **v3** trains on the config descriptions at `head_max_len 384` (the English default 192 truncates them — measured: 342 option tokens) plus 107 round-trip-validated pure email/calendar READ examples (v2's multi examples were all chained, so it learned email→task). Numbers land below when it finishes.
+- **Serving**: `~/laya-eval/serve_router.py` injects a `Router` pointed at a local checkpoint into `laya.serve.create_app` (the stock server only preloads Hub checkpoints). Warm: 64–80ms per routed message over HTTP, 0.7GB resident. On this Mac until the Mini accepts SSH (port 22 refused — Remote Login off).
+
 ---
 
 ## Facts Carry How We Know Them — Epistemic Provenance (September 20 2026)

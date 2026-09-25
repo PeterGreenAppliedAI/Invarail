@@ -1,6 +1,6 @@
 # Invarail Roadmap
 
-Invarail is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, and Web (plus the Chrome extension and read-only Gmail tools) with a Router + Specialist architecture — arena (open ReAct) dispatch fleet-wide, deterministic pipelines only for research and the heartbeat. Foreground reasoning runs on glm-5.3-flash via **vLLM** (262K ctx), set by a single root `defaultModel` config line that fills all specialist/briefing/heartbeat/vision slots (a swappable foreground slot — previously DeepSeek-V4-Flash, before that MiniMax-M2.7); the utility tier (phi4:14b router, phi4-mini NER, qwen3-embedding:8b, whisper) runs on an Ollama-compatible gateway, routed by a `MultiBackendClient`. ~69 tools (incl. MCP), FalkorDB graph memory, autonomous heartbeats and briefings. 881 tests.
+Invarail is a local-model-first AI agent framework running on personal infrastructure (DGX Spark, A5000, gateway). It handles Discord, Telegram, and Web (plus the Chrome extension and read-only Gmail tools) with a Router + Specialist architecture — arena (open ReAct) dispatch fleet-wide, deterministic pipelines only for research and the heartbeat. Foreground reasoning runs on qwen3.8:27B on a 24GB A5000 (Ollama-native), set by a single root `defaultModel` config line that fills all specialist/briefing/heartbeat/vision slots (a swappable foreground slot — previously glm-5.3-flash, DeepSeek-V4-Flash, MiniMax-M2.7); glm-5.3-flash on the Spark keeps coding; the utility tier (phi4:latest router/extraction, phi4-mini NER, qwen2.5 voice) runs on a 3060 and the embedder on a Mac Mini, all routed by a `MultiBackendClient`. ~75 tools (incl. MCP), FalkorDB graph memory with epistemic provenance and continuous capture, autonomous heartbeats and briefings, a System-One shadow router. ~970 tests.
 
 ---
 
@@ -47,6 +47,8 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
+| **Now** | **Shadow router → `router.backend` switch** | Laya v3 logged beside phi4 on real traffic (`data/router-shadow.jsonl`). Decide on the disagreement rate + who was right on disagreements over a few days. Then: additive `router.backend: "systemone"` with keyword fallback; move the server to the Mini (needs Remote Login); same recipe for the steward's `needsPeter` |
+| Next | **Memory synthesis pass** | Heartbeat-time "so what" over entity clusters as `(:Synthesis)` nodes with `provenance: inferred`, structural DERIVED_FROM edges, short expiry. Designed; NOT built — gate (`scripts/memory-cluster-check.ts`) failed on 24 facts. Re-run after capture has fed the graph a few weeks |
 | Next | **Repo manifest + generalized merge gate** | Extend SIP beyond the Invarail repo: per-repo manifest, generalized merge gate, draft-PR path (DECISIONS: "The Factory") |
 | Next | **GitHub intake cron** | Scheduled intake of GitHub work items feeding the factory loop |
 | Next | **Rework loop** | `selfMod.reworkIterations` — bounded re-attempts when a SIP change fails its gate |
@@ -67,7 +69,7 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 
 | Feature | Description |
 |---------|-------------|
-| **Router fine-tuning** | Fine-tune phi4-mini on collected training pairs (data/training/router-pairs.jsonl) for faster, more accurate routing |
+| ~~**Router fine-tuning**~~ | Done 2026-09-25 as a Laya (421M encoder) fine-tune, not phi4-mini — 80.8% vs 76.9%, 63ms vs 270ms on the held-out set; now in shadow mode (see Next Up) |
 | **RBAC** | Named roles (owner/admin/user/guest) replacing binary trusted/untrusted. Per-role permissions |
 | **Audit logging** | Structured log of all security decisions, tool executions, user actions |
 | **Google Sheets tools** | Read/write cells, append rows. Useful for CRM and reporting |
@@ -81,5 +83,6 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 
 ## Known Issues
 
-- **Double message delivery on Discord** — Intermittent duplicates; July 20 instance was the model writing its answer twice in one completion (watch item — look at engine answer path, not delivery, if it recurs)
+- ~~**Double message delivery on Discord**~~ — Two causes found and fixed 2026-09-20: a stream-bubble race on no-tool arena answers (delivery now waits for the in-flight bubble), and the premature-answer guard re-answering short follow-ups (skipped under 30 chars with history). The July 20 instance (model wrote its answer twice in one completion) remains a watch item
+- **Email/calendar routing** — the live router sent "check my email" / "what's on my calendar" to chat/memory/cron 6/6 (no category description mentioned Gmail/Calendar after `personal` was retired). Fixed in config 2026-09-25 (`multi` description); verify after restart via the shadow log
 - ~~**WhatsApp connection drops**~~ — Fixed July 14: process-level unhandledRejection/uncaughtException handlers + FalkorDB error listener with lazy reconnect

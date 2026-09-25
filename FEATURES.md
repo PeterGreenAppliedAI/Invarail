@@ -92,7 +92,7 @@ Persistent kanban tasks (`tasks.json` → rendered `TASKS.md`): priorities, assi
 
 ## Heartbeat
 
-Every 2 hours, fully deterministic in structure — code decides what to review, the LLM reasons about it: transcript review (fact extraction), learning promotion (3+ recurrences → `LEARNINGS.md`), media cleanup, fact auto-expiry, dedup, fact diff + LLM reasoning over new/removed facts, code-driven task urgency, and 2-3 review candidates surfaced during waking hours.
+Every 2 hours, fully deterministic in structure — code decides what to review, the LLM reasons about it: transcript review (fact extraction — since 2026-09-20 mostly already done by incremental capture every 8 turns; the heartbeat keeps reconciliation), learning promotion (3+ recurrences → `LEARNINGS.md`), media cleanup, fact auto-expiry, dedup, fact diff + LLM reasoning over new/removed facts, code-driven task urgency, and 2-3 review candidates surfaced during waking hours.
 
 Interactive review: `!heartbeat yes` (confirm all) · `!heartbeat no` (remove all — recorded, won't re-extract) · `!heartbeat no 2` (remove only #2). Manual triggers: `!cleanup`, `!promote`.
 
@@ -152,4 +152,10 @@ Per-agent markdown injected into context: `SOUL.md` (persona + per-channel behav
 
 ## Router Training Data
 
-Every `!reset` and compaction harvests `{message, category}` pairs into `data/training/router-pairs.jsonl` — a dataset of the *owner's actual phrasing*, not generic benchmarks, for eventually fine-tuning a smaller, faster router than few-shot phi4.
+Every `!reset` and compaction harvests `{message, category}` pairs into `data/training/router-pairs.jsonl` — a dataset of the *owner's actual phrasing*, not generic benchmarks. Two honest caveats learned the hard way (2026-09-25): the `category` is what the router *decided*, not ground truth, so the set has to be re-labeled under the current prompt before it teaches anything; and synthetic turns (pipeline handoffs, `[SYSTEM]` notices, attachment stubs) are now skipped at collection — 85 of the first 1,540 pairs were never the owner's words.
+
+It has since done its job: a 421M Laya encoder fine-tuned on the cleaned set (plus round-trip-validated synthetic examples) out-routes phi4 on the held-out set and runs in shadow mode.
+
+## Shadow Router
+
+`router.shadow { enabled, url }` asks a System-One decision server (Laya at `/v1/systemone`) the same routing question beside the live router on every message and logs both to `data/router-shadow.jsonl` — `[RouterShadow] live=chat(model) shadow=chat conf=0.97 AGREE 71ms` in the console, with a running agreement rate every 25 messages. The shadow never decides and never delays a message. Server: `~/laya-eval/serve_router.py` (`LAYA_CKPT=<dir> LAYA_PORT=8010`).

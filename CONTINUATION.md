@@ -1,4 +1,4 @@
-> **FROZEN 2026-07-07** — point-in-time session handoff. Architecture has moved substantially since (see DECISIONS.md: arena fleet-wide, glm-5.3-flash cutover, SIP live, email steward). Kept as historical record.
+> **FROZEN 2026-07-07** — point-in-time session handoff. Architecture has moved substantially since (see DECISIONS.md: arena fleet-wide, glm-5.3-flash cutover, SIP live, email steward; September 2026: qwen3.8:27B on an A5000 with prompt order as a prefix-cache contract, memory provenance + incremental capture, a Laya System-One shadow router). Kept as historical record.
 
 # CONTINUATION.md — Handoff for the next build session
 

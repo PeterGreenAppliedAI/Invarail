@@ -121,7 +121,10 @@ A **FalkorDB graph database** (Docker, native HNSW vector search) is the institu
 - **Importance tiers** — 5=critical (never expires) … 1=ephemeral (7 days). Eviction drops lowest importance first; identity facts are never silently trimmed.
 - **Auto-injection with a floor** — vector KNN + multi-hop entity traversal on every message, but injection requires raw cosine ≥ 0.55: scoring orders, the floor rejects. Relevance is earned, not assumed.
 - **Semantic dedup on write**, typed-entity NER bootstrapped from the graph's own prior decisions, `SUPERSEDES` edges instead of overwrites, behavioral user modeling refreshed by heartbeat.
-- **Extraction is user-visible** — `!reset` shows candidates before saving; the 2-hourly heartbeat extracts autonomously with existing facts shown to prevent re-extraction; `!forget` removes with re-extraction protection.
+- **Facts carry HOW we know them** — `provenance: stated | observed | inferred`. Only `!save` (a human read the list) may claim `stated`; autonomous extraction is `observed`; consolidation merges are `inferred`. Injection marks the weak classes — but only when the set is mixed, so a distinction that distinguishes nothing never turns into a blanket hedging order.
+- **Intake runs continuously** — incremental capture every 8 turns (code-triggered, after the reply is delivered, on the utility tier) closed a two-hour hole that had left the graph at 24 facts after months. `!reset` shows the session's captures alongside any tail facts; `!save` promotes them; the 2-hourly heartbeat keeps the heavy reconciliation (consolidation, contradictions, review). `!forget` removes with re-extraction protection.
+- **Identity is a rule, not an observation** — `USER.md` is the owner's hand-written profile, read-only to the agent and fed to extraction as authoritative; it never grows a weaker-provenance copy of itself in the graph.
+- **Priming embeds your words, not your attachments** — page and PDF bodies are stripped from the retrieval query and it is capped, after a 9K-char document blew the 8s priming cap on the Mini.
 - **Experience & Lessons** — approach-level memory judged only by code-detected signals (👍/👎 reactions, confirm denials, steering — never model self-assessment). Lessons (negative procedural memory) inject only after recurrence (evidence ≥ 2). The retired skills system is the cautionary tale: replayed recipes quietly became an authority surface, so its successors keep the learning, not the power.
 
 Deep dive: [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md).
@@ -138,20 +141,24 @@ The `research` pipeline produces an analytical PDF report whose claims are check
 
 ## Models
 
-One measured principle: **the harness holds the value, not the weights.** The entire foreground tier has been swapped four times (qwen → MiniMax → DeepSeek-V4-Flash → qwen3.8 → glm-5.3-flash) purely via config — since 2026-08-26 a cutover is literally ONE line (`defaultModel`), filled into every foreground slot by the loader. Memory graph, arena, and channels untouched every time.
+One measured principle: **the harness holds the value, not the weights.** The entire foreground tier has been swapped five times (qwen → MiniMax → DeepSeek-V4-Flash → qwen3.8 → glm-5.3-flash → qwen3.8:27B on a used A5000, 2026-09-19) purely via config — since 2026-08-26 a cutover is literally ONE line (`defaultModel`), filled into every foreground slot by the loader. Memory graph, arena, and channels untouched every time. The 2026-09-19 hardware saga is worth reading in DECISIONS: **prefill is compute-bound**, a $300 3060 out-reads a Mac Mini 10× on prompt processing, and prompt order is now a KV-prefix-cache contract (`[static system][append-only history][volatile state+memory][user]`, 61s → 0.3s).
 
 | Role | Model | Backend |
 |------|-------|---------|
-| Foreground: chat, specialists, briefing, reasoning, vision (native VL), Pi builds | `defaultModel` — currently glm-5.3-flash (NVFP4) | vLLM, direct OpenAI-compat (262K context; always-streamed completions; per-model caps incl. think-leak coercion) |
-| Router | phi4:14b | Ollama gateway |
-| NER | phi4-mini | Ollama gateway |
-| Embeddings | qwen3-embedding:8b | Ollama gateway |
-| Voice fast-path | qwen2.5:7b | Ollama gateway |
+| Foreground: chat, specialists, briefing, reasoning, vision (native VL) | `defaultModel` — currently qwen3.8:27B | A5000 (24GB), Ollama-native via `inference.ollamaBackends[]` — 921 tok/s prefill, native tool calls, think honored |
+| Coding: `code_gen` + Pi builds | glm-5.3-flash (NVFP4) | vLLM on the Spark, OpenAI-compat (262K context; always-streamed; per-model caps incl. think-leak coercion) |
+| Router · fact extraction · steward judgment | phi4:latest | 3060 (12GB) utility box |
+| NER · consolidation | phi4-mini | 3060 |
+| Voice fast-path | qwen2.5:7b | 3060 |
+| Embeddings (every message: memory priming) | qwen3-embedding:8b | Mac Mini — `embed()` routes by model id so the embedder never shares VRAM with the router (contention silently skipped memory injection) |
 | Image generation | flux2-klein:4b-fp8 | dedicated Ollama box |
+| **Shadow router** (observation only) | Laya, 421M encoder fine-tuned on the owner's own routing data | `/v1/systemone`, ~70ms — logged beside phi4 on every message, never decides (see below) |
 
 The foreground promotion was decided by four instrumented head-to-heads (deep eval, blind synthesis, build duel, Pi duel — a 27B went 4-0 against a 284B; artifacts in `evals/`). **Thinking is a per-stage property, not a per-model one**: structured stages pin `think: false`, synthesis stages think when a blind human read said it pays, and the config is validated at boot against a per-model capability matrix. Concurrency, budgets, and think policy are config, not code — model-shaped accommodations hardcoded into logic are a bug class this project has paid for twice.
 
-A `MultiBackendClient` routes each call by model id: foreground models to OpenAI-compatible servers (SGLang, vLLM, ds4), utility models to an Ollama-compatible gateway. Ollama-only setups work — see the eval for measured picks.
+A `MultiBackendClient` routes each call by model id: OpenAI-compatible servers (`inference.backends[]`), additional Ollama-native hosts (`inference.ollamaBackends[]`), and the primary Ollama for everything unrouted — chat, streaming, and embeddings alike. Ollama-only setups work — see the eval for measured picks.
+
+**A System-One decision model as router (2026-09-25).** Jev/Laya-style models take state plus a typed question and return a calibrated choice in one forward pass — nothing generated, nothing to parse. A 421M Laya encoder fine-tuned for 55 minutes on this Mac, on 1,248 cleaned real routing pairs plus 777 round-trip-validated synthetic ones, scored **80.8% vs phi4's 76.9%** on the corrected held-out set at **63ms vs 270ms** (90.8% vs 80.0% weighted by real traffic). It runs in **shadow mode** — `router.shadow` asks it the same question beside phi4 on every message and logs both; phi4 still decides. A disagreement rate on real traffic, not a 78-item eval, is what earns the switch. Full write-up with the disproven parts (zero-shot is useless; the confidence-gated hybrid lost) in [DECISIONS.md](DECISIONS.md).
 
 ## Capabilities at a Glance
 
@@ -249,7 +256,7 @@ The README is the front door; the detail lives in dedicated docs:
 ```
 src/
   dispatch.ts          # router → pipeline/specialist + the six security layers
-  router/              # classification: pre-model overrides → model → keyword fallback
+  router/              # classification: pre-model overrides → model → keyword fallback; shadow router (System-One, observation only)
   pipeline/            # deterministic stage engine + per-category definitions
   tool-loop/           # governed ReAct engine (guardrails, drift/hallucination repair)
   coding/              # Pi SDK adapter — the coding substrate boundary
