@@ -43,6 +43,41 @@ NER attaching `Router`/`LocalClaw` to a fact about tech meetups is an entity-typ
 
 ---
 
+## A 421M Encoder Out-Routes phi4 — the Laya Experiment (September 25 2026)
+
+### Why
+Jev (TypeSafe AI, Sep 15) and its open clone Laya (Convai, Apache 2.0) are "System One" models: state + typed question in, calibrated probability out, one forward pass, nothing generated. Invarail asks a generative small model a typed question in at least eight places (router, steward `needsPeter`, contradiction check, consolidation, claim verification…) and every one of them carries the whole week's bug class — JSON to parse, thinking to leak, `format` collisions, empty completions. A model that structurally cannot produce malformed output is shaped for exactly those seats. Jev itself is out on principle (cloud; it would see email, memory, routing). Laya runs on CPU. **Nothing was wired into Invarail — Peter's rule: observe behavior first.** Everything lives in `~/laya-eval/` (venv, scripts, checkpoints, results).
+
+### The router, measured on one held-out set (78 hand-labeled, corrected)
+| | flat | excl. 6 email/calendar | traffic-weighted | p50 | ECE |
+|---|---|---|---|---|---|
+| phi4:latest (live, 3060) | 76.9% | 83.3% | 80.0% | 270ms | — |
+| Laya zero-shot | 38.5% | — | — | 65ms | 0.44 |
+| Laya v0 (auto-agreed labels) | 56.4% | — | — | 63ms | 0.31 |
+| Laya v1 (+ rulings, oversampled) | 61.5% | — | 79.0% | 63ms | 0.32 |
+| **Laya v2 (+ 777 synthetic)** | **80.8%** | **87.5%** | **90.8%** | **63ms** | 0.17 |
+
+Traffic-weighted = per-class accuracy weighted by how often Peter actually sends that class (72% chat). Fine-tuned on this Mac's MPS in ~55 min (421M ModernBERT-large, 4 epochs, RLCD recipe ported from the Kaggle notebook to single-device; gradient checkpointing ON and micro-batch 2 — the notebook's config OOM'd at 20GB on a 17GB Mac).
+
+### What the data cleaning found (the "together" part)
+1,540 router pairs = 1,345 unique messages, all labeled by **phi4's own past decisions**, not truth. Re-labeled every one with qwen3.8 under the CURRENT prompt; auto-accepted the 1,119 agreements; grouped the 168 real disagreements into patterns and Peter ruled on four: browse-a-named-site is `web_search` (it holds `browser` now — a capability fact, not taste), discussing an image prompt is `chat`, sub-20-char follow-ups are dropped (sticky routing handles them live), "forget X" is `memory`. 85 synthetic messages that were never Peter's (plan-pipeline sub-steps, `[SYSTEM]` notices, attachment stubs) were in the training file — `training-collector.ts` should skip them (not yet changed). Two classes had effectively zero examples: `message` (0 — the six originals were mislabeled chat) and email/calendar → `multi` (0 — phi4 has never routed them right).
+
+### Synthetic data, gated by round-trip
+qwen3.8 wrote 818 messages in Peter's voice (anchored on real examples per class); each had to **round-trip through the current-prompt classifier back to its intended class** to be kept — 777 survived (95%). `task` lost the most (82%), because "add: fix typo in readme" is genuinely ambiguous with `exec` — a real boundary in the config, surfaced by the filter. Synthetic rows are tagged and never enter the eval set.
+
+### Disproven / caught
+- **Confidence-gated hybrid (Laya first, phi4 below a floor) is NOT the deployment shape.** With v0 it lost to phi4 at every floor; with v2, Laya alone beats every hybrid row because the items it is unsure about are ones phi4 also misses. And the calibration is still compressed — fitted temperature 3.4, 95% of items land in 0.95–0.99 — so the probability is *ordered* but not yet a usable gate. The "code owns the threshold" thesis is unproven; the accuracy win is real.
+- **The hand-labeled eval set had rotted.** Three browse items still expected `multi` from before `web_search` held the browser; three plain chat lines were tagged `message`. Both models were docked for correct answers. Corrected, and both re-scored on the identical set.
+- **Live routing gap, unrelated to Laya:** "check my email", "what's on my calendar today" → the live router sends them to `chat` / `memory` / `cron` — **6 for 6 wrong** — because since `personal` was retired no category description mentions Gmail or Calendar; the tools live in `multi` (owner-only). One-line config fix, Peter's to make. Laya v2 gets these wrong too (→ `task`): the synthetic multi examples were all chained "check cal, then add a task", so it learned email→task. Pure-read examples are the v3 fix.
+
+### Next, in order
+1. Peter: the email/calendar description line in config.
+2. v3: pure email/calendar-read synthetic examples for `multi`; re-measure.
+3. **Shadow mode** — Laya served on the Mini (`/v1/systemone`, ~65ms), called alongside phi4 on real traffic, both logged, phi4 still decides. Real distribution, real disagreement rate. Only after that: `router.backend: "systemone"` as an additive backend kind with keyword fallback.
+4. Same recipe for the steward's `needsPeter` (the autonomous_action log is the label source).
+
+---
+
 ## Facts Carry How We Know Them — Epistemic Provenance (September 20 2026)
 
 ### The complaint that produced it
