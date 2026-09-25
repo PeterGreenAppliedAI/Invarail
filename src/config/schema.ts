@@ -47,11 +47,29 @@ export const RouterCategorySchema = z.object({
   examples: z.array(z.string()).optional(),
 });
 
+/** Shadow router: a System-One decision model (Laya, served at /v1/systemone) is
+ *  asked the SAME routing question beside the live router on every message, and
+ *  the two answers are logged — the shadow never decides. This is how a candidate
+ *  router earns the switch: a disagreement rate measured on real traffic, not on
+ *  a 78-item eval set (DECISIONS 2026-09-25, "A 421M Encoder Out-Routes phi4").
+ *  The question's options are `router.categories` descriptions verbatim — the
+ *  model was trained on that exact text, and the option head is model input. */
+export const RouterShadowSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Base URL of the System-One server, e.g. http://192.168.77.221:8010 */
+  url: z.string().optional(),
+  /** Fire-and-forget bound; a slow shadow must never touch message latency. */
+  timeoutMs: z.number().int().positive().default(3000),
+  /** JSONL of {ts, preview, decided, decidedBy, shadow, confidence, top, ms} */
+  logPath: z.string().default('data/router-shadow.jsonl'),
+});
+
 export const RouterConfigSchema = z.object({
   model: z.string().default('phi4-mini'),
   timeout: z.number().default(2000),
   defaultCategory: z.string().default('chat'),
   categories: z.record(z.string(), RouterCategorySchema).default({}),
+  shadow: RouterShadowSchema.default({}),
 });
 
 export const SpecialistConfigSchema = z.object({

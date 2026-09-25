@@ -1,6 +1,7 @@
 import { routerTimeout } from '../errors.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { RouterConfig } from '../config/types.js';
+import { routerShadowFor } from './shadow.js';
 import { buildRouterPrompt } from './prompt.js';
 
 /**
@@ -188,7 +189,25 @@ function isLikelyFollowUp(message: string, previousCategory?: string): boolean {
  *   4. If invalid/timeout, check keyword heuristics
  *   5. Fallback to defaultCategory
  */
+/**
+ * Classify, then — if a shadow router is configured — send the SAME message to it
+ * and log both answers. Wrapping here rather than inside the model path means the
+ * shadow is compared against whatever actually decided: override, sticky, model,
+ * keyword, or fallback. It never changes the result and is never awaited.
+ */
 export async function classifyMessage(
+  client: OllamaClient,
+  config: RouterConfig,
+  message: string,
+  previousCategory?: string,
+  classifyText?: string,
+): Promise<ClassifyResult> {
+  const result = await classifyMessageInner(client, config, message, previousCategory, classifyText);
+  routerShadowFor(config)?.observe(classifyText?.trim() ? classifyText : message, result.category, result.confidence);
+  return result;
+}
+
+async function classifyMessageInner(
   client: OllamaClient,
   config: RouterConfig,
   message: string,
