@@ -17,6 +17,30 @@ We needed something better. After 4 phases of iteration on a flat JSONL fact sto
 
 ---
 
+## At a Glance
+
+A **FalkorDB graph database** (Docker, native HNSW vector search) is the institutional memory; a flat JSONL store is the fallback.
+
+```
+(:Fact {text, importance, embedding}) -[:ABOUT]->          (:Entity {name, type})
+(:Fact) -[:TAGGED]->    (:Tag)
+(:Fact) -[:SUPERSEDES]-> (:Fact)            // evolving truth, history preserved
+(:Fact) -[:EXTRACTED_FROM]-> (:Turn)        // provenance to the conversation
+(:Turn) -[:MENTIONS]->  (:Entity)           // cross-session search
+(:UserModel {communicationStyle, decisionPattern, topicInterests, frustrationTriggers})   // closed schema
+```
+
+- **Importance tiers** — 5=critical (never expires) … 1=ephemeral (7 days). Eviction drops lowest importance first; identity facts are never silently trimmed.
+- **Auto-injection with a floor** — vector KNN + multi-hop entity traversal on every message, but injection requires raw cosine ≥ 0.55: scoring orders, the floor rejects. Relevance is earned, not assumed.
+- **Semantic dedup on write**, typed-entity NER bootstrapped from the graph's own prior decisions, `SUPERSEDES` edges instead of overwrites, behavioral user modeling refreshed by heartbeat.
+- **Facts carry HOW we know them** — `provenance: stated | observed | inferred`. Only `!save` (a human read the list) may claim `stated`; autonomous extraction is `observed`; consolidation merges are `inferred`. Injection marks the weak classes — but only when the set is mixed, so a distinction that distinguishes nothing never turns into a blanket hedging order.
+- **Intake runs continuously** — incremental capture every 8 turns (code-triggered, after the reply is delivered, on the utility tier) closed a two-hour hole that had left the graph at 24 facts after months. `!reset` shows the session's captures alongside any tail facts; `!save` promotes them; the 2-hourly heartbeat keeps the heavy reconciliation (consolidation, contradictions, review). `!forget` removes with re-extraction protection.
+- **Identity is a rule, not an observation** — `USER.md` is the owner's hand-written profile, read-only to the agent and fed to extraction as authoritative; it never grows a weaker-provenance copy of itself in the graph.
+- **Priming embeds your words, not your attachments** — page and PDF bodies are stripped from the retrieval query and it is capped, after a 9K-char document blew the 8s priming cap on the Mini.
+- **Experience & Lessons** — approach-level memory judged only by code-detected signals (👍/👎 reactions, confirm denials, steering — never model self-assessment). Lessons (negative procedural memory) inject only after recurrence (evidence ≥ 2). The retired skills system is the cautionary tale: replayed recipes quietly became an authority surface, so its successors keep the learning, not the power.
+
+---
+
 ## Architecture: Dual-Backend with Write-Through
 
 Invarail's memory has two backends:

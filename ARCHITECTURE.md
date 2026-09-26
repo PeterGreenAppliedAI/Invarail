@@ -70,9 +70,16 @@ reasoning channel, mapped to `<think>` and stripped at delivery).
 | Embedding | qwen3-embedding:8b | Mac Mini | 4096-dim vectors; resident alone so priming never waits on a reload |
 | Shadow router (observation) | Laya 421M fine-tune | `/v1/systemone` | Same question as the router, logged beside it, never decides |
 
+One measured principle: **the harness holds the value, not the weights.** The entire foreground tier has been swapped five times (qwen → MiniMax → DeepSeek-V4-Flash → qwen3.8 → glm-5.3-flash → qwen3.8:27B on a used A5000, 2026-09-19) purely via config — since 2026-08-26 a cutover is literally ONE line (`defaultModel`), filled into every foreground slot by the loader. Memory graph, arena, and channels untouched every time. The 2026-09-19 hardware saga is worth reading in DECISIONS: **prefill is compute-bound**, a $300 3060 out-reads a Mac Mini 10× on prompt processing, and prompt order is now a KV-prefix-cache contract (`[static system][append-only history][volatile state+memory][user]`, 61s → 0.3s).
+
+The foreground promotion was decided by four instrumented head-to-heads (deep eval, blind synthesis, build duel, Pi duel — a 27B went 4-0 against a 284B; artifacts in `evals/`). **Thinking is a per-stage property, not a per-model one**: structured stages pin `think: false`, synthesis stages think when a blind human read said it pays, and the config is validated at boot against a per-model capability matrix. Concurrency, budgets, and think policy are config, not code — model-shaped accommodations hardcoded into logic are a bug class this project has paid for twice.
+
+A `MultiBackendClient` routes each call by model id: OpenAI-compatible servers (`inference.backends[]`), additional Ollama-native hosts (`inference.ollamaBackends[]`), and the primary Ollama for everything unrouted — chat, streaming, and embeddings alike. Ollama-only setups work — see the eval for measured picks.
+
 **Context:** `session.contextSize` (32768 — the A5000 has 24GB and a large KV allocation competes with
 the 17.7GB of weights) budgets compaction; `research` is the slot to watch and a one-line `model:`
 override moves it to GLM's 262K if verification depth drops. Per-specialist `contextSize` override lets small-context models stay low.
+
 **Prompt order is a prefix-cache contract** — `[static system][append-only history][volatile state+memory][user]` in both the tool loop and bare chat. On a plain transformer any divergence only re-prefills what follows it. The 27B is a **hybrid** (`qwen35`: Gated-DeltaNet SSM layers with full attention every 4th), whose recurrent state restores only from checkpoints: measured 2026-09-26, an exact extension costs 283ms, a tail-side change ~850ms, and a history window slid by one exchange 4036ms — the same as cold. Hence the voice window is anchored with hysteresis (`voiceWindowStart`), the per-turn memory block is bounded (a user-model node that had drifted to 41 keys was ~2K tokens of it), and every foreground call passes `num_ctx` explicitly (a call without it takes the host default and Ollama reloads the model at that size — 7s each way). Bare chat prints `[Chat] … prompt=Ntok/Xms gen=Ntok/Yms load=Zms`; read it before theorizing about latency.
 
 Long completions stream by construction (`chat()` rides SSE internally) so generation length can
@@ -138,7 +145,49 @@ Post-classification layers: sticky routing (keeps follow-ups on chat), conversat
 | research | Complex | [flow_gather] → decompose → per-facet research (search+fetch+synthesize) → gap-fill → analytical synthesis → claim verification (cited-source + Tier-1 cross-check) → charts → render PDF. `flow_gather` fires only when the request EXPLICITLY names an available flow tool (code gate): the flow's `##` sections become the facets, its links the source pool, decompose is skipped, and everything downstream is unchanged — verification works on flow-gathered pages because the fetch/cache path is identical. Flow failure degrades to normal decompose+search. |
 | heartbeat | Deterministic | fact diff (code) → LLM reasoning → task board (code) → SIP proposal step → email-steward digest → LLM summary |
 
+## Workers — Pi, FlowMCP, MCP, ReAct
+
+Invarail hosts interchangeable workers: coding runs through Pi, repeatable procedures through FlowMCP flows, open-ended tasks through the governed ReAct loop. Workers have been swapped whole (OpenCode out, Pi in) without the architecture noticing.
+
+### Pi — the coding substrate
+
+All coding runs through the [Pi coding agent](https://pi.dev) (`@earendil-works/pi-coding-agent`, MIT, embedded via SDK, version-pinned) behind a single adapter (`src/coding/pi-session.ts` — every SDK surface in one swappable module). Invarail stopped competing as a coding harness and kept what is actually its own: routing, memory, governance, evaluation, pipelines, channels.
+
+- **Bounded arena** — sessions are cwd-scoped to an isolated build directory; context-file discovery is suppressed so unrelated builds never inherit this repo's instructions; the tool surface is the config-declared allowlist.
+- **Observed, not trusted** — lifecycle events (agent/turn boundaries, tool executions with durations and error flags) stream to metrics; every session's full JSONL transcript path is recorded, so "why do we believe this build worked" has provenance all the way down.
+- **Validated externally** — the `code_gen` pipeline owns the workflow (enrich → build → test → bounded fix loop → local commit); the gate is the actual test outcome, never the model's self-assessment. Remote push is opt-in and off by default.
+
+```json5
+// invarail.config.json5
+pi: {
+  enabled: true,
+  model: "vllm/glm-5.3-flash",   // provider/id from ~/.pi/agent/models.json — any OpenAI-compat server
+}
+```
+
+Chosen on evidence: in an instrumented duel on a hidden 12-check acceptance suite, Pi + a local 27B produced contract-grade work with a self-authored 11-test behavioral suite in 384 seconds (artifacts in `evals/`). Roadmap: the same rail extends to Invarail modifying *itself* — worktree-isolated sessions, deterministic merge gates, ledger-confirmed merges, and a deliberately dumb supervisor (see DECISIONS.md, "Pi Becomes the Coding Substrate").
+
+### FlowMCP — compiled procedures
+
+Repeatable multi-step workflows live as [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flows served through the MCP bridge — the model picks a flow and fills 2-3 parameters instead of improvising orchestration. Naming a gathering flow in a research request makes the research pipeline use the flow's output as its facets and sources (strict explicit naming only — no semantic matching; that's an authority-hijack class).
+
+### MCP bridge — external tools, small-model safe
+
+(Full component detail in [MCP Bridge](#mcp-bridge-srcmcp) below.) Any MCP server's tools auto-register as Invarail tools (stdio or streamable-HTTP, fully-local OAuth with PKCE + DCR, no cloud broker). The bridge does the accommodation small models need: description curation and caps, schema-filtered params (model-padded arguments stripped before strict servers fail on them), per-server result budgets, and confirm-gating for tools without `readOnlyHint`.
+
+### ReAct loop — governed freedom for open categories
+
+Open-ended categories (`chat` and, since the arena melt, every arena category) use a ReAct tool loop with guardrails learned from measured failure modes: hallucinated-action detection, drift detection with re-anchoring, repair prompts that always offer a no-tool exit (the eval showed 13/16 models will fabricate tool calls rather than defy a coercive order), one calling convention per model, and error-learning hints injected before execution.
+
 ## Research Claim Verification
+
+The `research` pipeline produces an analytical PDF report whose claims are checked before delivery:
+
+1. **Local-first gathering** — an owner-seeded **personal web index** (RSS-first honest crawler: named UA, robots.txt, per-domain pacing) is tried before any SERP; healthy facets never hit external search at all. Flow-first gathering when a flow is explicitly named.
+2. **Decompose → per-facet research → gap-fill → synthesize** — concurrent facets, inline citations, an explicit *Contradictions & Gaps* section.
+3. **Evidence verification** — atomic claims extracted (grammar-constrained), checked against the cached pages that actually mention them, corrections spliced by code at sentence granularity (the report body is never handed back for wholesale rewriting). A bounded **Tier-1 cross-check** escalates high-impact falsifiable claims to one independent search each — contradicted facts get corrected with quoted evidence.
+4. **Honest failure** — zero sources fetched aborts the run with "search is down — I won't answer from memory." No verifier can rescue a report whose sources are imaginary, so fabrication is refused at the front door.
+5. **Deterministic rendering** — the model writes markdown; code owns HTML/CSS, the Sources section, and chart embedding (matplotlib, only charts that actually rendered). LibreOffice converts to PDF; a `## Verification` appendix and auditable `verification.json` ship with every report.
 
 After the research pipeline drafts its markdown report, an evidence-verification stage (`src/pipeline/verification.ts`) checks it before rendering. Principle: **no claim should outrun its evidence.**
 
@@ -212,14 +261,25 @@ The runtime agent's own DECISIONS.md: "approach X failed for task-shape Y; the b
 
 Successful plan-pipeline runs are distilled into markdown skills (generalized description + `triggers:` preserving up to 5 concrete past requests). Matching is **semantic-first** (embeddings in the shared EmbeddingStore under `source:'skill'`, floor 0.65 — measured, not guessed) with keyword scoring as fallback; save-time dedup runs a ladder (slug → hybrid match → grammar-constrained judge) that *revises* existing skills instead of minting near-duplicates. `cronMode` structurally blocks heartbeat/cron from matching or saving skills. ReAct specialists reach skills via the `skill_find` tool (progressive disclosure — catalog stays out of the prompt). All skill events flow through `logAutonomousAction` so the log shows the system living.
 
-## Security (6 layers in dispatch)
+## Security — the Authority Plane (6 layers in dispatch)
 
-1. `allowedCategories` — whitelist per channel
-2. `ownerOnlyTools` — code gate, not model-level. Tools invisible to non-owners
-3. `restrictedCategories` — blocked for untrusted users
-4. `blockedTools` — stripped for everyone on this channel
+Every message passes six layered filters in `src/dispatch.ts` before any model sees a tool:
+
+1. `allowedCategories` — what this channel may do at all
+2. `restrictedCategories` — blocked for untrusted users
+3. `ownerOnlyTools` — **invisible** to everyone but the owner (stripped from the model's vocabulary — prompt injection cannot request what the model cannot see)
+4. `blockedTools` — stripped for everyone on the channel
 5. `restrictedTools` — stripped for untrusted users
-6. `confirmTools` — preview + pending-action ledger; confirmation executes the exact previewed call (see Autonomy Ladder above). Applies to pipeline dispatches as well as the ReAct loop.
+6. `confirmTools` — preview first, execute only on confirmation (pending-action ledger; applies to pipeline dispatches as well as the ReAct loop — see Autonomy Ladder above)
+
+On top of the filters:
+
+- **Pending-action ledger** — confirmations execute the *stored* call: sender-bound, single-use, 10-minute expiry, never model-regenerated parameters. Confirm/Deny buttons on Discord/Telegram synthesize the typed reply — never a second security path.
+- **Autonomy ladder** — tools declare `{tier: silent | act_then_notify | propose_confirm, reversible, blastRadius}`. New externally-visible tools enter at `propose_confirm`. Every autonomous action is logged (`logAutonomousAction`) — the track record that justifies promotion, per action type, by evidence.
+- **Target-bound standing grants** — reply `always <id>` to a confirmation and that exact tool→target pair stops asking. Never the whole tool. Principal-bound, minted only on successful execution, revocable via `!grants`. Tools without a target argument (exec) are structurally grant-ineligible.
+- **Sandboxing** — exec runs in a Docker sandbox or against a command allowlist; all URL-fetching tools pass SSRF checks (scheme whitelist, DNS pre-flight, redirect hop validation); cron jobs run with write tools stripped and inherit owner identity only because the schedule itself is owner-authored (the code gate).
+
+The invariant, pinned by tests: **experience informs execution; it never expands authority.** Learning modules cannot import from `security/`.
 
 ## MCP Bridge (`src/mcp/`)
 

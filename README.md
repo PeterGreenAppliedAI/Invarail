@@ -48,165 +48,28 @@ Frontier-model agent frameworks assume a model that reliably handles 15+ tools, 
 
 Invarail's response is structural, not prompt-hopeful:
 
-- **Router + Specialist** — a fast model (phi4:14b) classifies intent into one category; each specialist sees only its tools. No 80-tool menus.
+- **Router + Specialist** — a fast model (phi4 today; a 421M System-One encoder in shadow) classifies intent into one category; each specialist sees only its tools. No 80-tool menus.
 - **Deterministic pipelines** — most categories run typed stage sequences (extract → tool → synthesize → validate) where code decides "what step next," with grammar-constrained extraction, JSON repair, and per-stage degrade-not-abort fallbacks.
 - **Everything measured** — a [published 39-row engine-in-the-loop model eval](evals/2026-08-local-model-eval/) drives model/config choices. The same model swung 82%→100% on one thinking flag; there are no universal settings, only measured ones.
 - **Code gates, never model judgment** — every security boundary is enforced in code before any model is involved.
 
-## The Authority Plane
+## How It Is Built
 
-Every message passes six layered filters in `src/dispatch.ts` before any model sees a tool:
+Each of these has a full section in the docs; the README keeps the one-paragraph version.
 
-1. `allowedCategories` — what this channel may do at all
-2. `restrictedCategories` — blocked for untrusted users
-3. `ownerOnlyTools` — **invisible** to everyone but the owner (stripped from the model's vocabulary — prompt injection cannot request what the model cannot see)
-4. `blockedTools` — stripped for everyone on the channel
-5. `restrictedTools` — stripped for untrusted users
-6. `confirmTools` — preview first, execute only on confirmation
+**The authority plane.** Six layered filters in `src/dispatch.ts` run before any model sees a tool — channel categories, owner-only tools stripped from the model's vocabulary, blocked and restricted tools, and confirm-gated tools backed by a pending-action ledger that executes the *stored* call. Above the filters: an autonomy ladder tools declare themselves into, target-bound standing grants (`always <id>` promotes one tool→target pair, never the tool), and sandboxing for exec and every fetcher. The invariant, pinned by tests: experience informs execution; it never expands authority. → [ARCHITECTURE.md: Security](ARCHITECTURE.md#security--the-authority-plane-6-layers-in-dispatch)
 
-On top of the filters:
+**Workers.** Coding runs through the [Pi](https://pi.dev) agent behind one adapter, in a cwd-scoped arena, validated by real test outcomes and observed via lifecycle events. Repeatable procedures are [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flows served over the MCP bridge, which does the accommodation small models need (curated descriptions, schema-filtered params, result budgets, confirm gating). Open-ended work runs in a governed ReAct loop whose guardrails were learned from measured failure modes. → [ARCHITECTURE.md: Workers](ARCHITECTURE.md#workers--pi-flowmcp-mcp-react)
 
-- **Pending-action ledger** — confirmations execute the *stored* call: sender-bound, single-use, 10-minute expiry, never model-regenerated parameters. Confirm/Deny buttons on Discord/Telegram synthesize the typed reply — never a second security path.
-- **Autonomy ladder** — tools declare `{tier: silent | act_then_notify | propose_confirm, reversible, blastRadius}`. New externally-visible tools enter at `propose_confirm`. Every autonomous action is logged (`logAutonomousAction`) — the track record that justifies promotion, per action type, by evidence.
-- **Target-bound standing grants** — reply `always <id>` to a confirmation and that exact tool→target pair stops asking. Never the whole tool. Principal-bound, minted only on successful execution, revocable via `!grants`. Tools without a target argument (exec) are structurally grant-ineligible.
-- **Sandboxing** — exec runs in a Docker sandbox or against a command allowlist; all URL-fetching tools pass SSRF checks (scheme whitelist, DNS pre-flight, redirect hop validation); cron jobs run with write tools stripped and inherit owner identity only because the schedule itself is owner-authored (the code gate).
+**Memory.** A FalkorDB graph (native HNSW vectors) with typed entities, `SUPERSEDES` edges instead of overwrites, provenance on every fact (`stated | observed | inferred` — only a human-reviewed `!save` claims `stated`), a relevance floor on injection, continuous intake every 8 turns, and `USER.md` as a rule rather than an observation. → [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md)
 
-The invariant, pinned by tests: **experience informs execution; it never expands authority.** Learning modules cannot import from `security/`.
+**Research, verified.** The `research` pipeline gathers local-first (a personal web index before any SERP), decomposes into facets, drafts an analytical report, then checks its own claims against the cached pages that mention them and cross-checks the high-impact ones with one independent search each. Corrections are code-spliced sentences; zero sources aborts rather than answers from memory; rendering is deterministic (markdown in, LibreOffice PDF out, `verification.json` alongside). → [ARCHITECTURE.md: Research](ARCHITECTURE.md#research-claim-verification)
 
-## Workers
+**Models.** One principle, measured six swaps deep: the harness holds the value, not the weights. The foreground model is one config line (`defaultModel`, currently qwen3.8:27B on a 24GB A5000); phi4 routes and extracts on a 3060; the embedder lives alone on a Mac mini; coding goes to glm-5.3-flash on the Spark; a 421M Laya encoder shadows the router and is logged, never decides. Thinking is a per-stage property, not a per-model one. → [ARCHITECTURE.md: Multi-Model Strategy](ARCHITECTURE.md#multi-model-strategy-two-backends) · [ROUTING.md: Shadow Router](ROUTING.md#layer-4b-shadow-router-observation-only-2026-09-25)
 
-### Pi — the coding substrate
+**Capabilities, channels, console.** Web search and research, memory, Gmail/Calendar (read-only, owner-only), sandboxed execution and code sessions, cron, a task board, cross-channel messaging, a dual-mode browser, vision, voice (Kokoro + Whisper via mlx-audio), documents, image generation, Pi builds, the MCP bridge, standing grants, heartbeat and briefings, knowledge import, and a Chrome side panel — on Discord, Telegram, Gmail, the web API, and a management console with voice mode. → [FEATURES.md: Capabilities at a Glance](FEATURES.md#capabilities-at-a-glance)
 
-All coding runs through the [Pi coding agent](https://pi.dev) (`@earendil-works/pi-coding-agent`, MIT, embedded via SDK, version-pinned) behind a single adapter (`src/coding/pi-session.ts` — every SDK surface in one swappable module). Invarail stopped competing as a coding harness and kept what is actually its own: routing, memory, governance, evaluation, pipelines, channels.
-
-- **Bounded arena** — sessions are cwd-scoped to an isolated build directory; context-file discovery is suppressed so unrelated builds never inherit this repo's instructions; the tool surface is the config-declared allowlist.
-- **Observed, not trusted** — lifecycle events (agent/turn boundaries, tool executions with durations and error flags) stream to metrics; every session's full JSONL transcript path is recorded, so "why do we believe this build worked" has provenance all the way down.
-- **Validated externally** — the `code_gen` pipeline owns the workflow (enrich → build → test → bounded fix loop → local commit); the gate is the actual test outcome, never the model's self-assessment. Remote push is opt-in and off by default.
-
-```json5
-// invarail.config.json5
-pi: {
-  enabled: true,
-  model: "vllm/glm-5.3-flash",   // provider/id from ~/.pi/agent/models.json — any OpenAI-compat server
-}
-```
-
-Chosen on evidence: in an instrumented duel on a hidden 12-check acceptance suite, Pi + a local 27B produced contract-grade work with a self-authored 11-test behavioral suite in 384 seconds (artifacts in `evals/`). Roadmap: the same rail extends to Invarail modifying *itself* — worktree-isolated sessions, deterministic merge gates, ledger-confirmed merges, and a deliberately dumb supervisor (see DECISIONS.md, "Pi Becomes the Coding Substrate").
-
-### FlowMCP — compiled procedures
-
-Repeatable multi-step workflows live as [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) flows served through the MCP bridge — the model picks a flow and fills 2-3 parameters instead of improvising orchestration. Naming a gathering flow in a research request makes the research pipeline use the flow's output as its facets and sources (strict explicit naming only — no semantic matching; that's an authority-hijack class).
-
-### MCP bridge — external tools, small-model safe
-
-Any MCP server's tools auto-register as Invarail tools (stdio or streamable-HTTP, fully-local OAuth with PKCE + DCR, no cloud broker). The bridge does the accommodation small models need: description curation and caps, schema-filtered params (model-padded arguments stripped before strict servers fail on them), per-server result budgets, and confirm-gating for tools without `readOnlyHint`.
-
-### ReAct loop — governed freedom for open categories
-
-Open-ended categories (`chat`, `config`, `personal`) use a ReAct tool loop with guardrails learned from measured failure modes: hallucinated-action detection, drift detection with re-anchoring, repair prompts that always offer a no-tool exit (the eval showed 13/16 models will fabricate tool calls rather than defy a coercive order), one calling convention per model, and error-learning hints injected before execution.
-
-## Memory
-
-A **FalkorDB graph database** (Docker, native HNSW vector search) is the institutional memory; a flat JSONL store is the fallback.
-
-```
-(:Fact {text, importance, embedding}) -[:ABOUT]->          (:Entity {name, type})
-(:Fact) -[:TAGGED]->    (:Tag)
-(:Fact) -[:SUPERSEDES]-> (:Fact)            // evolving truth, history preserved
-(:Fact) -[:EXTRACTED_FROM]-> (:Turn)        // provenance to the conversation
-(:Turn) -[:MENTIONS]->  (:Entity)           // cross-session search
-(:UserModel {communicationStyle, decisionPattern, topicInterests, frustrationTriggers})   // closed schema
-```
-
-- **Importance tiers** — 5=critical (never expires) … 1=ephemeral (7 days). Eviction drops lowest importance first; identity facts are never silently trimmed.
-- **Auto-injection with a floor** — vector KNN + multi-hop entity traversal on every message, but injection requires raw cosine ≥ 0.55: scoring orders, the floor rejects. Relevance is earned, not assumed.
-- **Semantic dedup on write**, typed-entity NER bootstrapped from the graph's own prior decisions, `SUPERSEDES` edges instead of overwrites, behavioral user modeling refreshed by heartbeat.
-- **Facts carry HOW we know them** — `provenance: stated | observed | inferred`. Only `!save` (a human read the list) may claim `stated`; autonomous extraction is `observed`; consolidation merges are `inferred`. Injection marks the weak classes — but only when the set is mixed, so a distinction that distinguishes nothing never turns into a blanket hedging order.
-- **Intake runs continuously** — incremental capture every 8 turns (code-triggered, after the reply is delivered, on the utility tier) closed a two-hour hole that had left the graph at 24 facts after months. `!reset` shows the session's captures alongside any tail facts; `!save` promotes them; the 2-hourly heartbeat keeps the heavy reconciliation (consolidation, contradictions, review). `!forget` removes with re-extraction protection.
-- **Identity is a rule, not an observation** — `USER.md` is the owner's hand-written profile, read-only to the agent and fed to extraction as authoritative; it never grows a weaker-provenance copy of itself in the graph.
-- **Priming embeds your words, not your attachments** — page and PDF bodies are stripped from the retrieval query and it is capped, after a 9K-char document blew the 8s priming cap on the Mini.
-- **Experience & Lessons** — approach-level memory judged only by code-detected signals (👍/👎 reactions, confirm denials, steering — never model self-assessment). Lessons (negative procedural memory) inject only after recurrence (evidence ≥ 2). The retired skills system is the cautionary tale: replayed recipes quietly became an authority surface, so its successors keep the learning, not the power.
-
-Deep dive: [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md).
-
-## Research: Verified, Not Vibed
-
-The `research` pipeline produces an analytical PDF report whose claims are checked before delivery:
-
-1. **Local-first gathering** — an owner-seeded **personal web index** (RSS-first honest crawler: named UA, robots.txt, per-domain pacing) is tried before any SERP; healthy facets never hit external search at all. Flow-first gathering when a flow is explicitly named.
-2. **Decompose → per-facet research → gap-fill → synthesize** — concurrent facets, inline citations, an explicit *Contradictions & Gaps* section.
-3. **Evidence verification** — atomic claims extracted (grammar-constrained), checked against the cached pages that actually mention them, corrections spliced by code at sentence granularity (the report body is never handed back for wholesale rewriting). A bounded **Tier-1 cross-check** escalates high-impact falsifiable claims to one independent search each — contradicted facts get corrected with quoted evidence.
-4. **Honest failure** — zero sources fetched aborts the run with "search is down — I won't answer from memory." No verifier can rescue a report whose sources are imaginary, so fabrication is refused at the front door.
-5. **Deterministic rendering** — the model writes markdown; code owns HTML/CSS, the Sources section, and chart embedding (matplotlib, only charts that actually rendered). LibreOffice converts to PDF; a `## Verification` appendix and auditable `verification.json` ship with every report.
-
-## Models
-
-One measured principle: **the harness holds the value, not the weights.** The entire foreground tier has been swapped five times (qwen → MiniMax → DeepSeek-V4-Flash → qwen3.8 → glm-5.3-flash → qwen3.8:27B on a used A5000, 2026-09-19) purely via config — since 2026-08-26 a cutover is literally ONE line (`defaultModel`), filled into every foreground slot by the loader. Memory graph, arena, and channels untouched every time. The 2026-09-19 hardware saga is worth reading in DECISIONS: **prefill is compute-bound**, a $300 3060 out-reads a Mac Mini 10× on prompt processing, and prompt order is now a KV-prefix-cache contract (`[static system][append-only history][volatile state+memory][user]`, 61s → 0.3s).
-
-| Role | Model | Backend |
-|------|-------|---------|
-| Foreground: chat, specialists, briefing, reasoning, vision (native VL) | `defaultModel` — currently qwen3.8:27B | A5000 (24GB), Ollama-native via `inference.ollamaBackends[]` — 921 tok/s prefill, native tool calls, think honored |
-| Coding: `code_gen` + Pi builds | glm-5.3-flash (NVFP4) | vLLM on the Spark, OpenAI-compat (262K context; always-streamed; per-model caps incl. think-leak coercion) |
-| Router · fact extraction · steward judgment | phi4:latest | 3060 (12GB) utility box |
-| NER · consolidation | phi4-mini | 3060 |
-| Voice replies | `voice.model` — currently the foreground 27B | A5000 — the lean voice flow (anchored 12–24-turn window, minimal workspace, `think` off, no lessons/experiences priming) is what makes it fast; small models beside the 27B split to CPU |
-| Embeddings (every message: memory priming) | qwen3-embedding:8b | Mac Mini — `embed()` routes by model id so the embedder never shares VRAM with the router (contention silently skipped memory injection) |
-| Image generation | flux2-klein:4b-fp8 | dedicated Ollama box |
-| **Shadow router** (observation only) | Laya, 421M encoder fine-tuned on the owner's own routing data | `/v1/systemone`, ~70ms — logged beside phi4 on every message, never decides (see below) |
-
-The foreground promotion was decided by four instrumented head-to-heads (deep eval, blind synthesis, build duel, Pi duel — a 27B went 4-0 against a 284B; artifacts in `evals/`). **Thinking is a per-stage property, not a per-model one**: structured stages pin `think: false`, synthesis stages think when a blind human read said it pays, and the config is validated at boot against a per-model capability matrix. Concurrency, budgets, and think policy are config, not code — model-shaped accommodations hardcoded into logic are a bug class this project has paid for twice.
-
-A `MultiBackendClient` routes each call by model id: OpenAI-compatible servers (`inference.backends[]`), additional Ollama-native hosts (`inference.ollamaBackends[]`), and the primary Ollama for everything unrouted — chat, streaming, and embeddings alike. Ollama-only setups work — see the eval for measured picks.
-
-**A System-One decision model as router (2026-09-25).** Jev/Laya-style models take state plus a typed question and return a calibrated choice in one forward pass — nothing generated, nothing to parse. A 421M Laya encoder fine-tuned for 55 minutes on this Mac, on 1,248 cleaned real routing pairs plus 777 round-trip-validated synthetic ones, scored **80.8% vs phi4's 76.9%** on the corrected held-out set at **63ms vs 270ms** (90.8% vs 80.0% weighted by real traffic). It runs in **shadow mode** — `router.shadow` asks it the same question beside phi4 on every message and logs both; phi4 still decides. A disagreement rate on real traffic, not a 78-item eval, is what earns the switch. Full write-up with the disproven parts (zero-shot is useless; the confidence-gated hybrid lost) in [DECISIONS.md](DECISIONS.md).
-
-## Capabilities at a Glance
-
-| Capability | Tools | Description |
-|-----------|-------|-------------|
-| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, default) or Brave/Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
-| Research | `web_search`, `web_fetch`, `code_session`, `reason` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
-| Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
-| Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only security gate |
-| Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands or Docker sandbox, persistent Python/Node/Bash REPL sessions, safe file I/O |
-| Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit`, `cron_run` | Real cron expressions, timezone-aware, persistent; `cron_run` triggers any job immediately without touching its schedule |
-| Task Board | `task_add`, `task_list`, `task_update`, `task_done`, `task_remove` | Persistent kanban-style task system with TASKS.md rendering |
-| Reasoning | `reason` | Forced synthesis pass over gathered tool observations — deep analysis, content formatting |
-| Messaging | `send_message` | Cross-channel message delivery (confirm-gated, grant-eligible) |
-| Browsing | `browser` | Dual-mode browser: DOM-first with automatic visual escalation (Xvfb + vision model). Click, type, select, fill forms on any site including SPAs |
-| Vision | *(automatic)* | Image analysis via the multimodal foreground model — descriptions injected into context for natural Q&A |
-| Voice | TTS/STT | Kokoro TTS + Whisper STT (mlx-audio on Apple silicon, OpenAI-shaped HTTP) — voice in, voice out, with toggle hands-free mode |
-| Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from outcomes |
-| Data files | `code_session`, `read_file` | Upload CSV/Excel/JSON → pandas analysis in a persistent code session → charts + interpretation on request |
-| Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment). Experience informs execution; it never expands authority |
-| Lessons | `!lessons` *(+ automatic)* | Negative procedural memory — approach-level boundaries harvested from observed failures, injected only after recurrence (evidence ≥ 2) |
-| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become Invarail tools — stdio or streamable-HTTP, small-model description curation, schema-filtered params, per-server result budgets, readOnlyHint-aware confirm gating, fully-local OAuth |
-| Flow-first research | explicit tool naming | Name a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow in a research request and the pipeline uses its compiled searches as the facets+sources, then verifies and renders exactly as normal |
-| Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
-| Heartbeat | *(autonomous)* | Deterministic fact diff + LLM reasoning, auto-expire stale facts, interactive memory review |
-| Briefing | *(scheduled)* | 3x daily CoT reasoning about calendar + tasks + memory — contextual insights, not status dumps |
-| Knowledge Import | `knowledge_import` | Import PDFs, CSVs, markdown into a vector-searchable knowledge base |
-| Context Compaction | *(automatic)* | Structured compression (Goal/Progress/Next Steps), proactive at budget pressure, tool-pair sanitization |
-| Document Gen | `document` | Create and convert documents via LibreOffice headless — markdown in, code-owned styling out → PDF/DOCX/XLSX/PPTX |
-| Image Gen | `image_generate` | Text-to-image and img2img via Flux on dedicated hardware |
-| Code Generation | `pi_build` | Build code with the embedded [Pi](https://pi.dev) SDK — scaffold projects, write tests, auto-commit. Cwd-scoped arena, lifecycle-observed, externally test-gated |
-| Browser Companion | Chrome Extension | Side panel rides shotgun while you browse — summarize pages, ask about selected text, right-click context menus. Page content injected directly, no fetching |
-| Self-Improvement | *(automatic)* | Error learning store, tool-specific recovery guidance, drift detection, observation summarization, learning promotion via heartbeat |
-| CLI | `npm run cli` | Terminal interface with streaming, slash commands, markdown rendering, session persistence |
-
-## Channels & Console
-
-**Channels:** Discord, Telegram, Gmail (read-only tools), Web API, and a **Chrome extension** side panel (page context injected directly — summarize/ask about any page, no fetching). Any platform can be added by implementing a 5-method `ChannelAdapter` — zero core changes. All adapters deliver file attachments (PDFs, images, documents).
-
-**Management console** at `http://localhost:3100/console/` (React + Vite + Tailwind, served from the same process): dashboard, full chat with voice mode (VAD hands-free loop), session transcripts with tool-call details, kanban task board, cron management, memory browser, channel status, tool registry, config viewer (secrets redacted). REST API + SSE streaming underneath.
-
-**Voice:** Kokoro TTS (`af_bella`) + whisper-large-v3-turbo STT, served by mlx-audio on the Mac mini (OpenAI-shaped HTTP; 0.3s / 0.9s warm). Voice in → voice out, text in → text out; a `[Voice] stt/dispatch/tts/total` line times every turn. Vision: images auto-analyzed by the multimodal foreground model and answered naturally.
-
-## Autonomy That Reports for Duty
-
-- **Heartbeat** (every 2h) — deterministic maintenance: transcript fact extraction, learning promotion, media cleanup, fact expiry/dedup, code-driven task urgency (models receive pre-labeled data; labels are authoritative), interactive memory review (`!heartbeat yes/no`).
-- **Briefings** (8am / 1:15pm / 5pm) — calendar + tasks + memory gathered by code, reasoned over by the model: contextual insight, not a status dump.
-- **Cron** — real cron expressions, validated before persisting; jobs run as continuable sessions with artifact capture, retry with backoff, and failure notification. `cron_run` fires any job now without touching its schedule.
+**Autonomy that reports for duty.** A 2-hourly heartbeat does deterministic maintenance and proposes; 3× daily briefings reason over calendar, tasks and memory; cron jobs run as continuable, artifact-capturing sessions with owner-authored identity as the code gate. → [FEATURES.md: Autonomy](FEATURES.md#autonomy-that-reports-for-duty)
 
 ## Quick Start
 
@@ -243,7 +106,7 @@ Set `ownerId`. `ownerOnlyTools` is a code gate — the tools don't exist in the 
 
 The README is the front door; the detail lives in dedicated docs:
 
-- **[FEATURES.md](FEATURES.md)** — feature guides: console + API reference, voice setup, vision, documents, task board, heartbeat/briefing, email steward, multi-step arena tasks, compaction, workspace, CLI, self-improvement (SIP), router training data
+- **[FEATURES.md](FEATURES.md)** — the capabilities table, channels + console, and feature guides: console + API reference, voice setup, vision, documents, task board, heartbeat/briefing, email steward, multi-step arena tasks, compaction, workspace, CLI, self-improvement (SIP), router training data
 - **[INSTALL.md](INSTALL.md)** — the install tier ladder, from Tier 0 to the full build
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the engine works
 - **[MEMORY-SYSTEM.md](MEMORY-SYSTEM.md)** — the graph memory deep-dive
@@ -273,7 +136,7 @@ src/
 console/               # React management console
 chrome-extension/      # WXT + React side panel companion
 evals/                 # published model evals + duel artifacts
-test/                  # 881 tests across 84 files
+test/                  # 993 tests across 104 files
 ```
 
 Architecture deep-dives: [ARCHITECTURE.md](ARCHITECTURE.md) · [ROUTING.md](ROUTING.md) · [SPECIALISTS.md](SPECIALISTS.md) · [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md) · decision history with failed experiments: [DECISIONS.md](DECISIONS.md).
@@ -321,14 +184,7 @@ Coding substrate: **[Pi](https://pi.dev)** by Earendil Works (MIT, embedded via 
 
 ## Roadmap
 
-**Recently shipped:** Pi SDK adapter with lifecycle observability (coding-substrate Phase A) · the published 39-row model eval · per-stage thinking control with boot-time capability validation · evidence gates and research claim verification with Tier-1 cross-checks · the personal web index (local-first research) · MCP bridge with fully-local OAuth · target-bound standing grants + confirm buttons · the Lessons system · SGLang foreground cutover with real continuous batching.
-
-| Priority | Direction |
-|----------|-----------|
-| Next | **Coding substrate Phase B** — worktree-isolated self-modification: deterministic merge gates (tsc + suite + smoke batteries + rubric tiering), ledger-confirmed merges, a deliberately dumb supervisor with auto-rollback. Open design: the arena as worktree-inside-container. |
-| Next | **Config-not-code Phase 1** — a machine-writable, code-clamped overlay for all model-shaped tuning (per-backend concurrency, budgets, think policy); Phase 2: evidence-driven self-tuning proposals on the confirmation ledger. |
-| Planned | **Coding substrate Phase C** — Falkor experience briefs into Pi sessions; post-session harvest (events → graph); memory verified only by the merge gate's own validation event. |
-| Planned | **Weekly research newsletter** — cron-scheduled verified research digest with flow-powered gathering. |
+Live in [ROADMAP.md](ROADMAP.md) — completed, next up, backlog, known issues. Current focus: the shadow router's real-traffic verdict (and a v4 fine-tune with conversational state before any switch), the memory synthesis pass, and extending the self-modification rail beyond this repo.
 
 ## License
 

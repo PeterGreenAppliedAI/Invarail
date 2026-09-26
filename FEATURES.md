@@ -2,7 +2,47 @@
 
 Setup and usage detail for Invarail's features. The [README](README.md) is the front door — this is the reference. How things work internally lives in [ARCHITECTURE.md](ARCHITECTURE.md); install tiers in [INSTALL.md](INSTALL.md).
 
+## Capabilities at a Glance
+
+| Capability | Tools | Description |
+|-----------|-------|-------------|
+| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, default) or Brave/Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
+| Research | `web_search`, `web_fetch`, `code_session`, `reason` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
+| Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
+| Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only security gate |
+| Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands or Docker sandbox, persistent Python/Node/Bash REPL sessions, safe file I/O |
+| Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit`, `cron_run` | Real cron expressions, timezone-aware, persistent; `cron_run` triggers any job immediately without touching its schedule |
+| Task Board | `task_add`, `task_list`, `task_update`, `task_done`, `task_remove` | Persistent kanban-style task system with TASKS.md rendering |
+| Reasoning | `reason` | Forced synthesis pass over gathered tool observations — deep analysis, content formatting |
+| Messaging | `send_message` | Cross-channel message delivery (confirm-gated, grant-eligible) |
+| Browsing | `browser` | Dual-mode browser: DOM-first with automatic visual escalation (Xvfb + vision model). Click, type, select, fill forms on any site including SPAs |
+| Vision | *(automatic)* | Image analysis via the multimodal foreground model — descriptions injected into context for natural Q&A |
+| Voice | TTS/STT | Kokoro TTS + Whisper STT (mlx-audio on Apple silicon, OpenAI-shaped HTTP) — voice in, voice out, with toggle hands-free mode |
+| Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from outcomes |
+| Data files | `code_session`, `read_file` | Upload CSV/Excel/JSON → pandas analysis in a persistent code session → charts + interpretation on request |
+| Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment). Experience informs execution; it never expands authority |
+| Lessons | `!lessons` *(+ automatic)* | Negative procedural memory — approach-level boundaries harvested from observed failures, injected only after recurrence (evidence ≥ 2) |
+| MCP Bridge | `tools.mcp.servers[]` | Any MCP server's tools become Invarail tools — stdio or streamable-HTTP, small-model description curation, schema-filtered params, per-server result budgets, readOnlyHint-aware confirm gating, fully-local OAuth |
+| Flow-first research | explicit tool naming | Name a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow in a research request and the pipeline uses its compiled searches as the facets+sources, then verifies and renders exactly as normal |
+| Standing Grants | `!grants` | Target-bound autonomy: reply `always <id>` and that exact tool→target pair stops asking — never the whole tool. Principal-bound, revocable |
+| Heartbeat | *(autonomous)* | Deterministic fact diff + LLM reasoning, auto-expire stale facts, interactive memory review |
+| Briefing | *(scheduled)* | 3x daily CoT reasoning about calendar + tasks + memory — contextual insights, not status dumps |
+| Knowledge Import | `knowledge_import` | Import PDFs, CSVs, markdown into a vector-searchable knowledge base |
+| Context Compaction | *(automatic)* | Structured compression (Goal/Progress/Next Steps), proactive at budget pressure, tool-pair sanitization |
+| Document Gen | `document` | Create and convert documents via LibreOffice headless — markdown in, code-owned styling out → PDF/DOCX/XLSX/PPTX |
+| Image Gen | `image_generate` | Text-to-image and img2img via Flux on dedicated hardware |
+| Code Generation | `pi_build` | Build code with the embedded [Pi](https://pi.dev) SDK — scaffold projects, write tests, auto-commit. Cwd-scoped arena, lifecycle-observed, externally test-gated |
+| Browser Companion | Chrome Extension | Side panel rides shotgun while you browse — summarize pages, ask about selected text, right-click context menus. Page content injected directly, no fetching |
+| Self-Improvement | *(automatic)* | Error learning store, tool-specific recovery guidance, drift detection, observation summarization, learning promotion via heartbeat |
+| CLI | `npm run cli` | Terminal interface with streaming, slash commands, markdown rendering, session persistence |
+
+## Channels
+
+**Channels:** Discord, Telegram, Gmail (read-only tools), Web API, and a **Chrome extension** side panel (page context injected directly — summarize/ask about any page, no fetching). Any platform can be added by implementing a 5-method `ChannelAdapter` — zero core changes. All adapters deliver file attachments (PDFs, images, documents).
+
 ## Management Console
+
+**Management console** at `http://localhost:3100/console/` (React + Vite + Tailwind, served from the same process): dashboard, full chat with voice mode (VAD hands-free loop), session transcripts with tool-call details, kanban task board, cron management, memory browser, channel status, tool registry, config viewer (secrets redacted). REST API + SSE streaming underneath.
 
 <img width="2554" height="1302" alt="Invarail management console" src="https://github.com/user-attachments/assets/a309e3d2-0bd5-4cf0-9806-0cbfeb1f0663" />
 
@@ -33,6 +73,8 @@ The console REST API lives at `/console/api/`:
 | GET | `/files/:path` | Serve workspace files (charts, etc.) |
 
 ## Voice (TTS/STT)
+
+**Voice:** Kokoro TTS (`af_bella`) + whisper-large-v3-turbo STT, served by mlx-audio on the Mac mini (OpenAI-shaped HTTP; 0.3s / 0.9s warm). Voice in → voice out, text in → text out; a `[Voice] stt/dispatch/tts/total` line times every turn. Vision: images auto-analyzed by the multimodal foreground model and answered naturally.
 
 - **STT** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) server; incoming voice messages are transcribed automatically.
 - **TTS** — [Kokoro](https://github.com/remsky/Kokoro-FastAPI); near-real-time synthesis (~150ms/sentence). Voice responses get a TTS-friendly prompt injection (no emojis, no markdown).
@@ -91,6 +133,14 @@ Formats: PDF, DOCX, XLSX, PPTX, HTML, CSV, TXT, ODT, ODS, ODP. Models write mark
 ## Task Board
 
 Persistent kanban tasks (`tasks.json` → rendered `TASKS.md`): priorities, assignees, due dates, tags. "Add a task to buy groceries" / "show my tasks" / "mark a1b2c3d4 done". `TASKS.md` is protected — the bot mutates it only through the TaskStore. Urgency tiers and calendar-day labels are computed **in code** (`src/temporal/`); models receive pre-labeled data with labels marked authoritative — no hallucinated urgency, no wrong-day events.
+
+## Autonomy That Reports for Duty
+
+- **Heartbeat** (every 2h) — deterministic maintenance: transcript fact extraction, learning promotion, media cleanup, fact expiry/dedup, code-driven task urgency (models receive pre-labeled data; labels are authoritative), interactive memory review (`!heartbeat yes/no`).
+- **Briefings** (8am / 1:15pm / 5pm) — calendar + tasks + memory gathered by code, reasoned over by the model: contextual insight, not a status dump.
+- **Cron** — real cron expressions, validated before persisting; jobs run as continuable sessions with artifact capture, retry with backoff, and failure notification. `cron_run` fires any job now without touching its schedule.
+
+Detail for each below.
 
 ## Heartbeat
 
