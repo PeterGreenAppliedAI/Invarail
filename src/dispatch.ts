@@ -365,7 +365,11 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
 
     // Lessons: floor-gated one-liners from past failures that have RECURRED
     // (evidence ≥ 2 — a one-off never steers). Zero hits = zero tokens.
-    if (params.config.memory?.lessons?.enabled !== false && query.length > 10) {
+    // Lessons and experiences steer TOOL use. A voice turn is bare chat with no tools,
+    // and each of these is another embed on the priming path (2026-09-26: priming
+    // was 1.4–2.1s of a voice turn, with routing at 1ms beside it).
+    const isVoiceTurn = !!params.modelOverride;
+    if (!isVoiceTurn && params.config.memory?.lessons?.enabled !== false && query.length > 10) {
       try {
         const { LessonStore } = await import('./learnings/lesson-store.js');
         const { relevantLessonLines } = await import('./learnings/lesson-semantic.js');
@@ -381,7 +385,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     // plain prompt text; never permissions/routing/confirm (the authority
     // boundary, DECISIONS 2026-08-10). Evidence ≥ 2: explicit signals
     // (reaction/deny) are born at 2; inferred ones must recur.
-    if (params.config.memory?.experiences?.enabled !== false && query.length > 10) {
+    if (!isVoiceTurn && params.config.memory?.experiences?.enabled !== false && query.length > 10) {
       try {
         const { sharedExperienceStore, experienceStoreConfigFrom } = await import('./memory/experience-store.js');
         const matches = (await sharedExperienceStore(params.client, experienceStoreConfigFrom(params.config.memory)).searchRelevant(query, 2, 0.6))
@@ -447,6 +451,19 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
       senderId: resolvePrincipal(params.sourceContext?.senderId, config),
     };
 
+    if (params.modelOverride) {
+      // VOICE FLOW: a fixed, short window — no compaction, no summarizer call, no
+      // 7K-token history re-prefilled every turn (2026-09-26: that was ~4–5s of each
+      // voice turn on a 7B, because the compacted window slid and missed the prefix
+      // cache every time). A spoken exchange needs the last few turns, not the session.
+      const window = config.voice.historyTurns;
+      const transcript = sessionStore.loadTranscript(agentId, sessionKey, window);
+      history = transcript.map(t => ({
+        role: t.role as 'user' | 'assistant',
+        content: t.role === 'assistant' ? stripThinking(t.content) : t.content,
+      }));
+      console.log(`[Dispatch] Voice history window: ${history.length} turns (cap ${window}, no compaction)`);
+    } else {
     const cacheValid = cachedCompaction
       && cachedCompaction.turnCount === currentTurnCount
       && Date.now() - cachedCompaction.cachedAt < COMPACTION_CACHE_TTL_MS;
@@ -475,6 +492,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
           content: t.role === 'assistant' ? stripThinking(t.content) : t.content,
         }));
       }
+    }
     }
   }
 

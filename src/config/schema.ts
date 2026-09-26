@@ -507,6 +507,11 @@ export const VoiceConfigSchema = z.object({
    *  with length; the voice system prompt already asks for concision, but a cap is
    *  a code gate. ~160 tokens ≈ three spoken sentences. */
   maxTokens: z.number().int().positive().default(160),
+  /** History window for voice turns, in turns. Voice used to inherit the session's
+   *  compacted history — ~7K tokens at the 8K voice context, re-prefilled EVERY turn
+   *  because the window slid and defeated the prefix cache (2026-09-26: 5s of a 7B's
+   *  time per turn). A spoken exchange needs the last few turns, not the session. */
+  historyTurns: z.number().int().positive().default(12),
 });
 
 export const HeartbeatConfigSchema = z.object({

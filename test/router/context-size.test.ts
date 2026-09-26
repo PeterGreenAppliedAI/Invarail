@@ -19,3 +19,12 @@ describe('utility-model context sizes', () => {
     expect(() => VoiceConfigSchema.parse({ contextSize: 0 })).toThrow();
   });
 });
+
+describe('voice flow defaults', () => {
+  it('voice history window and reply cap have code-gate defaults', () => {
+    const v = VoiceConfigSchema.parse({});
+    expect(v.historyTurns).toBe(12);
+    expect(v.maxTokens).toBe(160);
+    expect(() => VoiceConfigSchema.parse({ historyTurns: 0 })).toThrow();
+  });
+});
