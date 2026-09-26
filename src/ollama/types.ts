@@ -69,6 +69,10 @@ export interface OllamaChatResponse {
   total_duration?: number;
   eval_count?: number;
   prompt_eval_count?: number;
+  /** Ollama-native timing (nanoseconds); undefined on OpenAI-compat backends. */
+  load_duration?: number;
+  prompt_eval_duration?: number;
+  eval_duration?: number;
 }
 
 export interface OllamaGenerateParams {

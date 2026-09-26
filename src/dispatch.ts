@@ -1740,9 +1740,19 @@ async function runAsBareChat(
     ...(specialist?.think === undefined ? {} : { think: specialist.think }),
   };
 
+  const t0 = Date.now();
   const response = onStream
     ? await client.chatStream(chatParams, onStream)
     : await client.chat(chatParams);
+  // Where a bare-chat turn's wall time goes. Ollama-native reports prefill vs decode
+  // vs load (ns); OpenAI-compat backends only carry counts, so those fields print '-'.
+  const ms = (ns?: number) => (ns === undefined ? '-' : `${Math.round(ns / 1e6)}ms`);
+  console.log(
+    `[Chat] model=${chatModel}${isVoice ? ' (voice)' : ''} wall=${Date.now() - t0}ms`
+    + ` prompt=${response.prompt_eval_count ?? '-'}tok/${ms(response.prompt_eval_duration)}`
+    + ` gen=${response.eval_count ?? '-'}tok/${ms(response.eval_duration)}`
+    + ` load=${ms(response.load_duration)}`,
+  );
 
   return {
     answer: response.message?.content ?? '',

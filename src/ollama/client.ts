@@ -202,6 +202,9 @@ export class OllamaClient {
       eval_count: lastChunk?.eval_count,
       prompt_eval_count: lastChunk?.prompt_eval_count,
       total_duration: lastChunk?.total_duration,
+      load_duration: lastChunk?.load_duration,
+      prompt_eval_duration: lastChunk?.prompt_eval_duration,
+      eval_duration: lastChunk?.eval_duration,
     } as OllamaChatResponse;
   }
 
