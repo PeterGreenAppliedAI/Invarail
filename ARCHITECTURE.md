@@ -146,7 +146,7 @@ All coding runs through the [Pi coding agent](https://pi.dev) (`@earendil-works/
 
 - **Bounded arena** — sessions are cwd-scoped to an isolated build directory; context-file discovery is suppressed so unrelated builds never inherit this repo's instructions; the tool surface is the config-declared allowlist.
 - **Observed, not trusted** — lifecycle events (agent/turn boundaries, tool executions with durations and error flags) stream to metrics; every session's full JSONL transcript path is recorded, so "why do we believe this build worked" has provenance all the way down.
-- **Validated externally** — the `code_gen` pipeline owns the workflow (enrich → build → test → bounded fix loop → local commit); the gate is the actual test outcome, never the model's self-assessment. Remote push is opt-in and off by default.
+- **Validated externally** — the `code_gen` pipeline definition owns the workflow (enrich → build → verify → bounded fix loop → local commit → report); the gate is the actual test outcome, never the model's self-assessment. Remote push is opt-in and off by default. **As configured 2026-09-26 this loop is bypassed:** `code_gen` runs `dispatchMode: "arena"` with `pi_build` as its only tool, and arena skips the pipeline even when one is set — Pi builds, nothing verifies. Decision pending (DECISIONS 2026-09-26).
 
 ```json5
 // invarail.config.json5

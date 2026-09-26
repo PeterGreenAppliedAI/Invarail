@@ -17,7 +17,9 @@ const KEYWORD_HINTS: Array<{ pattern: RegExp; category: string }> = [
   { pattern: /\b(research|analyze)\b.*\b(for me|this topic|in depth|deep dive)\b/i, category: 'research' },
   { pattern: /\b(chart|graph|plot|visualize)\b.*\b(data|stock|trend|performance|price)\b/i, category: 'research' },
   // Browser interaction → multi (plan pipeline with browser tool)
-  { pattern: /\b(screenshot|browse|go to|navigate to|visit)\b.*\b(\.com|\.org|\.net|\.io|site|website|page)\b/i, category: 'multi' },
+  // Browse-a-named-site is web_search (it holds `browser`; the ruling behind the Laya labels).
+  // The pre-model override that forced these to multi was deleted 2026-09-26 — the descriptions decide now.
+  { pattern: /\b(screenshot|browse|go to|navigate to|visit)\b.*(\.com|\.org|\.net|\.io|site|website|page)\b/i, category: 'web_search' },
   // Specific action categories before broad ones
   // NOTE: bare "workspace" removed — it captured exec requests like "run ls in the workspace"
   // "settings?(?! up)" — plain "setting up a business" is everyday English, not a
@@ -85,7 +87,6 @@ const PRE_MODEL_OVERRIDES: Array<{ pattern: RegExp; category: string }> = [
   // tasks to the Gmail specialist. Routing for those now relies on the capability-aware router
   // prompt (the model knows what each specialist can produce) + the keyword fallback below.
   // Browser interaction — compound: action + site/domain reference
-  { pattern: /\b(screenshot|browse|go to|navigate to|visit)\b.*(\.\w{2,}|site|website|page)\b/i, category: 'multi' },
   // Research — only compound intent patterns, not bare keywords
   { pattern: /\b(research|analyze)\b.*\b(stock|market|data|trend|performance|price)\b/i, category: 'research' },
   { pattern: /\b(stock|market|data|trend|performance)\b.*\b(research|analyze|analysis)\b/i, category: 'research' },

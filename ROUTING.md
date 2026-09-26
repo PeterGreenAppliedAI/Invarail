@@ -39,7 +39,7 @@ Every message flows through a multi-layer pipeline before reaching a specialist.
 │  • URLs → website                                       │
 │  • Speculative language ("I wonder…") → chat            │
 │  • "make a PDF report" → research                       │
-│  • "go to [site]" → multi                               │
+│  • explicit task / image commands → task / image        │
 └───────────────────────┬─────────────────────────────────┘
                         ▼
 ┌─────────────────────────────────────────────────────────┐
@@ -129,7 +129,7 @@ High-confidence patterns that the router model gets wrong often enough to warran
 | Message IS a bare URL (or a short "check this" wrapper with no other intent) | `website` | Model classified bare URLs as `web_search`. Narrowed July 2026: the original any-URL-anywhere rule hijacked "research X, start from <url>" into a page summary — a URL inside a larger request now lets the model see the full intent |
 | ~~Email/calendar + time words~~ | ~~`personal`~~ | Retired with the category (2026-08-10). Email/calendar reads now reach `multi` through its description — 6/6 misroutes until the description said so (2026-09-25) |
 | "Make a PDF report" | `research` | Model classified report generation as `multi` or `chat` |
-| "Go to [site]" + domain | `multi` | Model didn't recognize browser navigation intent |
+| ~~"Go to [site]" + domain~~ | ~~`multi`~~ | Deleted 2026-09-26. It predates `web_search` holding `browser`; it contradicted the doc and the Laya labels (browse-a-named-site = `web_search`) and hijacked chained requests into `multi` before either router saw them. The descriptions decide now; the keyword fallback for browse phrasing says `web_search` |
 | "Research/analyze" + "stock/market/trend" | `research` | Model classified research requests as `web_search` |
 
 **The principle:** Pre-model overrides only exist for patterns where the model has proven unreliable. Every override was added because of a real misclassification observed in production. We don't override everything — just the cases with a documented history of failure.
@@ -222,7 +222,7 @@ When the model fails, times out, or returns an invalid category, regex patterns 
 Priority order (first match wins — 21 patterns, `KEYWORD_HINTS` in classifier.ts):
   1. Document formats (pdf, xlsx) → multi
   2. Research requests (with explicit markers) → research
-  3. Browser interaction / compound actions → multi
+  3. Compound actions (search + save) → multi; browse-a-site phrasing → web_search
   4. Heartbeat management → cron
   5. System commands (npm, git, sudo, ls) → exec
   6. Task management (todo, kanban) → task
@@ -406,7 +406,7 @@ No black boxes. Every misroute is traceable to the layer that made the decision.
 ## The Numbers
 
 - **12 categories** covering all user intents (3 retired 2026-08-10)
-- **9 pre-model overrides** catching high-confidence patterns
+- **8 pre-model overrides** catching high-confidence patterns
 - **21 keyword fallback patterns** as safety net
 - **6 security layers** per message
 - **~200ms** warm for model classification on the 3060 (~65ms for the 421M shadow encoder)

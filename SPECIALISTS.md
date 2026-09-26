@@ -1,6 +1,6 @@
 # Specialist Use Case Specs
 
-12-point specification for each specialist. A developer should be able to read a spec and implement or debug the specialist with zero follow-up questions.
+12-point specification for each of the 12 configured specialists (six added 2026-09-26: memory, cron, task, message, website, code_gen). A developer should be able to read a spec and implement or debug the specialist with zero follow-up questions.
 
 **Tool list notes (apply to every specialist):** a `tools:` entry may use the token `mcp:<server>` to include an MCP server's entire registered toolset (expanded at dispatch via `registry.expandToolNames`). The skills system and its `skill_find` tool were retired 2026-08-10 (DECISIONS "the Invarail trim"); nothing is registered globally on their behalf.
 
@@ -65,12 +65,12 @@
 4. **Data requirements:** Full tool access — browser, web_search, web_fetch, memory, tasks, exec, document, image_generate.
 5. **Tools:** All available tools for the user's trust level.
 6. **Acceptance criteria:** Completes the multi-step task, produces artifacts if requested, reports what was done.
-7. **Edge cases:** "Find and save" triggers multi via keyword compound. "Go to amazon.com" triggers multi via pre-model override. Browser control mode runs on the foreground model with guided ReAct.
+7. **Edge cases:** "Find and save" triggers multi via keyword compound. "Go to amazon.com and find X" is `web_search` now (it holds `browser`; the override that forced `multi` was deleted 2026-09-26) — `multi` is for chained work ("go to eventbrite, find one, add it to my tasks"). Browser control mode runs on the foreground model with guided ReAct.
 8. **Confidence threshold:** N/A — arena runs to natural stop. *(Historical, pre-arena: the plan pipeline had a self-reflection stage; skill matching reused successful past plans.)*
 9. **Human escalation:** Destructive tools (exec, write_file) can be in confirmTools set. Since July 2026 the confirm gate is backed by the pending-action ledger (confirmation executes the exact previewed call) and applies to pipeline dispatches too; tools with `autonomy.tier: propose_confirm` metadata (send_message) are gated on every channel unless promoted via `autoApproveTools`.
 10. **Known failures:** Plan pipeline matched wrong skills (inflated success count) — fixed with threshold + ratio + cap. Browser control pipeline failed (replaced with guided ReAct). Model hallucinated actions in plan.
 11. **Dispatch:** Arena (fleet-wide since 2026-08-21) — open ReAct loop, tools listed in config, natural stop; multi also carries `pi_build` for code-shaped delegation. *(Historical, pre-arena, retired 2026-08-21: plan pipeline — LLM plan → self-reflect → execute loop (sub-dispatches) → summarize → skill save. Code still present, unused by dispatch.)*
-12. **Test cases:** "go to eventbrite.com and find events" → multi (override), "make me a spreadsheet of expenses" → multi (keyword), "find and save the best flight deals" → multi (keyword).
+12. **Test cases:** "go to eventbrite.com, find events, and add the best one to my tasks" → multi (model), "make me a spreadsheet of expenses" → multi (keyword), "find and save the best flight deals" → multi (keyword), "check my email" → multi (model, by description).
 
 ---
 
@@ -116,3 +116,105 @@ For image requests: call image_generate with a detailed, descriptive prompt on y
 ```
 
 **Recommended config:** maxIterations=3, temperature=0.3.
+
+---
+
+## memory
+
+1. **User story:** User wants the assistant to recall something from past conversations or stored facts, store something explicitly, forget something, or search their document vault.
+2. **In scope:** "what did we discuss yesterday", "remember that I prefer X", "forget the thing about Y", "what do you know about my job", searching/storing vault documents (`docs_search`/`docs_store`), importing a document into the knowledge base.
+3. **Out of scope:** Questions about the external world (→ web_search), casual conversation that merely references the past (→ chat — sticky and the guard keep it there), automatic fact extraction (that is intake, not this specialist — see MEMORY-SYSTEM.md).
+4. **Data requirements:** FalkorDB graph (vector KNN + entity traversal) with the flat JSONL store as fallback; Turn nodes for cross-session search; the document vault under the workspace; the EmbeddingStore for `knowledge_import`.
+5. **Tools:** memory_search, memory_get, memory_save, memory_forget, knowledge_import, docs_search, docs_store.
+6. **Acceptance criteria:** Recall answers cite what was actually stored (never invented); explicit saves confirm the exact text saved; forgets confirm what was removed; "I don't have that" when the graph is empty rather than a plausible guess.
+7. **Edge cases:** "remember" as conversation ("remember when we…") is chat, not a save — the model must read intent. `memory_save` lands as `observed`, never `stated` (only `!save` after a human read the list claims `stated`). Removed facts are recorded so extraction never re-adds them.
+8. **Confidence threshold:** N/A — the tools return what exists; the relevance floor (cosine ≥ 0.55) already gates injection elsewhere.
+9. **Human escalation:** `memory_forget` is destructive but user-initiated; `!forget <term>` bypasses the router entirely. Autonomous deletion never happens here (heartbeat proposes, `!heartbeat yes/no` decides).
+10. **Known failures:** Sticky routing carried plain conversation into `memory` after a `!forget` (shadow log 2026-09-25). Extraction inferred instead of recording ("one-time setup rather than recurring revenue") — fixed with the do-not-infer rule. The `memory_search` tool went a month with near-zero explicit uses because auto-injection covers most recall.
+11. **Dispatch:** Arena (`dispatchMode: "arena"`, maxIterations 5, temperature 0.2, `think: false`). The `memory` pipeline definition is retained but bypassed.
+12. **Test cases:** "what did we discuss yesterday" → memory (keyword), "forget X" → memory (Peter's labeling ruling), "what do you know about my wife" → memory (model).
+
+---
+
+## cron
+
+1. **User story:** User wants something to happen on a schedule — a reminder at a time, a recurring job, an autonomous periodic check — or wants to list, edit, run, or remove one.
+2. **In scope:** "remind me at 5pm", "every morning send me the weather", "list my cron jobs", "run the daily digest now", heartbeat tasks (autonomous checks that run together on the shared 2h schedule).
+3. **Out of scope:** One-off tasks with no time component (→ task), the heartbeat's own maintenance (system-owned, not user-scheduled), sending a message now (→ message).
+4. **Data requirements:** CronStore (persistent, croner-validated expressions, timezone-aware), the heartbeat task list, the channel/target the job should deliver to (defaults to the requesting conversation).
+5. **Tools:** cron_add, cron_list, cron_remove, cron_edit, cron_run, heartbeat_add, heartbeat_list, heartbeat_remove.
+6. **Acceptance criteria:** The job exists with the schedule the user meant (absolute time, correct timezone), the reply echoes schedule + delivery target + job id, edits resolve the id from `cron_list` rather than guessing, `cron_run` fires without touching the schedule.
+7. **Edge cases:** "at 9" needs am/pm — ask rather than guess. Multi-job requests ("set up three reminders") need list → resolve id → edit → confirm room (maxIterations 10). Post-scheduling follow-ups ("did we do all three?") stay in cron via sticky routing — but "Awesome." after "Done, scheduled" is chat, which sticky gets wrong and a state-aware router gets right (DECISIONS 2026-09-26).
+8. **Confidence threshold:** N/A — cron expressions are validated in code before persisting; an invalid one is rejected, never stored.
+9. **Human escalation:** Scheduling itself is not confirm-gated. What the job may DO is the code gate: cron runs strip write tools, and `exec`/`send_message` are available only when the job was explicitly scheduled as that category (the owner-authored schedule is the authorization). Jobs retry 2× with backoff and notify on final failure.
+10. **Known failures:** "did we do all three?" once routed to memory and got a confident wrong answer — cron became sticky. A plain `\bsetting\b` keyword hijacked a reminder paste — keyword patterns that can break sticky need override-grade precision. Sticky cron leaks: 3 of the first 8 shadow-router disagreements.
+11. **Dispatch:** Arena (maxIterations 10, temperature 0.2, `think: false`). The `cron` pipeline definition is retained but bypassed.
+12. **Test cases:** "remind me at 5pm" → cron (keyword), "We did all three or just the one?" with previousCategory=cron → cron (sticky), "add a heartbeat task to check disk space" → cron (keyword).
+
+---
+
+## task
+
+1. **User story:** User wants to track to-do items — add, list, update, complete, remove — on a persistent board.
+2. **In scope:** "add a task to buy groceries", "show my tasks", "mark a1b2c3d4 done", "move X to in progress", priorities/due dates/tags/assignees.
+3. **Out of scope:** Anything time-triggered (→ cron), doing the work the task describes (→ whichever specialist does that — a task is a record, not an action), "add: fix typo in readme" phrased as a command to the codebase (genuinely ambiguous with exec; the synthetic-data round-trip filter lost 18% of `task` examples on exactly this boundary).
+4. **Data requirements:** TaskStore (`tasks.json`) rendered to `TASKS.md` (protected — mutated only through the store); urgency tiers and calendar-day labels are computed in code (temporal module), never by the model.
+5. **Tools:** task_add, task_list, task_update, task_done, task_remove.
+6. **Acceptance criteria:** Default listing shows todo + in_progress; every mutation is confirmed back with the task id and new state; the model never invents ids — it lists first when the user names a task by words.
+7. **Edge cases:** "add a task" and "show/list my tasks" are pre-model overrides (the model used to send them to chat). The heartbeat auto-completes/cancels tasks by code-computed rules and logs each as an `autonomous_action` — the specialist should not fight those labels.
+8. **Confidence threshold:** N/A — deterministic store operations.
+9. **Human escalation:** `task_add` is stripped in cron mode (automated jobs cannot create work for the owner without approval). Otherwise unconfirmed: reversible, owner-scoped.
+10. **Known failures:** 568 uses all-time, then zero in the 30 days before the August trim — the category survived on principle (a task board is a daily-driver primitive), not on usage. Watch that it earns it.
+11. **Dispatch:** Arena (maxIterations 5, temperature 0.2, `think: false`). The `task` pipeline definition is retained but bypassed.
+12. **Test cases:** "add a task to call the dentist" → task (override), "show my tasks" → task (override), "mark the grocery task done" → task (keyword).
+
+---
+
+## message
+
+1. **User story:** User wants the assistant to send a message somewhere else — another channel, a user, a Discord channel id — on their behalf.
+2. **In scope:** "tell the team about the release in #general", "send Alex the address", "notify me on Telegram when done" (as a one-off send).
+3. **Out of scope:** Replying in the current conversation (that is every specialist's normal output), email (no send capability exists — the steward is read-only forever), scheduled sends (→ cron with category message).
+4. **Data requirements:** Channel registry (which adapters are connected), a resolvable destination (channel + channelId/target), the pending-action ledger, the standing-grants store.
+5. **Tools:** send_message (`requiresConfirm: true`, `targetArgs: ['channel','channelId']`).
+6. **Acceptance criteria:** The destination is resolved from the request, never guessed — ambiguous means ask. After calling the tool the specialist relays the preview/confirmation text and stops; it never claims the message was sent when the ledger is still waiting.
+7. **Edge cases:** A send to the exact conversation the request came from never asks (implicit reply-origin approval). `always <id>` mints a target-bound grant for that channel+target only — never the whole tool. Keyword fallback for `tell|send|notify|message|announce` is broad; sticky and the conversational guard keep "tell me about X" in chat.
+8. **Confidence threshold:** N/A — the confirmation is the gate, not a score.
+9. **Human escalation:** Confirm-gated everywhere by default (propose_confirm tier: irreversible, visible to others). The confirmation executes the STORED call — sender-bound, single-use, 10-minute expiry. Confirm/Deny buttons on Discord/Telegram synthesize the typed reply. In cron mode the tool exists only when the job was scheduled as `message`.
+10. **Known failures:** Six `message`-labeled router pairs in the training set were mislabeled chat (the class had effectively zero real examples). Confirm-result parity bugs on this seam (reply anchoring, media, continuation) — three in one week, July 2026.
+11. **Dispatch:** Arena (maxIterations 5, temperature 0.5, `think: false`). The `message` pipeline definition is retained but bypassed.
+12. **Test cases:** "tell the team about the release" → message (keyword), "send this to #announcements" → message (model), "tell me about the release" → chat (guard/sticky).
+
+---
+
+## website
+
+1. **User story:** User gives a specific URL (or names a specific page / course material) and wants it read and summarized.
+2. **In scope:** A bare URL, "check this: <url>", "what does this page say", teaching material and course content ("what homework is due", syllabus, lecture pages).
+3. **Out of scope:** Finding pages (→ web_search), a URL inside a larger request ("research X, start from <url>" is research — the any-URL-anywhere rule hijacked those until July 2026), browsing-as-navigation across a site (→ web_search, which holds `browser`).
+4. **Data requirements:** web_fetch (Readability extraction, page cache keyed by URL), browser (headless Chromium, DOM-first with visual escalation) for JS-heavy pages, web_search as the fallback when the page is unreachable; SSRF checks on every fetch.
+5. **Tools:** web_fetch, browser, web_search.
+6. **Acceptance criteria:** web_fetch first; browser only when the fetch is empty or blocked; a concise summary that says what the page is and what it says, with the URL; an honest "couldn't reach it" rather than a summary from memory.
+7. **Edge cases:** A message that IS a bare URL is a pre-model override → website (the model classified those as web_search). Chrome-extension messages carry `[PAGE_CONTENT]` and are forced to chat — the content is already in the message, nothing to fetch.
+8. **Confidence threshold:** N/A.
+9. **Human escalation:** None — read-only.
+10. **Known failures:** The original any-URL-anywhere override hijacked research requests; narrowed to bare URLs / short wrappers. JS-heavy sites returned empty from web_fetch → the browser fallback was added.
+11. **Dispatch:** ReAct loop, default dispatch (no `dispatchMode`, no pipeline set): maxIterations 5, temperature 0.3, `think: false`.
+12. **Test cases:** "https://example.com/post" → website (override), "what homework is due" → website (keyword), "research the EV market, start from https://…" → research (URL does not hijack).
+
+---
+
+## code_gen
+
+1. **User story:** User wants code built — a project scaffold, a feature, a script, boilerplate, tests — or an existing project modified.
+2. **In scope:** "build me a FastAPI service with tests", "scaffold a React app", "add a /health endpoint to the project in ./api", multi-step file processing on existing files (one `pi_build` call replaces a long chain of exec/read/write).
+3. **Out of scope:** Running a one-liner or inspecting files (→ exec), Invarail modifying itself (that is the SIP rail: `!improve`, worktrees, merge gate — never this specialist), answering "how would I write X" conversationally (→ chat).
+4. **Data requirements:** The Pi SDK adapter (`src/coding/pi-session.ts`), `pi.model` (provider/id from `~/.pi/agent/models.json`), an isolated build directory per project (cwd-scoped; context-file discovery suppressed so builds never inherit this repo's instructions), the config-declared Pi tool allowlist.
+5. **Tools:** pi_build (`prompt`, optional `projectName` for new, `projectDir` + `sessionId` for modify/fix, optional `model`).
+6. **Acceptance criteria:** The reply reports the build result and artifact paths from the tool's output, never fabricated; the brief passed to Pi is self-contained (goal, constraints, expected output); Pi's own lifecycle events (turns, tool calls, durations, errors) land in metrics with the JSONL transcript path recorded.
+7. **Edge cases:** Fix/modify needs `projectDir` + `sessionId` from a prior build — the model must reuse them, not start a new project. Remote push is opt-in and off by default.
+8. **Confidence threshold:** The intended gate is the actual test outcome from the pipeline's verify stage — not the model's self-assessment. **As configured today that gate does not run:** see 11.
+9. **Human escalation:** None at the specialist level; `pi_build` is not confirm-gated (it writes only inside its build directory). Self-modification of Invarail is a different rail with two owner confirms.
+10. **Known failures:** Pi duel + build duel (DECISIONS): a local 27B produced contract-grade work with a self-authored test suite in 384s; OpenCode was swapped out for Pi without the architecture noticing. The pipeline's verify/fix loop was the thing that made "it built" mean "it works".
+11. **Dispatch:** `dispatchMode: "arena"` with `pi_build` as the only tool, model `glm-5.3-flash` (vLLM on the Spark), maxIterations 5. The `code_gen` pipeline definition (list_projects → enrich → build → verify → fix → re_verify → commit → report) exists and is what `pi-build.ts` was written for — but arena skips the pipeline even when one is set, so **the verify → fix → commit stages are bypassed as configured (found 2026-09-26; decision pending: drop `dispatchMode` on code_gen to restore the loop, or keep arena and accept unverified builds)**.
+12. **Test cases:** "build me a CLI that renames files by date" → code_gen (model), "scaffold a Next.js app" → code_gen (model), "run npm install" → exec (keyword).

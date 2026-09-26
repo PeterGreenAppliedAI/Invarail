@@ -163,3 +163,23 @@ describe('capForClassification', () => {
     expect(capped).toContain('turn this into a PDF');
   });
 });
+
+describe('browse-a-named-site is not a pre-model override (2026-09-26)', () => {
+  // The override that forced "go to <site>" into multi predated web_search holding
+  // `browser`, contradicted ROUTING.md and the Laya labels, and hijacked chained
+  // requests before either router saw them. Deleted: the model decides from the
+  // descriptions; the keyword fallback for browse phrasing says web_search.
+  it('lets the model classify "go to meetup.com and find tech events"', async () => {
+    const client = { generate: vi.fn().mockResolvedValue({ response: 'web_search' }) } as unknown as OllamaClient;
+    const result = await classifyMessage(client, defaultConfig, 'go to meetup.com and find tech events');
+    expect(result.confidence).toBe('model');
+    expect(result.category).toBe('web_search');
+  });
+
+  it('keyword fallback for browse phrasing lands on web_search, not multi', async () => {
+    const client = { generate: vi.fn().mockRejectedValue(new Error('down')) } as unknown as OllamaClient;
+    const result = await classifyMessage(client, defaultConfig, 'go to meetup.com and find tech events');
+    expect(result.confidence).toBe('keyword');
+    expect(result.category).toBe('web_search');
+  });
+});

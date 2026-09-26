@@ -11,9 +11,9 @@
 {"message": "create a pdf report on market analysis", "expected": "research", "layer": "override", "note": "create + pdf + report → research"}
 {"message": "research AAPL stock performance", "expected": "research", "layer": "override", "note": "research + stock → research override"}
 {"message": "analyze market trends for semiconductors", "expected": "research", "layer": "override", "note": "analyze + market + trends → research"}
-{"message": "go to eventbrite.com and find events", "expected": "multi", "layer": "override", "note": "go to + .com → multi (browser)"}
-{"message": "take a screenshot of the homepage", "expected": "multi", "layer": "override", "note": "screenshot + page → multi"}
-{"message": "navigate to amazon.com", "expected": "multi", "layer": "override", "note": "navigate to + .com → multi"}
+{"message": "go to eventbrite.com and find events", "expected": "web_search", "layer": "keyword", "note": "browse-a-named-site → web_search (holds browser); the multi override was deleted 2026-09-26"}
+{"message": "take a screenshot of the homepage", "expected": "web_search", "layer": "keyword", "note": "screenshot + page → web_search (browser lives there)"}
+{"message": "navigate to amazon.com", "expected": "web_search", "layer": "keyword", "note": "navigate to + .com → web_search"}
 {"message": "install numpy with pip", "expected": "exec", "layer": "keyword", "note": "pip command → exec"}
 {"message": "run npm install", "expected": "exec", "layer": "keyword", "note": "npm command → exec"}
 {"message": "sudo apt-get update", "expected": "exec", "layer": "keyword", "note": "sudo command → exec"}
