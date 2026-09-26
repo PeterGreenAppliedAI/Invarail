@@ -1858,6 +1858,7 @@ export class Orchestrator {
           senderId: msg.senderId,
         },
         modelOverride: hadAudio ? this.config.voice.model : undefined,
+        contextSizeOverride: hadAudio ? this.config.voice.contextSize : undefined,
         factStore: this.factStore,
         graphMemory: this.graphMemory,
         pollSteering: () => (this.steeringQueues.get(steeringKey)?.splice(0) ?? []).map(m => m.content),

@@ -67,6 +67,11 @@ export const RouterShadowSchema = z.object({
 export const RouterConfigSchema = z.object({
   model: z.string().default('phi4-mini'),
   timeout: z.number().default(2000),
+  /** num_ctx for the classifier call. The router never set one, so Ollama loaded
+   *  phi4 at its 4K default while extraction asked the same model for 8K — and a
+   *  context change is a model RELOAD (~2.5s). Match memory.extractionContextSize
+   *  so the utility model loads once and stays. The prompt is ~600 tokens. */
+  contextSize: z.number().int().positive().default(8192),
   defaultCategory: z.string().default('chat'),
   categories: z.record(z.string(), RouterCategorySchema).default({}),
   shadow: RouterShadowSchema.default({}),
@@ -484,6 +489,12 @@ export const ToolsConfigSchema = z.object({
 
 export const VoiceConfigSchema = z.object({
   model: z.string().default('qwen2.5:7b'),
+  /** Context window for voice-originated turns (num_ctx + compaction budget).
+   *  Unset = the session default. Set it SMALL when `model` is a small model
+   *  sharing a card with the foreground: phi4-mini is 3.0GB at 8K but 7GB at the
+   *  32K chat default, and at 7GB it evicted the 27B from the A5000 (2026-09-25).
+   *  Voice exchanges are short; 8K is plenty. */
+  contextSize: z.number().int().positive().optional(),
 });
 
 export const HeartbeatConfigSchema = z.object({

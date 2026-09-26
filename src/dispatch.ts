@@ -135,6 +135,9 @@ export interface DispatchParams {
   codeTargetSlug?: string;
   /** Override model — used by voice for faster responses */
   modelOverride?: string;
+  /** Override context window with the model — a small voice model must not be
+   *  loaded at the chat default (see VoiceConfigSchema.contextSize). */
+  contextSizeOverride?: number;
   /** Cron mode — strips write_file from tool set so automated tasks can't create files */
   cronMode?: boolean;
   /** FactStore for structured memory writes during compaction */
@@ -564,8 +567,8 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
 
   // 3d. Voice model override — only for chat (no tools) to keep tool-calling reliable
   if (params.modelOverride && specialistConfig && specialistConfig.tools.length === 0) {
-    console.log(`[Dispatch] Model override: ${specialistConfig.model} → ${params.modelOverride}`);
-    specialistConfig = { ...specialistConfig, model: params.modelOverride };
+    console.log(`[Dispatch] Model override: ${specialistConfig.model} → ${params.modelOverride}${params.contextSizeOverride ? ` @ ${params.contextSizeOverride} ctx` : ''}`);
+    specialistConfig = { ...specialistConfig, model: params.modelOverride, ...(params.contextSizeOverride ? { contextSize: params.contextSizeOverride } : {}) };
   }
 
   // 3e. Smart model routing — ONLY for trivial greetings/acknowledgments (whitelist, not heuristic)

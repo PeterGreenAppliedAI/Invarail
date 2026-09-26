@@ -273,6 +273,7 @@ async function classifyMessageInner(
       options: {
         temperature: 0.1,
         num_predict: 20,
+        num_ctx: config.contextSize,
       },
     };
 
