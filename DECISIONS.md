@@ -43,6 +43,26 @@ NER attaching `Router`/`LocalClaw` to a fact about tech meetups is an entity-typ
 
 ---
 
+## Voice Comes Home to the Mini — mlx-audio Replaces the Dead Gateway (September 25 2026)
+
+### What was actually broken
+The console mic "didn't work" and a research PDF "didn't push". The PDF was a restart mid-run plus a real bug (the console never rendered `files` from the done event — fixed, c3e1548). The mic was two things: a browser site permission, and — underneath it — **both voice servers had been refusing connections since the gateway box was retired on the 19th.** STT and TTS were dead for six days and nothing said so, because `stt.ts`/`tts.ts` warn-and-return-null.
+
+### The stack
+`mlx-audio` (Apple MLX, Metal) on `Peters-Mac-mini` — the always-on box Invarail runs on (NOT the .221 embedder Mini; there are two) — one process on :8000 serving the exact routes the clients already call: `POST /v1/audio/speech` (Kokoro-82M, `af_bella` = American female) and `POST /v1/audio/transcriptions` (whisper-large-v3-turbo). Measured: **TTS 0.29s warm** for a sentence (8.0s cold, pipeline build), **STT 0.85s warm** for a short clip, word-perfect on Kokoro's own output. Runs in tmux `serve:voice` beside Laya in `serve:laya`; launchd plists are the next step so a reboot doesn't take voice down.
+
+### Two client mismatches, config-not-code
+- `tts.ts` hardcoded `model: 'tts-1'`; mlx-audio resolves models by HF repo id. `tts.model` is config now (default `tts-1` keeps OpenAI-shaped servers unchanged).
+- mlx-audio's transcription default is its native ndjson stream; `stt.ts` now sends `response_format=json` (OpenAI-compatible servers accept it and return what they always did). (f95eea4)
+
+### Setup gotchas, recorded so nobody pays twice
+- **Python 3.14 is too new**: `misaki[en]` (Kokoro's G2P) needs spaCy, which has no 3.14 wheels and fails to build. `uv venv --python 3.12` (`~/voice-serve/venv312`).
+- **Kokoro auto-installs a spaCy model on first use via `uv pip install`**, and uv can't see a venv launched by interpreter path — the first request returned HTTP 200 with an empty body. Pre-install `en_core_web_sm` and launch with `VIRTUAL_ENV` exported.
+- **MP3 needs ffmpeg** (brew). WAV does not.
+- Ctrl-C into a `server | grep` pipeline kills the filter, not the server; the orphan kept :8000 and hung. Launch bare.
+
+---
+
 ## A 421M Encoder Out-Routes phi4 — the Laya Experiment (September 25 2026)
 
 ### Why
