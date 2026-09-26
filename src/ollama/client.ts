@@ -69,7 +69,18 @@ export class OllamaClient {
   constructor(
     private readonly baseUrl: string,
     private readonly keepAlive: string = '30m',
+    /** num_ctx for calls that don't set one. Foreground calls always do; utility
+     *  calls (NER, contradiction, consolidation) never did, so the SERVER's default
+     *  decided — 32K on the A5000, which loaded phi4-mini at 7GB and evicted the
+     *  27B (2026-09-25). Config: ollama.defaultContextSize / per-host on backends. */
+    private readonly defaultContextSize?: number,
   ) {}
+
+  /** Apply the default num_ctx only where the caller left it unset. */
+  private withDefaultCtx<T extends { options?: Record<string, unknown> }>(params: T): T {
+    if (this.defaultContextSize === undefined || params.options?.num_ctx !== undefined) return params;
+    return { ...params, options: { ...(params.options ?? {}), num_ctx: this.defaultContextSize } };
+  }
 
   async chat(params: Omit<OllamaChatParams, 'stream' | 'keep_alive'>): Promise<OllamaChatResponse> {
     // Long completions MUST stream (2026-09-19; the same fix OpenAICompatClient got
@@ -92,7 +103,7 @@ export class OllamaClient {
     onDelta: (text: string) => void,
   ): Promise<OllamaChatResponse> {
     const body: OllamaChatParams = {
-      ...params,
+      ...this.withDefaultCtx(params),
       stream: true,
       keep_alive: this.keepAlive,
     };
@@ -196,7 +207,7 @@ export class OllamaClient {
 
   async generate(params: Omit<OllamaGenerateParams, 'stream' | 'keep_alive'>): Promise<OllamaGenerateResponse> {
     const body: OllamaGenerateParams = {
-      ...params,
+      ...this.withDefaultCtx(params),
       stream: false,
       keep_alive: this.keepAlive,
     };

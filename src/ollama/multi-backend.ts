@@ -26,8 +26,9 @@ export class MultiBackendClient extends OllamaClient {
     keepAlive: string | undefined,
     backends: VllmBackendConfig[],
     ollamaBackends: OllamaBackendConfig[] = [],
+    defaultContextSize?: number,
   ) {
-    super(ollamaUrl, keepAlive);
+    super(ollamaUrl, keepAlive, defaultContextSize);
     for (const b of backends) {
       const client = new OpenAICompatClient(b.url, b.apiKey, b.supportsThink, b.thinkStyle);
       for (const model of b.models) {
@@ -36,7 +37,7 @@ export class MultiBackendClient extends OllamaClient {
       }
     }
     for (const b of ollamaBackends) {
-      const client = new OllamaClient(b.url, b.keepAlive ?? keepAlive);
+      const client = new OllamaClient(b.url, b.keepAlive ?? keepAlive, b.defaultContextSize ?? defaultContextSize);
       for (const model of b.models) {
         this.routes.set(model, client);
         console.log(`[Inference] Route: "${model}" → Ollama-native ${b.url}`);
@@ -82,9 +83,10 @@ export function createInferenceClient(
   keepAlive: string | undefined,
   backends: VllmBackendConfig[] | undefined,
   ollamaBackends: OllamaBackendConfig[] | undefined = undefined,
+  defaultContextSize?: number,
 ): OllamaClient {
   if (backends?.length || ollamaBackends?.length) {
-    return new MultiBackendClient(ollamaUrl, keepAlive, backends ?? [], ollamaBackends ?? []);
+    return new MultiBackendClient(ollamaUrl, keepAlive, backends ?? [], ollamaBackends ?? [], defaultContextSize);
   }
-  return new OllamaClient(ollamaUrl, keepAlive);
+  return new OllamaClient(ollamaUrl, keepAlive, defaultContextSize);
 }

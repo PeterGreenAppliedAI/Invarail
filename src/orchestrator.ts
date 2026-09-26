@@ -94,7 +94,7 @@ export class Orchestrator {
 
   constructor(config: InvarailConfig) {
     this.config = config;
-    this.client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);
+    this.client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends, config.ollama.defaultContextSize);
     this.toolRegistry = new ToolRegistry();
     this.channelRegistry = new ChannelRegistry();
     this.sessionStore = new SessionStore(config.session.transcriptDir);
@@ -1859,6 +1859,7 @@ export class Orchestrator {
         },
         modelOverride: hadAudio ? this.config.voice.model : undefined,
         contextSizeOverride: hadAudio ? this.config.voice.contextSize : undefined,
+        maxTokensOverride: hadAudio ? this.config.voice.maxTokens : undefined,
         factStore: this.factStore,
         graphMemory: this.graphMemory,
         pollSteering: () => (this.steeringQueues.get(steeringKey)?.splice(0) ?? []).map(m => m.content),

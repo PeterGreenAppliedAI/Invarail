@@ -52,3 +52,30 @@ describe('OllamaClient stream accumulation', () => {
     expect(res.message.tool_calls).toBeUndefined();
   });
 });
+
+// A utility call that omits num_ctx used to inherit the SERVER's default — 32K on
+// the A5000 — and a 3.8B model at 32K is 7GB, enough to evict the foreground 27B.
+describe('OllamaClient default num_ctx', () => {
+  const body = (fetchMock: ReturnType<typeof vi.fn>) => JSON.parse(((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string));
+
+  it('fills num_ctx when the caller leaves it unset', async () => {
+    const fetchMock = vi.fn(async () => ndjson([{ message: { role: 'assistant', content: 'ok' }, done: true }]));
+    vi.stubGlobal('fetch', fetchMock);
+    await new OllamaClient('http://ollama.test', '5m', 8192).chat({ model: 'phi4-mini', messages: [], options: { temperature: 0.1 } });
+    expect(body(fetchMock).options).toEqual({ temperature: 0.1, num_ctx: 8192 });
+  });
+
+  it('never overrides a num_ctx the caller set (foreground passes its own)', async () => {
+    const fetchMock = vi.fn(async () => ndjson([{ message: { role: 'assistant', content: 'ok' }, done: true }]));
+    vi.stubGlobal('fetch', fetchMock);
+    await new OllamaClient('http://ollama.test', '5m', 8192).chat({ model: 'qwen3.8:27B', messages: [], options: { num_ctx: 32768 } });
+    expect(body(fetchMock).options.num_ctx).toBe(32768);
+  });
+
+  it('leaves options untouched when no default is configured', async () => {
+    const fetchMock = vi.fn(async () => ndjson([{ message: { role: 'assistant', content: 'ok' }, done: true }]));
+    vi.stubGlobal('fetch', fetchMock);
+    await new OllamaClient('http://ollama.test').chat({ model: 'm', messages: [] });
+    expect(body(fetchMock).options).toBeUndefined();
+  });
+});

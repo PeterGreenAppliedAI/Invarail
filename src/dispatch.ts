@@ -138,6 +138,9 @@ export interface DispatchParams {
   /** Override context window with the model — a small voice model must not be
    *  loaded at the chat default (see VoiceConfigSchema.contextSize). */
   contextSizeOverride?: number;
+  /** Cap generation for voice — every token is spoken, and TTS time scales with
+   *  reply length (a 457-char reply cost 3.0s of TTS, 2026-09-25). */
+  maxTokensOverride?: number;
   /** Cron mode — strips write_file from tool set so automated tasks can't create files */
   cronMode?: boolean;
   /** FactStore for structured memory writes during compaction */
@@ -189,6 +192,9 @@ function resolveChannelSecurity(
 }
 
 /** Tools stripped from ALL cron dispatches — automated jobs can't mutate state. */
+/** Sessions with a detached semantic-state extraction in flight (see dispatchMessage). */
+const semanticInFlight = new Set<string>();
+
 const CRON_BLOCKED_TOOLS = new Set(['write_file', 'task_add', 'task_update', 'task_done', 'task_remove', 'workspace_write', 'memory_save']);
 
 /**
@@ -568,7 +574,12 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   // 3d. Voice model override — only for chat (no tools) to keep tool-calling reliable
   if (params.modelOverride && specialistConfig && specialistConfig.tools.length === 0) {
     console.log(`[Dispatch] Model override: ${specialistConfig.model} → ${params.modelOverride}${params.contextSizeOverride ? ` @ ${params.contextSizeOverride} ctx` : ''}`);
-    specialistConfig = { ...specialistConfig, model: params.modelOverride, ...(params.contextSizeOverride ? { contextSize: params.contextSizeOverride } : {}) };
+    specialistConfig = {
+      ...specialistConfig,
+      model: params.modelOverride,
+      ...(params.contextSizeOverride ? { contextSize: params.contextSizeOverride } : {}),
+      ...(params.maxTokensOverride ? { maxTokens: params.maxTokensOverride } : {}),
+    };
   }
 
   // 3e. Smart model routing — ONLY for trivial greetings/acknowledgments (whitelist, not heuristic)
@@ -883,24 +894,31 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
       displayAnswer,
     );
 
-    // Periodic semantic extraction (skip for cron — no human in the loop)
-    if (!params.cronMode && sessionState.turnCount - sessionState.lastSemanticUpdate >= SEMANTIC_INTERVAL) {
-      try {
-        const recentTurns = sessionStore.loadTranscript(agentId, sessionKey, 10);
-        const delta = await extractSemanticDelta(
-          client,
-          config.router.model,
-          recentTurns,
-          sessionState,
-        );
-        sessionState = applyDelta(sessionState, delta);
-        console.log(`[Dispatch] Semantic state updated: topic="${sessionState.currentTopic.slice(0, 60)}", facts=${sessionState.knownFacts.length}`);
-      } catch (err) {
-        console.warn('[Dispatch] Semantic extraction failed:', err instanceof Error ? err.message : err);
-      }
-    }
-
     sessionStore.saveState(agentId, sessionKey, sessionState);
+
+    // Periodic semantic extraction (skip for cron — no human in the loop). DETACHED:
+    // this is a utility-model call (1.5–3s on the 3060) whose result is only needed
+    // for the NEXT turn's preamble, yet it used to be awaited before dispatch
+    // returned — invisible on text (the answer had already streamed), dead air on
+    // voice, where TTS waits for dispatch to return (2026-09-25, measured 6–8s
+    // dispatch for a 0.3s model reply). It re-reads state on completion so it never
+    // clobbers a turn that landed meanwhile; one run per session at a time.
+    const semanticKey = `${agentId}:${sessionKey}`;
+    if (!params.cronMode && sessionState.turnCount - sessionState.lastSemanticUpdate >= SEMANTIC_INTERVAL
+        && !semanticInFlight.has(semanticKey)) {
+      semanticInFlight.add(semanticKey);
+      const recentTurns = sessionStore.loadTranscript(agentId, sessionKey, 10);
+      const stateAtDispatch = sessionState;   // narrowed non-null here; closures lose that
+      void extractSemanticDelta(client, config.router.model, recentTurns, stateAtDispatch)
+        .then(delta => {
+          const latest = sessionStore.loadState(agentId, sessionKey) ?? stateAtDispatch;
+          const next = applyDelta(latest, delta);
+          sessionStore.saveState(agentId, sessionKey, next);
+          console.log(`[Dispatch] Semantic state updated: topic="${next.currentTopic.slice(0, 60)}", facts=${next.knownFacts.length}`);
+        })
+        .catch(err => console.warn('[Dispatch] Semantic extraction failed:', err instanceof Error ? err.message : err))
+        .finally(() => semanticInFlight.delete(semanticKey));
+    }
   }
 
   // 6. Persist turns if session store available — store RAW answer with thinking preserved
@@ -1646,7 +1664,13 @@ async function runAsBareChat(
 
   // Inject workspace context — chat gets TOOLS.md for self-awareness
   const workspacePath = resolveWorkspacePath(agentId, config);
-  const workspaceContext = getCachedWorkspaceContext(agentId, workspacePath, 'chat', sourceContext?.channel);
+  // Voice gets the minimal workspace context (SOUL + IDENTITY + LEARNINGS), not the
+  // full chat set: every voice turn prefills the whole prompt before a word is spoken,
+  // and TOOLS.md/USER.md/AGENTS.md are ~7K chars a spoken reply never needs. Separate
+  // cache key — the cache is keyed by session, not by context level.
+  const workspaceContext = isVoice
+    ? getCachedWorkspaceContext(`${agentId}:voice`, workspacePath, 'minimal', sourceContext?.channel)
+    : getCachedWorkspaceContext(agentId, workspacePath, 'chat', sourceContext?.channel);
   let systemContent = specialist?.systemPrompt ?? 'You are a helpful AI assistant. Respond naturally and concisely.';
   if (workspaceContext) {
     systemContent += '\n\n' + workspaceContext;

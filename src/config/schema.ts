@@ -3,6 +3,12 @@ import { z } from 'zod';
 export const OllamaConfigSchema = z.object({
   url: z.string().default('http://127.0.0.1:11434'),
   keepAlive: z.string().default('30m'),
+  /** num_ctx applied to calls that don't set one (utility calls: NER, contradiction
+   *  checks, consolidation, steward judgment). Without it the server's own default
+   *  decides — and a server whose default is 32K loads a 3.8B utility model at 7GB,
+   *  which evicted the foreground 27B from the A5000 on every capture batch
+   *  (2026-09-25). Foreground calls always pass their own num_ctx. */
+  defaultContextSize: z.number().int().positive().optional(),
 });
 
 /** An OpenAI-compatible inference backend (e.g. ds4/DwarfStar, vLLM). Additive — Ollama path is unchanged. */
@@ -30,6 +36,8 @@ export const VllmBackendSchema = z.object({
 export const OllamaBackendSchema = z.object({
   url: z.string(),
   keepAlive: z.string().optional(),
+  /** Per-host num_ctx for calls that don't set one (see OllamaConfigSchema). */
+  defaultContextSize: z.number().int().positive().optional(),
   /** Exact model ids this host serves, e.g. "gemma4:12b-mlx" */
   models: z.array(z.string()).default([]),
 });
@@ -495,6 +503,10 @@ export const VoiceConfigSchema = z.object({
    *  32K chat default, and at 7GB it evicted the 27B from the A5000 (2026-09-25).
    *  Voice exchanges are short; 8K is plenty. */
   contextSize: z.number().int().positive().optional(),
+  /** Generation cap for voice replies. Every token is spoken and TTS time scales
+   *  with length; the voice system prompt already asks for concision, but a cap is
+   *  a code gate. ~160 tokens ≈ three spoken sentences. */
+  maxTokens: z.number().int().positive().default(160),
 });
 
 export const HeartbeatConfigSchema = z.object({
