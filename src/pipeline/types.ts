@@ -37,6 +37,10 @@ export interface PipelineContext {
   routerModel?: string;
   /** Source context from dispatch */
   sourceContext?: { channel: string; channelId: string; guildId?: string; senderId?: string };
+  /** `!stop`: polled between stages (and inside long facet loops). The tool loop
+   *  has honored it since 2026-08-22; pipelines could not be killed at all until
+   *  a misrouted 22-stage research run made that visible (2026-09-25). */
+  isCancelled?: () => boolean;
   /** True for cron/heartbeat dispatches — system operations must never match or save user skills */
   cronMode?: boolean;
   /** Current loop iteration (set by executor during loop stages) */

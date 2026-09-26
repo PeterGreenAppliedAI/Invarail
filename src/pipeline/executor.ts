@@ -216,6 +216,14 @@ async function executeStages(stages: PipelineStage[], ctx: PipelineContext): Pro
   let lastResult: unknown;
   for (const stage of stages) {
     if (ctx.abort) break;
+    // Stage boundaries are the cancellation points — the same contract as the
+    // tool loop's iteration boundaries. An honest stop, never a half-report.
+    if (ctx.isCancelled?.()) {
+      ctx.abort = true;
+      ctx.answer = `Stopped by request before "${stage.name}" — the pipeline did not finish, so there is no result to trust. Partial work was discarded.`;
+      console.log(`[Pipeline] Cancelled by user before stage "${stage.name}"`);
+      break;
+    }
     try {
       const result = await executeStage(stage, ctx);
       ctx.stageResults[stage.name] = result;

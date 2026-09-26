@@ -83,3 +83,33 @@ describe('evidence gates — degrade honestly, never fabricate', () => {
     expect(ctx.abort).toBeUndefined();
   });
 });
+
+describe('discovery sweep — every topic, not only recency-shaped (2026-09-25)', () => {
+  // Live failure: "Jev vs Laya" (two decision models the model had never seen)
+  // skipped the sweep and decomposed, cold, into six facets of dog food.
+  it('gates only on flow-provided facets now', async () => {
+    const { researchPipeline } = await import('../../src/pipeline/definitions/research.js');
+    const sweep = researchPipeline.stages.find(s => s.name === 'discovery_sweep') as { when: (ctx: unknown) => boolean };
+    expect(sweep.when({ params: { topic: 'Jev vs Laya' } })).toBe(true);
+    expect(sweep.when({ params: { topic: 'AI news this week' } })).toBe(true);
+    expect(sweep.when({ params: { topic: 'Jev vs Laya', _flowFacets: [{ angle: 'a', urls: ['u'] }] } })).toBe(false);
+  });
+
+  it('builds "what is this" queries for timeless topics and keeps the news shape for recency ones', () => {
+    const now = new Date('2026-09-25T12:00:00Z');
+    expect(buildSweepQueries('Jev vs Laya', now, false)).toEqual(['Jev vs Laya', 'what is Jev vs Laya']);
+    const recency = buildSweepQueries('AI news this week', now, true);
+    expect(recency[0]).toMatch(/news$/);
+    expect(recency[1]).toMatch(/announcements September 2026$/);
+  });
+
+  it('tells decompose to treat the results as the DEFINITION of unfamiliar names', async () => {
+    const { researchPipeline } = await import('../../src/pipeline/definitions/research.js');
+    const decompose = researchPipeline.stages.find(s => s.name === 'decompose') as { buildPrompt: (ctx: unknown) => { system: string; user: string } };
+    const cold = decompose.buildPrompt({ params: { topic: 'Jev vs Laya', _discoveryDigest: 'Laya is an open-source decision model…', _discoveryRecency: false } });
+    expect(cold.system).toMatch(/definition of what the named things ARE/);
+    expect(cold.user).toContain('Laya is an open-source decision model');
+    const fresh = decompose.buildPrompt({ params: { topic: 'AI news this week', _discoveryDigest: 'x', _discoveryRecency: true } });
+    expect(fresh.system).toMatch(/FRESH SEARCH RESULTS/);
+  });
+});

@@ -107,9 +107,13 @@ export function condenseToKeywords(text: string, maxTerms = 7): string {
     .join(' ');
 }
 
-/** Generic sweep queries for a recency-shaped topic — deliberately broad so the
- *  RESULTS supply the entity names, not the model's frozen prior. */
-export function buildSweepQueries(topic: string, now: Date): string[] {
+/** Generic sweep queries — deliberately broad so the RESULTS supply the entity
+ *  names, not the model's frozen prior. Two shapes:
+ *  - recency-shaped topics: "what happened" queries, month-grounded;
+ *  - everything else: "what IS this" queries. A model asked to facet "Jev vs
+ *    Laya" cold produced six facets of dog food (live, 2026-09-25) — an
+ *    unfamiliar name is not a guess, it is a search. */
+export function buildSweepQueries(topic: string, now: Date, recency = true): string[] {
   // Temporal words are redundant in the sweep (the freshness param covers
   // recency) — drop them, case-aware so proper nouns like "New England" survive.
   const core = condenseToKeywords(topic, 6)
@@ -117,6 +121,7 @@ export function buildSweepQueries(topic: string, now: Date): string[] {
     .filter(w => !/^(week|month|year|today)$/i.test(w) && !/^(new|latest|newest)$/.test(w))
     .slice(0, 5)
     .join(' ');
+  if (!recency) return [core, `what is ${core}`];
   const monthYear = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   return [
     `${core} news`,
@@ -154,11 +159,13 @@ export function parseFlowGather(md: string): FlowFacet[] {
 }
 
 /** Run async fn over items with bounded concurrency (avoid bursting external rate limits). */
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>, shouldStop?: () => boolean): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   async function worker() {
-    while (next < items.length) {
+    // `!stop` lands here: facets not yet started are skipped (their slots stay
+    // undefined — callers filter), in-flight ones finish their current fetch.
+    while (next < items.length && !shouldStop?.()) {
       const i = next++;
       results[i] = await fn(items[i]);
     }
@@ -364,22 +371,29 @@ export const researchPipeline: PipelineDefinition = {
       },
     },
 
-    // 1c. Discovery sweep: for recency-shaped topics, search GENERICALLY first
-    // so the decompose model facets over what the search FOUND, not over the
-    // archetypal entities in its frozen training prior (which cannot contain
-    // this week's news by definition). Failure degrades to plain decompose.
+    // 1c. Discovery sweep: search GENERICALLY first so the decompose model facets
+    // over what the search FOUND, not over the archetypal entities in its frozen
+    // training prior. Originally gated to recency-shaped topics (the prior cannot
+    // contain this week's news by definition — live failure 2026-08-14); the same
+    // failure class hit a timeless topic on 2026-09-25, when "Jev vs Laya" (two
+    // decision models the model had never seen) decomposed into six facets of dog
+    // food. Any name the model does not know is the same hole. Runs for every
+    // topic a flow did not already facet; two searches, ~3s, on a run measured in
+    // minutes. Failure degrades to plain decompose.
     {
       name: 'discovery_sweep',
       progressLabel: '› Scanning for what actually happened…',
       type: 'code',
-      when: (ctx) => !ctx.params._flowFacets && isRecencyShaped(ctx.params.topic as string),
+      when: (ctx) => !ctx.params._flowFacets,
       execute: async (ctx) => {
-        const queries = buildSweepQueries(ctx.params.topic as string, new Date());
+        const recency = isRecencyShaped(ctx.params.topic as string);
+        ctx.params._discoveryRecency = recency;
+        const queries = buildSweepQueries(ctx.params.topic as string, new Date(), recency);
         const chunks: string[] = [];
         for (const query of queries) {
           try {
             const result = await ctx.executor('web_search',
-              { query, count: '8', freshness: 'month' }, ctx.toolContext);
+              { query, count: '8', ...(recency ? { freshness: 'month' } : {}) }, ctx.toolContext);
             if (typeof result === 'string' && !result.startsWith('No results') && !result.startsWith('Error')) {
               chunks.push(result.slice(0, 1400));
             }
@@ -418,7 +432,9 @@ export const researchPipeline: PipelineDefinition = {
             'Each facet should be a different angle (not a paraphrase): e.g. current state, key players/options, performance/benchmarks, costs/tradeoffs, recent developments, outlook.',
             'If the topic names multiple entities to compare, ensure each gets dedicated coverage.',
             ...(digest ? [
-              'FRESH SEARCH RESULTS are provided below. Your internal knowledge of "recent" events is stale by definition — build facets around the SPECIFIC names, products, and events that appear in the results, not around entities you remember. A facet naming something from the results beats a generic facet.',
+              ctx.params._discoveryRecency
+                ? 'FRESH SEARCH RESULTS are provided below. Your internal knowledge of "recent" events is stale by definition — build facets around the SPECIFIC names, products, and events that appear in the results, not around entities you remember. A facet naming something from the results beats a generic facet.'
+                : 'SEARCH RESULTS are provided below. Treat them as the definition of what the named things ARE — build facets around what the results show them to be, never around what the names sound like. An unfamiliar name is not a guess.',
             ] : []),
             'Facets should be SHORT keyword-style search queries (3-8 words), not full sentences — long questions return nothing from the search engine.',
             'Output ONLY a JSON array of facet strings.',
@@ -462,10 +478,11 @@ export const researchPipeline: PipelineDefinition = {
         // url → raw page text, shared across facets so verification can reuse fetched pages.
         ctx.params._sourceText = {};
         // Bounded concurrency: 3 facets at a time avoids bursting Brave / fetch rate limits.
+        const stop = () => !!ctx.isCancelled?.();
         const results = flowFacets
-          ? await mapLimit(flowFacets, 3, f => researchAngle(ctx, f.angle, f.urls))
-          : await mapLimit(angles, 3, a => researchAngle(ctx, a));
-        const withFindings = results.filter(r => r.findings.trim().length > 0);
+          ? await mapLimit(flowFacets, 3, f => researchAngle(ctx, f.angle, f.urls), stop)
+          : await mapLimit(angles, 3, a => researchAngle(ctx, a), stop);
+        const withFindings = results.filter(r => r && r.findings.trim().length > 0);
         ctx.params._angleResults = withFindings;
         const allSources = [...new Set(withFindings.flatMap(r => r.sources))];
         ctx.params._allSources = allSources;

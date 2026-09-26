@@ -1427,6 +1427,7 @@ async function runPipelineDispatch(
     routerModel: config.router?.model,
     sourceContext: params.sourceContext,
     cronMode: params.cronMode,
+    isCancelled: params.isCancelled,
     onStream: params.onStream,
     onProgress: params.onProgress,
     onStageComplete: params.onStageComplete,
