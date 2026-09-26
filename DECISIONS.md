@@ -69,6 +69,26 @@ With the lean flow in, priming fell to 0.3s and dispatch was STILL 4–7s. Direc
 
 Corollary, unmeasured until now: every plain text chat turn on the 27B has carried a hidden think block since the A5000 cutover — not visible (the client strips it), just slower. Fixed at the one line (`think` forwarded when the specialist sets it; key absent otherwise so the server default still applies), regression tests on the dispatch path including the voice override inheriting the chat flag. Lesson, same shape as the `num_ctx` one from round two: **a per-specialist flag is only real at the callers that forward it — grep every `client.chat(` when a flag is added, not just the engine.**
 
+### Round five: the `[Chat]` line, and what 3.3K tokens were doing in a voice turn
+With prefill/decode timing on the wire, every voice turn read the same way: `prompt=3258–3318tok/3.6–3.7s gen=3–11tok`. The reply is a rounding error; the prompt is the turn. Two findings, both measured rather than guessed.
+
+**The prompt.** The static head (chat system prompt + minimal workspace + voice instruction) is 878 tokens, the history window ~150. The other ~2,300 were the per-turn memory block — and inside it, the **UserModel node had 41 property keys and rendered to 9,079 chars**. The heartbeat's analysis prompt asks for four fields; the model answers with those four plus one or two it invents (`actionPattern`, `emotionalProfile`, `topicInterworks`, `howTheyWantHelp`…), `updateUserModel` MERGEd every key it was handed (interpolated into Cypher, no less), and `getUserModelSummary` printed every non-empty key under "User preferences" — on every turn, every category, since the day the node was created. Fixed at both ends: a declared `USER_MODEL_FIELDS` list that the writer filters to and the renderer reads from. The 37 drifted keys are now inert on the node; removing them is a one-line Cypher `REMOVE`, Peter's call.
+
+**The cache.** Even at 3.3K tokens a warm prefix should have made this ~0.8s, and the earlier probe showed the server *does* reuse — so why cold every turn? Because the 27B is `qwen35`: a **hybrid** (Gated-DeltaNet SSM layers, full attention every 4th), and a recurrent state cannot be rewound to an arbitrary token — Ollama restores from checkpoints. Measured at the real prompt size, same server, same model:
+
+| prompt evolution between turns | prefill |
+|---|---|
+| exact extension of the previous sequence | 283ms |
+| history grows, volatile memory block replaced (Invarail's text shape) | 861ms |
+| only the last user message differs | 823ms |
+| **window slid by one exchange (Invarail's voice shape)** | **4036ms — cold** |
+
+Diverging near the tail is cheap; diverging right after the head is a full cold prefill, and a sliding window diverges right after the head by construction. The voice window is now **anchored with hysteresis**: history grows append-only from the anchor until it holds 2×cap turns, then re-anchors to the last cap — one cold turn per dozen exchanges instead of every turn. Expected voice turn after restart: STT ~1s + priming ~0.5s + prefill ~0.8s + TTS ~0.3s ≈ 2.5–3s, from 6–7s.
+
+**Corollary for the text path, unmeasured:** the compacted history (summary + recent-turns tail) slides too, so text turns on the 27B are probably cold-prefilling 8K+ tokens each — invisible behind streaming, but it is the same money. The 2026-09-19 prefix-cache contract was written against a plain transformer; on a hybrid it holds only for tail-side divergence. The tool loop has no `[Chat]`-style timing line yet.
+
+**Flagged, not fixed:** the semantic state for the web session carries `knownFacts: "The user is trying to get married."` and a pending action *"How's everything going with your husband"* — phi4's semantic-delta extraction hallucinating over spoken small talk, then riding the state preamble into every turn. That is where "your husband" came from, not the voice model. Worth a do-not-infer rule of the same shape as the fact extractor's.
+
 ### Setup gotchas, recorded so nobody pays twice
 - **Python 3.14 is too new**: `misaki[en]` (Kokoro's G2P) needs spaCy, which has no 3.14 wheels and fails to build. `uv venv --python 3.12` (`~/voice-serve/venv312`).
 - **Kokoro auto-installs a spaCy model on first use via `uv pip install`**, and uv can't see a venv launched by interpreter path — the first request returned HTTP 200 with an empty body. Pre-install `en_core_web_sm` and launch with `VIRTUAL_ENV` exported.
