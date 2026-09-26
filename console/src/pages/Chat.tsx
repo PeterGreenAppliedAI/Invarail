@@ -14,6 +14,9 @@ interface ChatMessage {
   timestamp: string;
   attachments?: { name: string; type: string; preview?: string }[];
   images?: string[];
+  /** Non-image artifacts (research PDFs, documents) — download links. The server
+   *  has sent these on the done event all along; the UI never read them. */
+  files?: { path: string; name?: string }[];
 }
 
 interface PendingFile {
@@ -275,7 +278,7 @@ export default function Chat() {
           const event = parseSseData<ChatSseEvent>(line);
           if (!event) continue;
           if (event.type === 'done' && event.answer) {
-            addMessage({ role: 'assistant', content: event.answer, images: event.images });
+            addMessage({ role: 'assistant', content: event.answer, images: event.images, files: event.files });
             if (event.stageTimings?.length) setLastRunTimings(event.stageTimings);
           } else if (event.type === 'error') {
             addMessage({ role: 'assistant', content: `Error: ${event.error}` });
@@ -684,6 +687,23 @@ export default function Chat() {
                             className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity border border-zinc-600"
                             onClick={() => window.open(url, '_blank')}
                           />
+                      ))}
+                    </div>
+                  )}
+                  {msg.files && msg.files.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {msg.files.map((f, i) => (
+                        <a
+                          key={i}
+                          href={f.path}
+                          target="_blank"
+                          rel="noreferrer"
+                          download={f.name}
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors"
+                          title={f.path}
+                        >
+                          📄 {f.name ?? f.path.split('/').pop()}
+                        </a>
                       ))}
                     </div>
                   )}
