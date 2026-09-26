@@ -1729,10 +1729,15 @@ async function runAsBareChat(
   if (specialist?.topP !== undefined) options.top_p = specialist.topP;
   if (specialist?.repeatPenalty !== undefined) options.repeat_penalty = specialist.repeatPenalty;
 
+  // Forward the specialist's `think` flag exactly like the tool loop and pipelines do.
+  // Without it, a natively-thinking model (qwen3.8 on Ollama) reasons by default and
+  // the voice cap (num_predict ~100) is consumed INSIDE the think block — content
+  // comes back empty (live-caught 2026-09-26: two voice turns at reply=0 chars).
   const chatParams = {
     model: chatModel,
     messages,
     options,
+    ...(specialist?.think === undefined ? {} : { think: specialist.think }),
   };
 
   const response = onStream

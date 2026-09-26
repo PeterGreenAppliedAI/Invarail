@@ -405,3 +405,45 @@ describe('arena dispatch mode (DECISIONS 2026-08-20: the arena duel)', () => {
     expect(() => SpecialistConfigSchema.parse({ model: 'm', dispatchMode: 'freeform' })).toThrow();
   });
 });
+
+describe('bare chat forwards the specialist think flag (live-caught 2026-09-26)', () => {
+  // Voice turns on the natively-thinking 27B came back empty: runAsBareChat never sent
+  // `think`, so the model reasoned by default and the 100-token voice cap was spent
+  // inside the think block. The tool loop and pipelines already forward it; bare chat
+  // must too.
+  function chatClient() {
+    const chatFn = vi.fn().mockResolvedValue({
+      message: { role: 'assistant', content: 'spoken reply', tool_calls: null },
+    });
+    const client = {
+      generate: vi.fn().mockResolvedValue({ response: 'chat' }),
+      chat: chatFn,
+      listModels: vi.fn().mockResolvedValue([]),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    } as unknown as OllamaClient;
+    return { client, chatFn };
+  }
+
+  it('think: false on the chat specialist reaches the wire, and survives the voice override', async () => {
+    const { client, chatFn } = chatClient();
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.chat = { model: 'big-model', maxTokens: 4096, temperature: 1, maxIterations: 1, tools: [], think: false };
+    const registry = new ToolRegistry();
+
+    await dispatchMessage({ client, registry, config, message: 'what do you think about the garden plan' });
+    expect(chatFn.mock.calls[0][0]).toMatchObject({ model: 'big-model', think: false });
+
+    await dispatchMessage({ client, registry, config, message: 'take care of what exactly', modelOverride: 'voice-model', maxTokensOverride: 100 });
+    const voiceCall = chatFn.mock.calls[1][0];
+    expect(voiceCall).toMatchObject({ model: 'voice-model', think: false });
+    expect(voiceCall.options.num_predict).toBe(100);
+  });
+
+  it('no think flag configured → the key is absent (server default, not a forced value)', async () => {
+    const { client, chatFn } = chatClient();
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.chat = { model: 'big-model', maxTokens: 4096, temperature: 1, maxIterations: 1, tools: [] };
+    await dispatchMessage({ client, registry: new ToolRegistry(), config, message: 'what do you think about the garden plan' });
+    expect('think' in chatFn.mock.calls[0][0]).toBe(false);
+  });
+});
