@@ -55,6 +55,9 @@ The console mic "didn't work" and a research PDF "didn't push". The PDF was a re
 - `tts.ts` hardcoded `model: 'tts-1'`; mlx-audio resolves models by HF repo id. `tts.model` is config now (default `tts-1` keeps OpenAI-shaped servers unchanged).
 - mlx-audio's transcription default is its native ndjson stream; `stt.ts` now sends `response_format=json` (OpenAI-compatible servers accept it and return what they always did). (f95eea4)
 
+### "Definitely not fast to respond" — where the seconds actually went
+Voice worked first try after the restart; it was slow for reasons that had nothing to do with the new server (STT 0.85s, TTS 0.3s). (1) The voice fast-path model `qwen2.5:7b` "for speed" lived on the 12GB 3060 beside phi4 (9.7GB): every voice turn loaded it and evicted the router, and the next router call reloaded phi4 — 2.5s cold, 7.6s mid-thrash. **A small model that has to load is slower than a big one that is resident.** Voice now replies on the A5000's 27B. (2) The A5000's `keepAlive` was the 30m default, so the foreground model unloaded after any quiet half hour and the next message paid a 6s reload — pinned with `keepAlive: "-1"`. (3) A 4s priming stall coincided with the flat store's synchronous `rebuildFacts` (readFileSync/writeFileSync on the event loop) — the one real code item, not yet done. The router itself (phi4 warm 0.2s vs Laya ~0.1s) is the remaining seat, and that is the shadow's job to earn.
+
 ### Setup gotchas, recorded so nobody pays twice
 - **Python 3.14 is too new**: `misaki[en]` (Kokoro's G2P) needs spaCy, which has no 3.14 wheels and fails to build. `uv venv --python 3.12` (`~/voice-serve/venv312`).
 - **Kokoro auto-installs a spaCy model on first use via `uv pip install`**, and uv can't see a venv launched by interpreter path — the first request returned HTTP 200 with an empty body. Pre-install `en_core_web_sm` and launch with `VIRTUAL_ENV` exported.
