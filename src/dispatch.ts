@@ -195,6 +195,26 @@ function resolveChannelSecurity(
 /** Sessions with a detached semantic-state extraction in flight (see dispatchMessage). */
 const semanticInFlight = new Set<string>();
 
+/** Per-session start index of the voice history window (see voiceWindowStart). */
+const voiceWindowAnchor = new Map<string, number>();
+
+/**
+ * Where the voice history window starts. A window that slides by one exchange per
+ * turn diverges from the model's cached prefix right after the system head, and on
+ * a hybrid-attention model (qwen3.5: SSM layers + attention every 4th) that is a
+ * full cold prefill — measured 2026-09-26 on the A5000: append-only follow-up 283ms,
+ * tail-only change ~850ms, slid window 4036ms, i.e. the same as cold. So the window
+ * is ANCHORED: history grows append-only from `anchor` until it exceeds 2×cap, then
+ * re-anchors to the last `cap` turns (one cold turn per ~cap exchanges instead of
+ * every turn). A stale anchor (transcript shrank — `!reset`) re-anchors too.
+ */
+export function voiceWindowStart(totalTurns: number, anchor: number | undefined, cap: number): number {
+  if (anchor === undefined || anchor > totalTurns || totalTurns - anchor > 2 * cap) {
+    return Math.max(0, totalTurns - cap);
+  }
+  return anchor;
+}
+
 const CRON_BLOCKED_TOOLS = new Set(['write_file', 'task_add', 'task_update', 'task_done', 'task_remove', 'workspace_write', 'memory_save']);
 
 /**
@@ -457,12 +477,15 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
       // voice turn on a 7B, because the compacted window slid and missed the prefix
       // cache every time). A spoken exchange needs the last few turns, not the session.
       const window = config.voice.historyTurns;
-      const transcript = sessionStore.loadTranscript(agentId, sessionKey, window);
-      history = transcript.map(t => ({
+      const transcript = sessionStore.loadTranscript(agentId, sessionKey);
+      const anchorKey = `${agentId}:${sessionKey}`;
+      const start = voiceWindowStart(transcript.length, voiceWindowAnchor.get(anchorKey), window);
+      voiceWindowAnchor.set(anchorKey, start);
+      history = transcript.slice(start).map(t => ({
         role: t.role as 'user' | 'assistant',
         content: t.role === 'assistant' ? stripThinking(t.content) : t.content,
       }));
-      console.log(`[Dispatch] Voice history window: ${history.length} turns (cap ${window}, no compaction)`);
+      console.log(`[Dispatch] Voice history window: ${history.length} turns (anchored at ${start}, cap ${window}–${2 * window}, no compaction)`);
     } else {
     const cacheValid = cachedCompaction
       && cachedCompaction.turnCount === currentTurnCount

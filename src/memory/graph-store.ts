@@ -1080,10 +1080,19 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
   }
 
   /**
-   * Update the user's behavioral model with new observations.
+   * Update the user's behavioral model with new observations. Only the declared
+   * USER_MODEL_FIELDS are written — the heartbeat's model invents new field names
+   * every cycle (actionPattern, emotionalProfile, topicInterworks…), and MERGEing
+   * them grew one node to 41 keys / 9K chars, all of it injected on every turn
+   * (2026-09-26). The keys are also interpolated into Cypher, so a closed set is
+   * the safety gate as well as the size gate.
    */
-  async updateUserModel(senderId: string, updates: Record<string, string>): Promise<void> {
+  async updateUserModel(senderId: string, rawUpdates: Record<string, string>): Promise<void> {
     if (!this.graph) await this.connect();
+    const updates = pickUserModelFields(rawUpdates);
+    const dropped = Object.keys(rawUpdates).length - Object.keys(updates).length;
+    if (dropped > 0) console.log(`[GraphMemory] User model: dropped ${dropped} undeclared field(s)`);
+    if (Object.keys(updates).length === 0) return;
 
     // Check if model exists
     const existing = await this.getUserModel(senderId);
@@ -1115,13 +1124,7 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
   async getUserModelSummary(senderId: string): Promise<string | null> {
     const model = await this.getUserModel(senderId);
     if (!model) return null;
-
-    const skip = new Set(['senderId', 'updatedAt']);
-    const lines = Object.entries(model)
-      .filter(([k]) => !skip.has(k) && model[k])
-      .map(([k, v]) => `- ${k.replace(/([A-Z])/g, ' $1').toLowerCase().trim()}: ${v}`);
-
-    return lines.length > 0 ? lines.join('\n') : null;
+    return renderUserModelSummary(model);
   }
 
   /**
@@ -1200,4 +1203,28 @@ Return: [{"name":"entity","type":"person|organization|technology|..."}]`,
       this.initialized = false;
     }
   }
+}
+
+/**
+ * The user model's declared schema — the four fields the heartbeat prompt asks for
+ * (CLAUDE.md "Behavioral user modeling"). Writer and renderer both close over this
+ * list: anything else the model returns is dropped, anything else already on the
+ * node is invisible.
+ */
+export const USER_MODEL_FIELDS = ['communicationStyle', 'decisionPattern', 'topicInterests', 'frustrationTriggers'] as const;
+
+export function pickUserModelFields(updates: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of USER_MODEL_FIELDS) {
+    const v = updates[k];
+    if (typeof v === 'string' && v.trim().length > 0) out[k] = v.trim();
+  }
+  return out;
+}
+
+export function renderUserModelSummary(model: Record<string, unknown>): string | null {
+  const lines = USER_MODEL_FIELDS
+    .filter(k => typeof model[k] === 'string' && (model[k] as string).length > 0)
+    .map(k => `- ${k.replace(/([A-Z])/g, ' $1').toLowerCase().trim()}: ${model[k]}`);
+  return lines.length > 0 ? lines.join('\n') : null;
 }
