@@ -6,7 +6,8 @@ Setup and usage detail for Invarail's features. The [README](README.md) is the f
 
 | Capability | Tools | Description |
 |-----------|-------|-------------|
-| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, default) or Brave/Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
+| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, the reference build; the schema default is `brave`) or Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
+| Personal web index | `local_search` | Owner-seeded RSS-first honest crawler (`src/webindex/`), tried before any SERP by `web_search` and `research` |
 | Research | `web_search`, `web_fetch`, `code_session` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
 | Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
 | Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only code gate; served by `multi` since the `personal` category was retired (2026-08-10) |
@@ -71,17 +72,18 @@ The console REST API lives at `/console/api/`:
 | GET | `/tools` | Registered tools with schemas |
 | POST | `/chat` | SSE-streaming chat (with image extraction) |
 | GET | `/files/:path` | Serve workspace files (charts, etc.) |
+| GET | `/research[/:id]` | Research run listing / report metadata |
+| GET | `/code/builds[/:id]` | Pi build records |
+| GET | `/metrics/runs/:id/steps` | Tool-loop run steps (the run journal) |
 
 ## Voice (TTS/STT)
 
 **Voice:** Kokoro TTS (`af_bella`) + whisper-large-v3-turbo STT, served by mlx-audio on the Mac mini (OpenAI-shaped HTTP; 0.3s / 0.9s warm). Voice in → voice out, text in → text out; a `[Voice] stt/dispatch/tts/total` line times every turn. Vision: images auto-analyzed by the multimodal foreground model and answered naturally.
 
-- **STT** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) server; incoming voice messages are transcribed automatically.
-- **TTS** — [Kokoro](https://github.com/remsky/Kokoro-FastAPI); near-real-time synthesis (~150ms/sentence). Voice responses get a TTS-friendly prompt injection (no emojis, no markdown).
+- **STT** — whisper-large-v3-turbo via mlx-audio (~0.9s warm); incoming voice messages are transcribed automatically.
+- **TTS** — Kokoro (`af_bella`) via mlx-audio (~0.3s warm for a short reply). Voice responses get a TTS-friendly prompt injection (no emojis, no markdown).
 
 The rule: **voice in → voice out, text in → text out.** Adapters without audio support ignore it gracefully.
-
-Two services on your inference node:
 
 Any OpenAI-shaped `/v1/audio/speech` + `/v1/audio/transcriptions` server works. The reference deployment (2026-09-25) is **mlx-audio on the Mac mini** — Kokoro and Whisper on Apple silicon, one process, no GPU node:
 
@@ -100,14 +102,14 @@ Previous stack (kokoro-fastapi in Docker + faster-whisper-server on a GPU node) 
 
 **The lean voice flow** (`config.voice`, DECISIONS voice rounds 1–5): voice turns run bare chat on `voice.model` with `maxTokens`/`contextSize` overrides, an **anchored** history window of `historyTurns`–2×`historyTurns` turns (append-only until re-anchor, because a sliding window is a cold prefill on a hybrid-attention model), minimal workspace context, `think` off, lessons/experiences priming skipped, and the post-turn semantic-state extraction detached. Every turn logs `[Voice] stt=… dispatch=… tts=… total=…` and `[Chat] … prompt=Ntok/Xms gen=Ntok/Yms`.
 
-The console chat's **toggle voice mode** is hands-free: VAD detects when you stop speaking, transcribes, dispatches, plays the TTS reply, and resumes recording. A standalone hold-to-talk voice UI lives at `http://localhost:3100` with SSE progress streaming. Voice-originated chat uses a lighter model (`qwen2.5:7b`) for latency; tool-using categories keep the full specialist model.
+The console chat's **toggle voice mode** is hands-free: VAD detects when you stop speaking, transcribes, dispatches, plays the TTS reply, and resumes recording. A standalone hold-to-talk voice UI lives at `http://localhost:3100` with SSE progress streaming. Voice replies run on `voice.model` (the foreground 27B in the reference build) through the lean voice flow above; tool-using categories are unaffected.
 
 ## Vision
 
 Incoming images run through the multimodal foreground model automatically: attachment saved → base64 to the vision model → description injected into the message context → routed as answerable chat. If vision fails, the message still processes with a note. Console chat accepts paste/drag-drop/paperclip uploads.
 
 ```json5
-vision: { enabled: true, model: "qwen3.8-27b", maxTokens: 512 },
+vision: { enabled: true, prompt: "Describe this image in detail…", maxTokens: 1024 },   // model defaults to `defaultModel`
 ```
 
 ## WhatsApp (removed 2026-08-10)

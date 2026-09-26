@@ -1,16 +1,16 @@
 # How Invarail Routes Messages: A Deep Dive
 
-*How a local AI agent classifies user intent and dispatches to the right specialist — without cloud APIs, with 15 categories, and a multi-layer fallback system that handles everything from "hi" to "research AAPL stock and make me a deck."*
+*How a local AI agent classifies user intent and dispatches to the right specialist — without cloud APIs, with 12 categories, and a multi-layer fallback system that handles everything from "hi" to "research AAPL stock and make me a deck."*
 
 ---
 
 ## The Problem
 
-You have 39 tools, 12 pipelines, and 15 categories. A user sends "search for tech events near me." Does that go to:
+You have ~44 tools (plus whatever MCP servers add), 2 deterministic pipelines, an arena for everything else, and 12 categories. A user sends "search for tech events near me." Does that go to:
 - **web_search** (search the internet)?
 - **multi** (browse Eventbrite with the browser tool)?
 - **chat** (answer from memory)?
-- **personal** (check the calendar)?
+- **research** (a verified report on local tech events)?
 
 A cloud model like GPT-4 handles this with a massive context window and strong instruction following. A local 14B model needs a harness. That harness is the routing system.
 
@@ -28,7 +28,7 @@ Every message flows through a multi-layer pipeline before reaching a specialist.
 ┌─────────────────────────────────────────────────────────┐
 │  [1] FILE TYPE ROUTING                                  │
 │  Images → vision → chat                                 │
-│  Data files (.csv, .xlsx, .json) → analytics            │
+│  Data files (.csv, .xlsx, .json) → exec (code_session)  │
 │  PDFs → text extraction → normal routing                │
 │  Text files → ask user (knowledge base or read as text) │
 └───────────────────────┬─────────────────────────────────┘
@@ -37,7 +37,7 @@ Every message flows through a multi-layer pipeline before reaching a specialist.
 │  [2] PRE-MODEL OVERRIDES                                │
 │  High-confidence regex patterns that skip the model:    │
 │  • URLs → website                                       │
-│  • Email/calendar words + time context → personal       │
+│  • Speculative language ("I wonder…") → chat            │
 │  • "make a PDF report" → research                       │
 │  • "go to [site]" → multi                               │
 └───────────────────────┬─────────────────────────────────┘
@@ -48,14 +48,14 @@ Every message flows through a multi-layer pipeline before reaching a specialist.
 │  • Explicit task command ("search for X", "create a")   │
 │  • Greeting ("hi", "hello") — new conversation          │
 │  • Strong new-topic signal ("look up", "schedule")      │
-│  Only chat and memory are sticky — pipelines don't hold │
+│  Sticky: chat, memory, briefing→chat, cron; rest don't  │
 └───────────────────────┬─────────────────────────────────┘
                         ▼
 ┌─────────────────────────────────────────────────────────┐
 │  [4] MODEL CLASSIFICATION                               │
-│  phi4:14b classifies into 15 categories                 │
+│  phi4 (router.model) classifies into 12 categories      │
 │  • Temperature 0.1 (deterministic)                      │
-│  • ~50ms per classification                             │
+│  • ~200ms warm on the 3060 (shadow encoder: ~65ms)      │
 │  • 20 tokens max (just the category name)               │
 │  • Minimal prompt: categories + descriptions + message  │
 └───────────────────────┬─────────────────────────────────┘
@@ -111,12 +111,12 @@ Before the message hits the router, attachments are pre-processed. The file exte
 attachment → check extension
   → image (.png, .jpg, .gif, .webp)     → vision describes it → chat
   → PDF (.pdf)                           → extract text → inject → route normally
-  → data (.csv, .xlsx, .json, .tsv)      → analytics pipeline (auto)
+  → data (.csv, .xlsx, .json, .tsv)      → exec (code_session / pandas)
   → text (.md, .txt, .html, .log)        → ask user: knowledge base or read as text?
   → unknown                              → ask user same choice
 ```
 
-The analytics override is the strongest example of code-driven routing. A CSV upload will always go to the analytics pipeline. The model never decides — the file extension does.
+The data-file rule is the strongest example of code-driven routing: a CSV upload always lands in `exec`, where `code_session` does the pandas work (the dedicated analytics pipeline was retired 2026-08-10 — it had 0 uses). The model never decides — the file extension does.
 
 ---
 
@@ -172,9 +172,9 @@ If pre-overrides and sticky routing don't apply, the router model classifies the
 
 The prompt is intentionally minimal. It lists the configured categories (12 since the 2026-08-10 trim) with one-line descriptions and asks for exactly one word back. **Those descriptions are the router's whole world** — when `personal` was retired, nothing said where Gmail and Calendar lived, and "check my email" went to `chat`/`memory`/`cron` six times out of six until the `multi` description said so (2026-09-25). The model doesn't see conversation history, tools, or system context — just the message and the category list.
 
-**Why phi4:14b:** Fast classification at 200 tokens per decision. Few-shot capable — understands category descriptions. Dense model — no thinking overhead. The router doesn't need reasoning, it needs pattern matching at scale.
+**Why phi4:** Fast classification at 200 tokens per decision. Few-shot capable — understands category descriptions. Dense model — no thinking overhead. The router doesn't need reasoning, it needs pattern matching at scale.
 
-**15 categories:**
+**12 categories (three retired, kept for the record):**
 
 | Category | What It Handles |
 |----------|----------------|
@@ -219,19 +219,20 @@ When the model fails, times out, or returns an invalid category, regex patterns 
 **Order matters.** Specific patterns match before broad ones. This prevents "search for docker commands" from routing to `web_search` instead of `exec`.
 
 ```
-Priority order (first match wins):
+Priority order (first match wins — 21 patterns, `KEYWORD_HINTS` in classifier.ts):
   1. Document formats (pdf, xlsx) → multi
-  2. Compound actions (search + save) → multi
-  3. Research requests (with explicit markers) → research
-  4. Browser interaction → multi
-  5. Config/settings → config
-  6. Heartbeat management → cron
-  7. System commands (npm, git, sudo) → exec
-  8. Task management (todo, kanban) → task
-  9. Scheduling (remind, cron, daily) → cron
-  10. Memory recall (remember, last time) → memory
-  11. Messaging (send, notify) → message
-  12. Search (google, look up, news) → web_search  ← broadest, last
+  2. Research requests (with explicit markers) → research
+  3. Browser interaction / compound actions → multi
+  4. Heartbeat management → cron
+  5. System commands (npm, git, sudo, ls) → exec
+  6. Task management (todo, kanban) → task
+  7. Scheduling (remind, cron, daily) → cron
+  8. Memory recall (remember, last time) → memory
+  9. Messaging (send, notify) → message
+  10. Fetch-this-page phrasing → website
+  11. Search (google, look up, news) → web_search  ← broadest
+  12. Image generation verbs → image
+  (config/settings → `config` was removed with the category, 2026-08-10)
 ```
 
 **What we removed from keywords:** "what is" and "who is" used to trigger `web_search`. But "what is the meaning of life?" is a chat question. Removing these broad patterns reduced false keyword matches significantly. Also removed (July 2026): bare `workspace` from the config pattern — it captured exec requests like "run ls in the workspace". Added: `ls`/`pwd`/`chmod` to exec hints, and live-value lookups ("current price of X") → `web_search` (previously fell to the chat default, answering stale).
@@ -392,7 +393,7 @@ Every routing decision is logged with the layer that made it:
 [Router] Pre-model override: "https://reddit.com/..." → website
 [Router] Sticky: "what about the pricing?" → chat (follow-up)
 [Dispatch] Category: web_search (model)
-[Dispatch] Category: analytics (override)
+[Dispatch] Category: chat (override)
 [Dispatch] Conversational guard: research → chat (no task intent, turn 3)
 [Dispatch] Browser control mode → guided ReAct
 [Dispatch] Silent re-route: chat gap detected → web_search
@@ -404,11 +405,11 @@ No black boxes. Every misroute is traceable to the layer that made the decision.
 
 ## The Numbers
 
-- **15 categories** covering all user intents
-- **~20 pre-model overrides** catching high-confidence patterns
-- **~20 keyword fallback patterns** as safety net
+- **12 categories** covering all user intents (3 retired 2026-08-10)
+- **9 pre-model overrides** catching high-confidence patterns
+- **21 keyword fallback patterns** as safety net
 - **6 security layers** per message
-- **~50ms** for model classification
+- **~200ms** warm for model classification on the 3060 (~65ms for the 421M shadow encoder)
 - **4 tiers of fallback:** overrides → model → keywords → default
 - **3 post-classification guards:** security → conversational guard → dispatch decision
 

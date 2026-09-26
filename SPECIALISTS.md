@@ -2,7 +2,7 @@
 
 12-point specification for each specialist. A developer should be able to read a spec and implement or debug the specialist with zero follow-up questions.
 
-**Tool list notes (apply to every specialist):** a `tools:` entry may use the token `mcp:<server>` to include an MCP server's entire registered toolset (expanded at dispatch via `registry.expandToolNames`). The `skill_find` tool (registered globally) gives any ReAct specialist progressive-disclosure access to saved workflow skills — add it to a specialist's tools list to enable.
+**Tool list notes (apply to every specialist):** a `tools:` entry may use the token `mcp:<server>` to include an MCP server's entire registered toolset (expanded at dispatch via `registry.expandToolNames`). The skills system and its `skill_find` tool were retired 2026-08-10 (DECISIONS "the Invarail trim"); nothing is registered globally on their behalf.
 
 ---
 
@@ -27,9 +27,9 @@
 
 1. **User story:** User asks a question requiring current internet information — news, prices, facts, events.
 2. **In scope:** Factual questions about the external world, current events, "search for X", "what's the latest on Y", price lookups, weather.
-3. **Out of scope:** Questions about the user (→ memory), calendar/email (→ personal), code execution (→ exec), research reports (→ research), browsing specific URLs (→ website).
-4. **Data requirements:** Web search API (Brave/Perplexity/Grok/Tavily), web_fetch for page content, browser for JS-heavy sites.
-5. **Tools:** web_search, web_fetch, browser.
+3. **Out of scope:** Questions about the user (→ memory), calendar/email (→ multi, which holds the owner-only Gmail/Calendar tools), code execution (→ exec), research reports (→ research), browsing specific URLs (→ website).
+4. **Data requirements:** Web search provider (SearXNG self-hosted in the reference build; Brave/Perplexity/Grok/Tavily selectable), the personal web index (`local_search`) tried first, web_fetch for page content, browser for JS-heavy sites.
+5. **Tools:** local_search, web_search, web_fetch, browser.
 6. **Acceptance criteria:** Answer cites sources with URLs. Provides analysis beyond restating search snippets. Well-structured with clear sections. Answers the specific question asked.
 7. **Edge cases:** "Search for docker commands" could route to exec (keyword order handles this). Ambiguous queries like "latest version" might match without search intent.
 8. **Confidence threshold:** Quality review checks for source citations, structure, and completeness. Score < 3 triggers revision pass.
@@ -46,13 +46,13 @@
 2. **In scope:** "Research AAPL stock", "make me a deck on AI trends", "analyze the EV market", producing reports/decks with charts and citations.
 3. **Out of scope:** Simple web searches ("what's the weather"), casual questions about a topic, browsing URLs.
 4. **Data requirements:** Web search for sources, web_fetch for page content, code_session for charts (matplotlib/seaborn), write_file for deck output. When the request explicitly names a [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) gathering flow ("use the weekly_gather tool"), the flow's compiled searches replace decompose+search — its sections become the facets, its links the sources; fetch/synthesis/verification unchanged.
-5. **Tools:** web_search, web_fetch, code_session, write_file, read_file, document, reason, mcp:flows.
+5. **Tools:** local_search, web_search, web_fetch, code_session, write_file, read_file, document, mcp:flows.
 6. **Acceptance criteria:** Structured report/deck with thesis, evidence, charts, source citations with actual URLs (not homepages), actionable recommendations. Charts have titles, labels, legends.
 7. **Edge cases:** "Research" mentioned casually in conversation should NOT trigger research pipeline — only explicit research requests. Pre-model override handles compound intent (research + stock/market/trend).
 8. **Confidence threshold:** Quality review checks for 3+ substantive sections, source URLs cited, detail level, date accuracy.
 9. **Human escalation:** None — research is read-only.
 10. **Known failures:** Model fabricated data in early versions — now uses code for charts (matplotlib). Quality review once suggested "use Playwright" literally in revision. Deck HTML sometimes dumped as text if write_file fails.
-11. **Pipeline:** research — plan queries → parallel search → parallel fetch → synthesize → charts → branch (deck OR report) → render → quality review → [revision].
+11. **Pipeline:** research — [flow_gather when a flow is named] → decompose → per-facet research (local index first, then search + fetch + synthesize, concurrent) → gap-fill → analytical synthesis → claim verification (cited-source + Tier-1 cross-check) → charts → deterministic markdown→HTML→PDF render with a `## Verification` appendix.
 12. **Test cases:** "research AAPL stock performance" → research (override), "make me a PDF report on AI trends" → research (override), "analyze market trends for semiconductors" → research (override).
 
 ---
@@ -65,7 +65,7 @@
 4. **Data requirements:** Full tool access — browser, web_search, web_fetch, memory, tasks, exec, document, image_generate.
 5. **Tools:** All available tools for the user's trust level.
 6. **Acceptance criteria:** Completes the multi-step task, produces artifacts if requested, reports what was done.
-7. **Edge cases:** "Find and save" triggers multi via keyword compound. "Go to amazon.com" triggers multi via pre-model override. Browser control mode overrides to qwen3.6:35b with guided ReAct.
+7. **Edge cases:** "Find and save" triggers multi via keyword compound. "Go to amazon.com" triggers multi via pre-model override. Browser control mode runs on the foreground model with guided ReAct.
 8. **Confidence threshold:** N/A — arena runs to natural stop. *(Historical, pre-arena: the plan pipeline had a self-reflection stage; skill matching reused successful past plans.)*
 9. **Human escalation:** Destructive tools (exec, write_file) can be in confirmTools set. Since July 2026 the confirm gate is backed by the pending-action ledger (confirmation executes the exact previewed call) and applies to pipeline dispatches too; tools with `autonomy.tier: propose_confirm` metadata (send_message) are gated on every channel unless promoted via `autoApproveTools`.
 10. **Known failures:** Plan pipeline matched wrong skills (inflated success count) — fixed with threshold + ratio + cap. Browser control pipeline failed (replaced with guided ReAct). Model hallucinated actions in plan.
@@ -80,9 +80,9 @@
 2. **In scope:** Shell commands (ls, git, npm, pip, sudo), file read/write, Docker operations, code execution.
 3. **Out of scope:** Web search, scheduling (→ cron), task management (→ task), research.
 4. **Data requirements:** Docker sandbox or command allowlist. Workspace file access.
-5. **Tools:** exec, code_session, read_file, write_file, document, reason, mcp:flows (exec is the ReAct workhorse for plan sub-dispatches, so compiled flow tools live here too).
+5. **Tools:** exec, read_file, write_file, code_session, document, mcp:flows, mcp:blender (exec is the arena's general-purpose workhorse, so compiled flow tools live here too).
 6. **Acceptance criteria:** Command executed, output returned, errors explained. Doesn't over-explore (ls data → just ls, not find + chmod + which).
-7. **Edge cases:** "read the contents of config.json" routes to config instead of exec due to keyword order (KNOWN ISSUE — the word "config" in the filename). Fixed July 2026: bare "workspace" no longer hijacks exec requests to config ("run ls -la in the workspace" → exec); ls/pwd/chmod added to exec keyword hints. Model used 8 steps for simple `ls data` in ReAct — pipeline restored.
+7. **Edge cases:** *(Historical — the `config` category was retired 2026-08-10, which closed this one.)* "read the contents of config.json" used to route to config instead of exec due to keyword order. Fixed July 2026: bare "workspace" no longer hijacks exec requests to config ("run ls -la in the workspace" → exec); ls/pwd/chmod added to exec keyword hints. Model used 8 steps for simple `ls data` in ReAct — pipeline restored.
 8. **Confidence threshold:** N/A — deterministic tool execution.
 9. **Human escalation:** exec tool can be in confirmTools. Cron mode strips write tools.
 10. **Known failures:** ReAct loop massive over-exploration for simple commands — exec pipeline restored. Code session required action:'start' before action:'run'. Exec tool doubled workspace paths (cwd path issue).

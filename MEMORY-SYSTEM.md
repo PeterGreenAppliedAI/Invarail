@@ -75,7 +75,7 @@ Every fact write goes to both stores. Graph failures are non-blocking — the fl
 
 ## The Graph Schema
 
-FalkorDB uses the Redis wire protocol and runs in ~85MB of memory at our current scale (1,067 nodes across 73 facts, 97 entities, 730 conversation turns, 166 tags). The schema:
+FalkorDB uses the Redis wire protocol and runs in ~92MB of memory at our current scale (2026-09-26: 36 facts, 68 entities, 501 conversation turns, 193 tags, 2 experiences, 1 user model — decay and consolidation keep the fact count deliberately small). The schema:
 
 ```
 (:Fact {id, text, senderId, importance, embedding, category, confidence, createdAt, source})
@@ -291,7 +291,7 @@ During heartbeat, an LLM reviews pairs of facts with high word overlap (≥50%) 
 - **REPLACE** — New supersedes old
 - **KEEP_SEPARATE** — Distinct facts, both stay
 
-Bounded to 20 pairs per run to limit compute. Uses the router model (phi4:14b) at temperature 0.1.
+Bounded to 20 pairs per run to limit compute. Runs on the utility tier (`consolidationModel` in `src/tools/memory-cleanup.ts`) at temperature 0.1; a merged fact lands as `inferred` — merging never launders provenance upward.
 
 ---
 
@@ -373,7 +373,7 @@ The header "do NOT reference unless directly relevant" is critical — without i
 
 **What gets embedded for retrieval:** the user's words, not the documents riding with them. The first live priming timeout was a turn with an attached PDF — 8,906 chars embedded three times (facts, lessons, experiences) at the Mini's ~120 tok/s prefill, against an 8s cap. `primingQueryFrom` strips `[PAGE_CONTENT]` and attached-PDF bodies (headers stay — "attached a PDF: roadmap.pdf" is signal) and caps at 800 chars.
 
-**Other tenants of the EmbeddingStore:** the same SQLite vector store (`data/memory.db`, scoped by a `source` column) also holds vault document chunks (`source='vault'`), skill embeddings (`source='skill'`, semantic skill matching at a measured 0.65 floor), and lesson embeddings (`source='lesson'`, failure-boundary one-liners injected only at evidence ≥ 2) — one embedding pipeline, four retrieval systems.
+**Other tenants of the EmbeddingStore:** the same SQLite vector store (`data/memory.db`, scoped by a `source` column) also holds vault document chunks (`source='vault'`), lesson embeddings (`source='lesson'`; the skills system that used to live here was retired 2026-08-10), and lesson embeddings (`source='lesson'`, failure-boundary one-liners injected only at evidence ≥ 2) — one embedding pipeline, four retrieval systems.
 
 ---
 
@@ -467,7 +467,7 @@ memory/{senderId}/
   removed.jsonl               # Recently-removed (30-day TTL)
 ```
 
-It handles dedup (hash + substring + optional embedding), importance TTL, review candidate selection, and character-bounded rendering (`MAX_FACTS_CHARS = 3000`). It's not as powerful as the graph — no multi-hop, no SUPERSEDES, no entity linking — but it's files on disk that never fail.
+It handles dedup (hash + substring + optional embedding), importance TTL, review candidate selection, and character-bounded rendering (`MAX_FACTS_CHARS = 20000`, importance-aware — tiers ≥ 4 are never evicted). It's not as powerful as the graph — no multi-hop, no SUPERSEDES, no entity linking — but it's files on disk that never fail.
 
 ---
 

@@ -42,7 +42,7 @@ Channel (Discord/Telegram/Web/Gmail/Chrome Extension)
 Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primary) with flat JSONL FactStore (fallback).
 
 **Graph memory (`src/memory/graph-store.ts`):**
-- FalkorDB (GraphBLAS-based graph database, Docker on Mac Mini, Redis wire protocol)
+- FalkorDB (GraphBLAS-based graph database, Docker beside the Invarail process on its Mac mini, Redis wire protocol)
 - Native HNSW vector search (4096-dim embeddings via qwen3-embedding:8b)
 - Semantic dedup on write (cosine distance < 0.15 rejected)
 - Multi-signal search scoring: `similarity * 0.5 + recency * 0.2 + importance * 0.3` — plus a **relevance floor**: injection requires raw cosine ≥ 0.55 (scoring only orders; the floor rejects), contextual facts capped at 3
@@ -232,7 +232,7 @@ src/
     extractor.ts            #   LLM-based parameter extraction with JSON repair
     verification.ts         #   Research claim verification (extract → cited-source check → Tier-1 cross-check → patch-set)
     definitions/            #   Pipeline definitions per category
-      plan.ts               #     Plan pipeline (foreman handoffs, skill check, reflection)
+      plan.ts               #     Plan pipeline — RETIRED for dispatch 2026-08-21 (code retained)
       research.ts           #     Research pipeline (decompose → per-facet research → verify → PDF)
       heartbeat.ts          #     Deterministic heartbeat (task board + memory, no LLM date reasoning)
       cron.ts, task.ts, memory.ts, web-search.ts, exec.ts, message.ts, website.ts, code-gen.ts
@@ -438,8 +438,8 @@ Chrome extension injects `[PAGE: url | title]`, `[SELECTED: text]`, and `[PAGE_C
 
 **Important:** The console API (`/console/api/chat`) dispatches directly — NOT through the orchestrator's `handleMessage()`. Routing overrides for Web/Extension must go in `chat.ts`, not `orchestrator.ts`.
 
-### Foreman handoff pattern (`src/pipeline/definitions/plan.ts`)
-Plan pipeline sub-dispatches use structured briefings (not raw result dumps):
+### Foreman handoff pattern (`src/pipeline/definitions/plan.ts` — retired pipeline; the typed sub-dispatch result survives)
+Plan pipeline sub-dispatches used structured briefings (not raw result dumps):
 - Sub-dispatch returns typed `SubDispatchResult` with status, filePaths, urls, category (extracted at dispatch layer)
 - Write full step results to `.plan-artifacts/step-N.txt`
 - Build handoff message with: task, plan context, completed steps (status + artifact paths), available artifacts
@@ -449,7 +449,7 @@ Plan pipeline sub-dispatches use structured briefings (not raw result dumps):
 All pipeline dispatches get fresh context — no parent session history. Prevents prior conversation topics from biasing pipeline execution.
 
 ### Context priority layers (`src/agents/workspace.ts`)
-Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + LEARNINGS.md) to preserve token budget. Chat gets `full` context.
+Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + LEARNINGS.md) to preserve token budget. Chat gets the `chat` set (+ TOOLS.md / USER.md / AGENTS.md); voice turns get `minimal` under their own cache key.
 
 ### Tool-loop guardrails (`src/tool-loop/engine.ts`)
 - **One calling convention per model** — `toolStyle: 'native' | 'text'` (specialist config, default native). Native passes tools via the API field only; text describes them in the prompt with `Action:` format. Never both — mixing taught small models two contradictory formats. Fallback parsers (DSML/`<invoke>`/`Action:`/JSON5) stay active in both modes.
@@ -467,7 +467,7 @@ Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + 
 - **Param validation** — runtime type coercion (string→number, string→boolean) + enum + required field checks before execution.
 
 ### Heartbeat vs Briefing
-- **Heartbeat** (every 2h): maintenance only — transcript review, fact extraction, learning promotion, media cleanup, memory consolidation. Dispatches report via plan pipeline.
+- **Heartbeat** (every 2h): maintenance only — transcript review, fact extraction, learning promotion, media cleanup, memory consolidation, SIP proposals, steward digest. Runs as its own deterministic pipeline (`heartbeat.ts`) and reports to the configured delivery channel.
 - **Briefing** (8am, 1:15pm, 5pm): gathers calendar + tasks + memory directly via tool executor, runs CoT reasoning, delivers contextual insight. Separate cron, separate method.
 
 ---
@@ -505,8 +505,8 @@ import { writeFileSync } from 'node:fs';
 ### Passing [FILE:] tokens to the model
 Never let the model see `[FILE:path]` tokens — it will rewrite them into fake markdown links. Strip before the model sees the observation, re-append after the model produces the final answer.
 
-### Heartbeat/cron matching saved skills
-System operations (heartbeat, cron) should never match or save user-facing skills. Check for heartbeat signatures in `skill_check` and `skill_save` stages.
+### System operations consulting learned artifacts
+The skills system is retired (2026-08-10), but the rule it taught stands: heartbeat and cron must never match, replay, or save user-facing learned artifacts. Experiences and lessons are advisory prompt text only — never routing, permissions, or confirm decisions.
 
 ---
 

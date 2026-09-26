@@ -9,7 +9,7 @@ remove a piece and the feature disappears; nothing breaks.
 | **0 — Try** | Node 22+, [Ollama](https://ollama.com), one ~8GB model | Chat with persistent memory in the web console | ~15 min |
 | **1 — Run** | + `docker compose up -d` (2 sidecars), + a Discord/Telegram token | Daily-driver assistant: graph memory, real web search, heartbeat, briefings, cron reminders | +30 min |
 | **2 — Own** | + Docker exec sandbox, Google OAuth (read-only), a vision model | Sandboxed code execution, email/calendar, documents & PDFs, image understanding, browser extension | +1–2 h |
-| **3 — Fleet** | Multiple inference hosts | The reference build: vLLM backends, compiled [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) workflows, verified research reports | a weekend |
+| **3 — Fleet** | Multiple inference hosts | The reference build: Ollama-native hosts by role (plus vLLM for coding), compiled [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) workflows, verified research reports | a weekend |
 
 ## Tier 0 — fifteen minutes to a working agent
 
@@ -27,7 +27,7 @@ npm run setup        # choose "Starter" at the first question
 cp invarail.config.starter.json5 invarail.config.json5
 
 # 4. Start, then open http://localhost:3100
-npm start
+npm run dev
 ```
 
 That's the whole thing: one model routes and chats, memory persists to flat
@@ -61,12 +61,16 @@ Then in your config:
 
 ## Tier 3 — the reference fleet
 
-The maintainer's build: DGX Spark running vLLM for the foreground model
-(`inference.backends[]` routes by model id), a dedicated image-gen host,
-self-hosted SearXNG, and [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP)
-serving compiled workflows through the MCP bridge (see README → "Add an MCP
-server"). Nothing at this tier is required by the tiers below — it's what the
-architecture grows into, not what it demands.
+The maintainer's build (2026-09): a 24GB A5000 serving the foreground model
+Ollama-native (`inference.ollamaBackends[]` routes by model id), a 3060 for the
+utility tier (router, extraction, NER), a Mac mini that only embeds, the DGX
+Spark running vLLM for coding (`inference.backends[]`), a dedicated image-gen
+host, self-hosted SearXNG, mlx-audio for voice and a Laya shadow router on the
+Mac mini that runs Invarail itself, and
+[FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) serving compiled
+workflows through the MCP bridge (see README → Extending). Nothing at this tier
+is required by the tiers below — it's what the architecture grows into, not what
+it demands.
 
 ## Sanity checks
 

@@ -21,7 +21,7 @@ Channel (Discord / Telegram / Web / Gmail / Chrome Extension)
   ↓
 Orchestrator
   - Rate limiting (10/min/user)
-  - Attachment pre-processing (images → vision, PDFs → text, data files → analytics)
+  - Attachment pre-processing (images → vision, PDFs → text, data files → exec/code_session)
   - Typing indicators, streaming
   - Commands (!reset, !save, !forget, !heartbeat)
   ↓
@@ -29,21 +29,20 @@ resolveRoute() → agentId + sessionKey
   ↓
 dispatchMessage()
   - Load session history (budget-aware compaction)
-  - Router classification (pre-model overrides → phi4:14b → keywords → default)
+  - Router classification (pre-model overrides → phi4 → keywords → default; a System-One shadow logged beside it)
   - 6-layer security filtering
   - Memory auto-injection (FalkorDB vector KNN + entity traversal)
   - Conversational guard (prevents pipeline misroutes mid-conversation)
   ↓
-Pipeline (deterministic)          OR          ReAct Loop (model-driven)
-  - web_search, research,                      - chat, config, personal,
-    exec, task, memory,                          image, website
-    cron, message, analytics,
-    plan, code_gen, heartbeat
+Deterministic pipeline            OR          Arena (open ReAct loop, natural stop)
+  - research (claim verification)              - everything else: chat, web_search, memory,
+  - heartbeat (system maintenance)               exec, cron, message, website, task, image,
+                                                 code_gen, multi — same walls, no choreography
   ↓
 Response → channel (thinking stripped) → transcript (thinking preserved)
 ```
 
-## Multi-Model Strategy (two backends)
+## Multi-Model Strategy (three backend kinds)
 
 Foreground reasoning runs on **ONE model selected by one config line** — `defaultModel` (currently
 **qwen3.8:27B**, Ollama-native on a 24GB A5000) is filled into every specialist/briefing/heartbeat/vision
@@ -87,24 +86,16 @@ never hit undici's response-headers deadline; the only clock is `OLLAMA_CHAT_TIM
 
 ## Inference Routing
 
-**Since July 2026: single-gateway topology.** The custom inference gateway
-(`ollama.url` — the name is historical; it's a proxy speaking the Ollama wire
-protocol) fronts EVERYTHING: Ollama-served models and vLLM/DeepSeek behind it.
-The gateway does the cross-protocol translation itself (verified: reasoning
-headroom, Ollama-shaped tool_calls with object arguments). `inference.backends`
-is empty; Invarail talks to one endpoint and doesn't know what serves each model.
+**Three backend kinds, routed by model id (2026-09-19).** No gateway sits in the path any more — every host is reached directly:
 
 ```
-client.chat({ model })
-  model matches inference.backends[].models  → OpenAICompatClient → direct OpenAI-compatible endpoint
-  everything else (i.e. ALL models today)    → OllamaClient → gateway /api/chat → {Ollama | vLLM}
-embed() always → gateway
+client.chat({ model }) / chatStream / embed
+  model in inference.backends[].models        → OpenAICompatClient → vLLM on the Spark (coding: glm-5.3-flash)
+  model in inference.ollamaBackends[].models  → OllamaClient (that host) → A5000 (qwen3.8:27B) | 3060 (phi4, phi4-mini) | Mac mini (qwen3-embedding:8b)
+  everything else                             → OllamaClient (primary `ollama.url`)
 ```
 
-The `MultiBackendClient`/`OpenAICompatClient` machinery is retained — re-adding
-a `backends[]` entry points specific models at a direct endpoint again with no
-code changes. Watch item: constrained decoding (`format`) for every model now
-depends on the gateway's format passthrough (GATEWAY-REQUIREMENTS.md item 1).
+Each Ollama-native host carries its own `keepAlive` and `defaultContextSize` (a call that omits `num_ctx` takes the host default — and Ollama reloads a model whose context size changes, so foreground calls pass `num_ctx` explicitly). The former custom gateway (`GATEWAY-REQUIREMENTS.md`) is kept as a contract should one return.
 
 `OpenAICompatClient` (src/ollama/openai-client.ts) translates Ollama↔OpenAI: maps `options.*` to
 top-level params, JSON-parses tool-call arguments (vLLM returns a string, Ollama an object), stitches
@@ -324,7 +315,7 @@ Built with WXT (Manifest V3), React, TypeScript. Connects to existing Web channe
 attachment → check extension
   → image (.png, .jpg, .gif, .webp)  → vision → inject description → chat
   → PDF (.pdf)                         → extract text → inject → route normally
-  → data (.csv, .xlsx, .json)          → analytics pipeline (auto)
+  → data (.csv, .xlsx, .json)          → exec (code_session / pandas; the analytics pipeline was retired 2026-08-10)
   → text (.md, .txt, .html, .log)     → ask user: knowledge base or read as text?
   → unknown                            → ask user same choice
 ```

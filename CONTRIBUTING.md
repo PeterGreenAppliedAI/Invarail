@@ -9,9 +9,10 @@ Thanks for your interest in contributing! Invarail is a local-model-first AI age
 - [Node.js](https://nodejs.org/) 22+
 - [Ollama](https://ollama.ai/) running locally or on your network
 - Required models:
-  - **Foreground:** any OpenAI-compatible served model, configured via the single root `defaultModel` line (fills all specialist/briefing/heartbeat/vision slots — current production model: glm-5.3-flash on vLLM)
+  - **Foreground:** any Ollama-native or OpenAI-compatible served model, configured via the single root `defaultModel` line (fills all specialist/briefing/heartbeat/vision slots — current production model: glm-5.3-flash on vLLM)
   - **Utility tier** (Ollama):
     ```bash
+    ollama pull phi4               # Router / fact extraction
     ollama pull phi4-mini          # NER / utility model
     ollama pull qwen3-embedding:8b # Embeddings
     ```
@@ -51,19 +52,19 @@ src/
 ├── orchestrator.ts       # Lifecycle, rate limiting, voice model override
 ├── dispatch.ts           # Router → Specialist pipeline
 ├── config/               # JSON5 config + Zod validation
-├── router/               # Intent classification (3-tier fallback)
+├── router/               # Intent classification (overrides → model → keywords → default) + shadow router
 ├── tool-loop/            # ReAct tool-calling loop engine
-├── ollama/               # Ollama HTTP client (chat, stream, embed)
+├── ollama/               # Ollama + OpenAI-compat clients; multi-backend routing by model id
 ├── channels/             # Pluggable adapters (Discord, Telegram, Gmail, Web)
-├── services/             # TTS (QwenTTS) and STT (Whisper) services
+├── services/             # Heartbeat, briefing, email steward, memory capture, TTS/STT
 ├── tools/                # Tool implementations
 ├── agents/               # Workspace files + agent routing
 ├── context/              # Token budget, history compaction
 ├── sessions/             # Transcript persistence
 ├── cron/                 # Scheduling service
-├── memory/               # Vector + keyword search (SQLite)
+├── memory/               # FalkorDB graph store + flat fallback + SQLite embeddings
 ├── tasks/                # Task board (JSON + Markdown)
-├── browser/              # Playwright wrapper
+├── browser/              # Chrome-extension remote bridge (the browser tool lives in tools/)
 └── exec/                 # Shell execution with sandbox
 ```
 
@@ -74,7 +75,7 @@ The `main` branch is **protected** — all changes must go through pull requests
 - **No direct pushes to `main`** — CI status checks (typecheck, tests, build) must pass before merge
 - **Branches must be up-to-date** with `main` before merging
 - **Branch naming conventions:**
-  - `feature/` — new functionality (e.g. `feature/slack-adapter`)
+  - `feature/` — new functionality (e.g. `feature/matrix-adapter`)
   - `fix/` — bug fixes (e.g. `fix/router-timeout`)
   - `docs/` — documentation changes (e.g. `docs/tool-api`)
 - **`dev` branch** — persistent working branch for maintainers; feature branches can branch from `dev` or `main`
