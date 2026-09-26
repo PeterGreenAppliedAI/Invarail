@@ -41,20 +41,22 @@ The rule: **voice in → voice out, text in → text out.** Adapters without aud
 
 Two services on your inference node:
 
-```bash
-docker run -p 5005:8880 ghcr.io/remsky/kokoro-fastapi     # Kokoro TTS (OpenAI-compatible)
-faster-whisper-server --model large-v3 --device cuda       # STT (port 8000)
-```
+Any OpenAI-shaped `/v1/audio/speech` + `/v1/audio/transcriptions` server works. The reference deployment (2026-09-25) is **mlx-audio on the Mac mini** — Kokoro and Whisper on Apple silicon, one process, no GPU node:
 
-```env
-QWEN_TTS_URL=http://your-gpu-node:5005
-WHISPER_URL=http://your-gpu-node:8000
+```bash
+# Python 3.12 venv (spaCy has no 3.14 wheels); VIRTUAL_ENV must be exported for Kokoro's G2P
+python -m mlx_audio.server --host 0.0.0.0 --port 8000        # tmux serve:voice
 ```
 
 ```json5
-tts: { enabled: true, url: "${QWEN_TTS_URL}", voice: "af_bella", format: "mp3" },
-stt: { enabled: true, url: "${WHISPER_URL}", model: "whisper-large-v3", language: "en" },
+tts: { enabled: true, url: "${VOICE_URL}", model: "mlx-community/Kokoro-82M-bf16", voice: "af_bella", format: "mp3" },
+stt: { enabled: true, url: "${VOICE_URL}", model: "mlx-community/whisper-large-v3-turbo-asr-fp16", language: "en" },
+voice: { model: "qwen3.8:27B", maxTokens: 100, historyTurns: 12 },   // the lean voice flow (see below)
 ```
+
+Previous stack (kokoro-fastapi in Docker + faster-whisper-server on a GPU node) still works with the same config shape; `tts.model` defaults to `tts-1` for OpenAI-shaped servers that expect it.
+
+**The lean voice flow** (`config.voice`, DECISIONS voice rounds 1–5): voice turns run bare chat on `voice.model` with `maxTokens`/`contextSize` overrides, an **anchored** history window of `historyTurns`–2×`historyTurns` turns (append-only until re-anchor, because a sliding window is a cold prefill on a hybrid-attention model), minimal workspace context, `think` off, lessons/experiences priming skipped, and the post-turn semantic-state extraction detached. Every turn logs `[Voice] stt=… dispatch=… tts=… total=…` and `[Chat] … prompt=Ntok/Xms gen=Ntok/Yms`.
 
 The console chat's **toggle voice mode** is hands-free: VAD detects when you stop speaking, transcribes, dispatches, plays the TTS reply, and resumes recording. A standalone hold-to-talk voice UI lives at `http://localhost:3100` with SSE progress streaming. Voice-originated chat uses a lighter model (`qwen2.5:7b`) for latency; tool-using categories keep the full specialist model.
 

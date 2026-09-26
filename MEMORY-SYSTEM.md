@@ -63,7 +63,7 @@ FalkorDB uses the Redis wire protocol and runs in ~85MB of memory at our current
 (:Turn {id, text, role, senderId, sessionKey, createdAt})
   -[:MENTIONS]->     (:Entity)            // conversation links
 
-(:UserModel {senderId, communicationStyle, decisionPattern, topicInterests})
+(:UserModel {senderId, communicationStyle, decisionPattern, topicInterests, frustrationTriggers})   // closed schema
 ```
 
 The key relationships:
@@ -326,7 +326,7 @@ Scored by distance: 1-hop facts get score 1.0, 2-hop facts get 0.5.
 
 ### Layer 4: Behavioral User Model
 
-LLM-derived observations about communication style, decision patterns, topic interests — updated each heartbeat by analyzing recent interactions.
+LLM-derived observations about communication style, decision patterns, topic interests, frustration triggers — updated each heartbeat by analyzing recent interactions. **The schema is closed** (`USER_MODEL_FIELDS`, graph-store.ts): the writer drops any other key the model returns and the renderer reads only the four. Before that gate (2026-09-26) the node had drifted to 41 keys — `actionPattern`, `emotionalProfile`, `topicInterworks`… — and rendered to 9K chars, injected on every turn, every category; it was the single largest thing in a voice prompt.
 
 ### Injection Format
 

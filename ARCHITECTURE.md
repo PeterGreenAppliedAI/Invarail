@@ -66,13 +66,15 @@ reasoning channel, mapped to `<think>` and stripped at delivery).
 | `code_gen` + Pi coding substrate | glm-5.3-flash / `pi.model` | vLLM / Spark | Speed where quality compounds and the merge gate catches slop; 262K context |
 | Router · fact extraction · steward judgment | phi4:latest | 3060 | Fast classification, dense JSON (tag is `:latest` — `:14b` 404s there) |
 | NER · consolidation | phi4-mini | 3060 | Entity typing with bootstrapped graph context |
-| Voice fast-path | qwen2.5:7b | 3060 | Small + fast for voice-originated messages (evicts on use — rare) |
+| Voice replies | `voice.model` (= `defaultModel`, qwen3.8:27B) | A5000 | The lean voice flow made the big model fast, not a small model: every 4–7GB "fast" model placed beside the 27B split to CPU and decoded at 13 tok/s (DECISIONS, voice round three) |
 | Embedding | qwen3-embedding:8b | Mac Mini | 4096-dim vectors; resident alone so priming never waits on a reload |
 | Shadow router (observation) | Laya 421M fine-tune | `/v1/systemone` | Same question as the router, logged beside it, never decides |
 
 **Context:** `session.contextSize` (32768 — the A5000 has 24GB and a large KV allocation competes with
 the 17.7GB of weights) budgets compaction; `research` is the slot to watch and a one-line `model:`
 override moves it to GLM's 262K if verification depth drops. Per-specialist `contextSize` override lets small-context models stay low.
+**Prompt order is a prefix-cache contract** — `[static system][append-only history][volatile state+memory][user]` in both the tool loop and bare chat. On a plain transformer any divergence only re-prefills what follows it. The 27B is a **hybrid** (`qwen35`: Gated-DeltaNet SSM layers with full attention every 4th), whose recurrent state restores only from checkpoints: measured 2026-09-26, an exact extension costs 283ms, a tail-side change ~850ms, and a history window slid by one exchange 4036ms — the same as cold. Hence the voice window is anchored with hysteresis (`voiceWindowStart`), the per-turn memory block is bounded (a user-model node that had drifted to 41 keys was ~2K tokens of it), and every foreground call passes `num_ctx` explicitly (a call without it takes the host default and Ollama reloads the model at that size — 7s each way). Bare chat prints `[Chat] … prompt=Ntok/Xms gen=Ntok/Yms load=Zms`; read it before theorizing about latency.
+
 Long completions stream by construction (`chat()` rides SSE internally) so generation length can
 never hit undici's response-headers deadline; the only clock is `OLLAMA_CHAT_TIMEOUT_MS`.
 
@@ -123,7 +125,7 @@ JSON5 repair) stay active in both modes as a safety net.
 
 **Shadow tier (2026-09-25, observation only):** with `router.shadow` enabled, the final decision — whatever produced it — is compared against a System-One decision model (`src/router/shadow.ts` → `/v1/systemone`, Jev wire protocol) asked the identical question with `router.categories` descriptions as its option text. Both land in `data/router-shadow.jsonl`; the shadow never decides and is never awaited. A fine-tuned Laya (421M) beat phi4 80.8% vs 76.9% at 63ms vs 270ms on the held-out set; the switch (`router.backend`) waits on the disagreement rate over real traffic (DECISIONS "A 421M Encoder Out-Routes phi4").
 
-Post-classification layers: sticky routing (keeps follow-ups on chat), conversational guard (blocks pipeline misroutes), silent re-route (if chat specialist admits capability gap).
+Post-classification layers: sticky routing (keeps follow-ups on chat), conversational guard (blocks pipeline misroutes), silent re-route (if chat specialist admits capability gap). Sticky is the incumbent's main leak in the shadow log — it carries a fragment into the previous turn's *category* without knowing the previous turn's *state* ("Awesome." after "Done, scheduled" is chat, not cron). A System-One router fed the previous turn as state makes that distinction zero-shot (DECISIONS 2026-09-26); the planned v4 fine-tune trains on it.
 
 ## Dispatch Modes (arena fleet-wide, 2026-08-21)
 
@@ -162,7 +164,7 @@ FalkorDB (Docker, localhost:6379)
   (:Turn {text, role, sessionKey})
     -[:MENTIONS]->   (:Entity)         // conversation linking
 
-  (:UserModel {communicationStyle, decisionPattern, topicInterests})
+  (:UserModel {communicationStyle, decisionPattern, topicInterests, frustrationTriggers})   // closed schema — writer + renderer ignore any other key
 ```
 
 **Auto-injection:** Every message triggers vector KNN + entity traversal. Relevant facts silently injected into specialist context. Multi-signal scoring: `similarity * 0.5 + recency * 0.2 + importance * 0.3` — with a **relevance floor** (raw cosine ≥ 0.55): scoring only orders results, so without the floor a fresh high-importance fact injected on every turn regardless of topic. Contextual facts capped at 3; multi-hop traversal only fires when at least one result passed the floor.

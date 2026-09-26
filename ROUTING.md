@@ -146,6 +146,8 @@ Multi-turn conversations should stay in the same category. If you're chatting ab
 - Short follow-up messages stay on the previous category.
 - Long messages (>200 chars) also stay sticky — they're likely continuing a discussion.
 
+**What sticky cannot know (2026-09-26):** sticky keeps the previous turn's *category*, not its *state*. "Awesome." after "Done — you'll get a Discord DM Tuesday" is an acknowledgment (chat); "yes do it" after "Want me to set that up?" is a confirmation (cron). The 30-char heuristic sends both to cron. In the shadow log, sticky is the live router's main leak (3 of the first 8 disagreements; Laya right on all 3). A System-One router given `{previous_category, assistant_last_reply, message}` as state makes the distinction zero-shot — probed live against v3: "yes do it" chat 0.28 bare → cron 0.95 with state; "Awesome." after "Done" stays chat. That is the shape of the planned v4 fine-tune: the model that replaces phi4 replaces this layer in the same move.
+
 **What breaks through sticky:**
 - Imperative commands: "search for X", "create a report", "run this command"
 - Greetings: "hi", "hey", "hello" — starts fresh classification
@@ -202,7 +204,9 @@ A second classifier answers the same question on every message and **never decid
 
 The hook wraps `classifyMessage` (`src/router/shadow.ts`), so the shadow is compared against whatever actually decided — override, sticky, model, keyword, or fallback — and it is fire-and-forget with a hard bound: it never changes the result, never delays it, and a dead server costs one warning. Every message appends `{ts, preview, decided, decidedBy, shadow, confidence, top, ms}` to `data/router-shadow.jsonl` and prints `[RouterShadow] live=… shadow=… AGREE/DIFFER` with a running agreement rate.
 
-Why it exists: a 421M Laya encoder fine-tuned on the owner's own routing history scored **80.8% vs phi4's 76.9%** on the corrected held-out set at **63ms vs 270ms** (90.8% vs 80.0% weighted by real traffic). A 78-item eval is not a reason to change routers; an agreement rate on the real distribution — and, on the disagreements, which one was right — is. Full method, the dataset cleaning (the collected pairs were phi4's own decisions, not truth), the synthetic-data round-trip filter, and what was disproven (zero-shot; the confidence-gated hybrid) are in DECISIONS.md, "A 421M Encoder Out-Routes phi4".
+Why it exists: a 421M Laya encoder fine-tuned on the owner's own routing history scored **80.8% vs phi4's 76.9%** on the corrected held-out set at **63ms vs 270ms** (90.8% vs 80.0% weighted by real traffic). **Readings so far (66 messages, 2026-09-26):** 88% agreement, p50 185ms over HTTP; Laya right on 5 of 8 disagreements, wrong on 2 (the `data … research` keyword-override class at 0.96 — the training gap — and one `memory` call at 0.49), one toss-up. Every agreement scored ≥ 0.92 and the two clearly wrong model-layer calls were the only rows under 0.9 — the first real-traffic sign the probability could gate. Plan: observe through the week, likely a v4 fine-tune (with state, see Layer 3) before any switch.
+
+A 78-item eval is not a reason to change routers; an agreement rate on the real distribution — and, on the disagreements, which one was right — is. Full method, the dataset cleaning (the collected pairs were phi4's own decisions, not truth), the synthetic-data round-trip filter, and what was disproven (zero-shot; the confidence-gated hybrid) are in DECISIONS.md, "A 421M Encoder Out-Routes phi4".
 
 ---
 
@@ -340,7 +344,7 @@ A `_reRouted` flag prevents infinite loops — if the re-routed specialist also 
 ### Browser Control (Chrome Extension)
 
 When the Chrome extension is connected, console channel messages get special treatment:
-- Model switches to qwen3.6:35b (better reasoning for multi-step browser tasks)
+- Runs on the foreground model (`defaultModel`) — multi-step browser tasks need the big model
 - Pipeline is stripped (forced ReAct — browser control is inherently reactive)
 - web_fetch tool is removed (forces the browser tool for navigation)
 - Max iterations bumped to 20
@@ -353,7 +357,7 @@ Cron jobs dispatch with an explicit category override and `cronMode: true`. Cron
 
 ### Smart Model Routing
 
-For trivial greetings ("hi", "thanks", "cool"), a lighter model handles the response. No need to load qwen3.6:35b for "hello." This is a latency optimization, not a routing change — the message still goes to `chat`, just with a faster model.
+For trivial greetings ("hi", "thanks", "cool"), a lighter model handles the response. No need to wake the foreground model for "hello." This is a latency optimization, not a routing change — the message still goes to `chat`, just with a faster model.
 
 ---
 

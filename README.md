@@ -115,7 +115,7 @@ A **FalkorDB graph database** (Docker, native HNSW vector search) is the institu
 (:Fact) -[:SUPERSEDES]-> (:Fact)            // evolving truth, history preserved
 (:Fact) -[:EXTRACTED_FROM]-> (:Turn)        // provenance to the conversation
 (:Turn) -[:MENTIONS]->  (:Entity)           // cross-session search
-(:UserModel {communicationStyle, decisionPattern, ...})
+(:UserModel {communicationStyle, decisionPattern, topicInterests, frustrationTriggers})   // closed schema
 ```
 
 - **Importance tiers** — 5=critical (never expires) … 1=ephemeral (7 days). Eviction drops lowest importance first; identity facts are never silently trimmed.
@@ -149,7 +149,7 @@ One measured principle: **the harness holds the value, not the weights.** The en
 | Coding: `code_gen` + Pi builds | glm-5.3-flash (NVFP4) | vLLM on the Spark, OpenAI-compat (262K context; always-streamed; per-model caps incl. think-leak coercion) |
 | Router · fact extraction · steward judgment | phi4:latest | 3060 (12GB) utility box |
 | NER · consolidation | phi4-mini | 3060 |
-| Voice fast-path | qwen2.5:7b | 3060 |
+| Voice replies | `voice.model` — currently the foreground 27B | A5000 — the lean voice flow (anchored 12–24-turn window, minimal workspace, `think` off, no lessons/experiences priming) is what makes it fast; small models beside the 27B split to CPU |
 | Embeddings (every message: memory priming) | qwen3-embedding:8b | Mac Mini — `embed()` routes by model id so the embedder never shares VRAM with the router (contention silently skipped memory injection) |
 | Image generation | flux2-klein:4b-fp8 | dedicated Ollama box |
 | **Shadow router** (observation only) | Laya, 421M encoder fine-tuned on the owner's own routing data | `/v1/systemone`, ~70ms — logged beside phi4 on every message, never decides (see below) |
@@ -175,7 +175,7 @@ A `MultiBackendClient` routes each call by model id: OpenAI-compatible servers (
 | Messaging | `send_message` | Cross-channel message delivery (confirm-gated, grant-eligible) |
 | Browsing | `browser` | Dual-mode browser: DOM-first with automatic visual escalation (Xvfb + vision model). Click, type, select, fill forms on any site including SPAs |
 | Vision | *(automatic)* | Image analysis via the multimodal foreground model — descriptions injected into context for natural Q&A |
-| Voice | TTS/STT | Kokoro TTS + faster-whisper STT — voice in, voice out, with toggle hands-free mode |
+| Voice | TTS/STT | Kokoro TTS + Whisper STT (mlx-audio on Apple silicon, OpenAI-shaped HTTP) — voice in, voice out, with toggle hands-free mode |
 | Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from outcomes |
 | Data files | `code_session`, `read_file` | Upload CSV/Excel/JSON → pandas analysis in a persistent code session → charts + interpretation on request |
 | Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment). Experience informs execution; it never expands authority |
@@ -200,7 +200,7 @@ A `MultiBackendClient` routes each call by model id: OpenAI-compatible servers (
 
 **Management console** at `http://localhost:3100/console/` (React + Vite + Tailwind, served from the same process): dashboard, full chat with voice mode (VAD hands-free loop), session transcripts with tool-call details, kanban task board, cron management, memory browser, channel status, tool registry, config viewer (secrets redacted). REST API + SSE streaming underneath.
 
-**Voice:** Kokoro TTS + faster-whisper STT (both OpenAI-compatible HTTP). Voice in → voice out, text in → text out. Vision: images auto-analyzed by the multimodal foreground model and answered naturally.
+**Voice:** Kokoro TTS (`af_bella`) + whisper-large-v3-turbo STT, served by mlx-audio on the Mac mini (OpenAI-shaped HTTP; 0.3s / 0.9s warm). Voice in → voice out, text in → text out; a `[Voice] stt/dispatch/tts/total` line times every turn. Vision: images auto-analyzed by the multimodal foreground model and answered naturally.
 
 ## Autonomy That Reports for Duty
 
