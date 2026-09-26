@@ -153,7 +153,9 @@ Write a useful ${timeOfDay} update:
 - Do NOT repeat yourself or add a "Final update:" section.
 - After your reasoning, write your final update OUTSIDE of any think tags. Write it in English. /no_think`,
       }],
-      options: { temperature: 0.6, num_predict: 8192 },
+      // num_ctx explicit: without it the A5000's 8K defaultContextSize reloads the 27B
+      // at 8K and the next chat reloads it back at 32K (2026-09-26, load=7257ms).
+      options: { temperature: 0.6, num_predict: 8192, num_ctx: config.session.contextSize },
     });
 
     const raw = response.message?.content ?? '';

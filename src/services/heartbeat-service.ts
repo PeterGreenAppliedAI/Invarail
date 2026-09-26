@@ -447,7 +447,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
           const response = await client.chat({
             model: heartbeatModel,
             messages: [{ role: 'user', content: diffPrompt }],
-            options: { temperature: 0.3, num_predict: 8192 },
+            options: { temperature: 0.3, num_predict: 8192, num_ctx: config.session.contextSize },
           });
 
           const raw = (response.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
@@ -532,7 +532,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
                 '', taskBoard, '',
                 'Respond with ONLY JSON: {"summary": "bullet points"}',
               ].join('\n') }],
-              options: { temperature: 0.3, num_predict: 8192 },
+              options: { temperature: 0.3, num_predict: 8192, num_ctx: config.session.contextSize },
             });
 
             const taskRaw = (taskResponse.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
@@ -579,7 +579,11 @@ Based on these interactions, describe this specific user. Example output:
 
 Now write YOUR analysis of THIS user. Return ONLY the JSON object with your specific observations, not generic descriptions. /no_think`,
             }],
-            options: { temperature: 0.3, num_predict: 1024 },
+            // num_ctx on every foreground-model call: a call that omits it takes the
+            // host's defaultContextSize (8K on the A5000) and Ollama RELOADS the 27B
+            // at that size, then again at 32K for the next chat — 7s each way and the
+            // whole KV cache gone (live-caught after the morning briefing, 2026-09-26).
+            options: { temperature: 0.3, num_predict: 1024, num_ctx: config.session.contextSize },
           });
 
           const modelRaw = (modelResponse.message?.content ?? '').trim();
