@@ -360,7 +360,7 @@ Cron jobs dispatch with an explicit category override and `cronMode: true`. Cron
 
 ### Smart Model Routing
 
-For trivial greetings ("hi", "thanks", "cool"), a lighter model handles the response. No need to wake the foreground model for "hello." This is a latency optimization, not a routing change — the message still goes to `chat`, just with a faster model.
+For trivial greetings ("hi", "thanks", "cool"), a lighter model — `router.quickModel`, unset = no fast path — handles the response. No need to wake the foreground model for "hello." This is a latency optimization, not a routing change — the message still goes to `chat`, just with a faster model.
 
 ---
 

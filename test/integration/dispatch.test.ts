@@ -447,3 +447,34 @@ describe('bare chat forwards the specialist think flag (live-caught 2026-09-26)'
     expect('think' in chatFn.mock.calls[0][0]).toBe(false);
   });
 });
+
+describe('quick-greeting model is config, not a literal (2026-09-26)', () => {
+  function chatClient() {
+    const chatFn = vi.fn().mockResolvedValue({ message: { role: 'assistant', content: 'hey', tool_calls: null } });
+    const client = {
+      generate: vi.fn().mockResolvedValue({ response: 'chat' }),
+      chat: chatFn,
+      listModels: vi.fn().mockResolvedValue([]),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    } as unknown as OllamaClient;
+    return { client, chatFn };
+  }
+
+  it('router.quickModel set → a whitelisted greeting goes to that model', async () => {
+    const { client, chatFn } = chatClient();
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.chat = { model: 'big-model', maxTokens: 4096, temperature: 1, maxIterations: 1, tools: [] };
+    config.router.quickModel = 'tiny-model';
+    await dispatchMessage({ client, registry: new ToolRegistry(), config, message: 'hello' });
+    expect(chatFn.mock.calls[0][0].model).toBe('tiny-model');
+  });
+
+  it('router.quickModel unset → the chat specialist answers greetings itself', async () => {
+    const { client, chatFn } = chatClient();
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.chat = { model: 'big-model', maxTokens: 4096, temperature: 1, maxIterations: 1, tools: [] };
+    delete config.router.quickModel;
+    await dispatchMessage({ client, registry: new ToolRegistry(), config, message: 'hello' });
+    expect(chatFn.mock.calls[0][0].model).toBe('big-model');
+  });
+});

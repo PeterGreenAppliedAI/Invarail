@@ -81,6 +81,10 @@ export const RouterConfigSchema = z.object({
    *  so the utility model loads once and stays. The prompt is ~600 tokens. */
   contextSize: z.number().int().positive().default(8192),
   defaultCategory: z.string().default('chat'),
+  /** Model that answers whitelisted trivial greetings/acknowledgments ("hi", "thanks")
+   *  instead of the chat specialist's model. Unset = no fast path; the chat model answers.
+   *  Was a literal in dispatch.ts until 2026-09-26 — model names belong in config. */
+  quickModel: z.string().optional(),
   categories: z.record(z.string(), RouterCategorySchema).default({}),
   shadow: RouterShadowSchema.default({}),
 });

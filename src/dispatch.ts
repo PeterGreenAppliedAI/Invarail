@@ -625,11 +625,12 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
 
   // 3e. Smart model routing — ONLY for trivial greetings/acknowledgments (whitelist, not heuristic)
   // Prevents 60s model load for "hi" while keeping the full model for real conversation
-  if (!params.modelOverride && specialistConfig && effectiveCategory === 'chat'
+  // The model is config (`router.quickModel`), never a literal here; unset = no fast path.
+  const quickModel = config.router.quickModel;
+  if (quickModel && !params.modelOverride && specialistConfig && effectiveCategory === 'chat'
     && specialistConfig.tools.length === 0 && !previousCategory) {
     const TRIVIAL = /^\s*(hi|hey|hello|yo|sup|howdy|hola|what'?s up|how'?s it going|good (morning|afternoon|evening)|thanks|thank you|ok|okay|cool|got it|nope|yep|bye|goodbye|gn|night|lol|haha|nice)\s*[.!?]*\s*$/i;
     if (TRIVIAL.test(message)) {
-      const quickModel = 'phi4-mini';
       console.log(`[Dispatch] Quick greeting: "${message.trim()}" → ${quickModel}`);
       specialistConfig = { ...specialistConfig, model: quickModel };
     }
