@@ -40,7 +40,7 @@ cp .env.example .env
 
 ```bash
 npm run typecheck   # Should pass with zero errors
-npm test            # 881 tests should pass
+npm test            # 993 tests should pass
 ```
 
 ## Project Structure
@@ -54,7 +54,7 @@ src/
 ├── router/               # Intent classification (3-tier fallback)
 ├── tool-loop/            # ReAct tool-calling loop engine
 ├── ollama/               # Ollama HTTP client (chat, stream, embed)
-├── channels/             # Pluggable adapters (Discord, Web, WhatsApp, etc.)
+├── channels/             # Pluggable adapters (Discord, Telegram, Gmail, Web)
 ├── services/             # TTS (QwenTTS) and STT (Whisper) services
 ├── tools/                # Tool implementations
 ├── agents/               # Workspace files + agent routing

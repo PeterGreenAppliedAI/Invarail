@@ -243,7 +243,7 @@ src/
     prompt-builder.ts       #   buildReActSystemPrompt(), buildScratchpad()
     types.ts                #   ReActStep, ReActResult, ReActConfig
 
-  tools/                    # 34 tool implementations
+  tools/                    # ~44 tool implementations
     types.ts                #   InvarailTool, ToolContext, ToolExecutor interfaces
     registry.ts             #   ToolRegistry class
     register-all.ts         #   registerAllTools() — wires all tools

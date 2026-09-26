@@ -7,18 +7,18 @@ Setup and usage detail for Invarail's features. The [README](README.md) is the f
 | Capability | Tools | Description |
 |-----------|-------|-------------|
 | Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, default) or Brave/Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
-| Research | `web_search`, `web_fetch`, `code_session`, `reason` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
+| Research | `web_search`, `web_fetch`, `code_session` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
 | Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
-| Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only security gate |
+| Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only code gate; served by `multi` since the `personal` category was retired (2026-08-10) |
 | Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands or Docker sandbox, persistent Python/Node/Bash REPL sessions, safe file I/O |
 | Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit`, `cron_run` | Real cron expressions, timezone-aware, persistent; `cron_run` triggers any job immediately without touching its schedule |
 | Task Board | `task_add`, `task_list`, `task_update`, `task_done`, `task_remove` | Persistent kanban-style task system with TASKS.md rendering |
-| Reasoning | `reason` | Forced synthesis pass over gathered tool observations — deep analysis, content formatting |
+| Reasoning | ~~`reason`~~ | Removed 2026-08-10 (0 uses in 30 days; the forced-reasoning engine paths went with it — DECISIONS). Synthesis is a pipeline stage or the arena's own turn |
 | Messaging | `send_message` | Cross-channel message delivery (confirm-gated, grant-eligible) |
 | Browsing | `browser` | Dual-mode browser: DOM-first with automatic visual escalation (Xvfb + vision model). Click, type, select, fill forms on any site including SPAs |
 | Vision | *(automatic)* | Image analysis via the multimodal foreground model — descriptions injected into context for natural Q&A |
 | Voice | TTS/STT | Kokoro TTS + Whisper STT (mlx-audio on Apple silicon, OpenAI-shaped HTTP) — voice in, voice out, with toggle hands-free mode |
-| Multi-task | `plan` pipeline | LLM decomposes goal into steps, self-reflects, code executes with browser/tools, learns from outcomes |
+| Multi-task | `multi` (arena) | Open ReAct loop over the widest tool set, incl. the owner-only Gmail/Calendar reads; natural stop. Replaced the plan pipeline 2026-08-21 (DECISIONS "The Arena Duel": 7/7 vs 7/7 at 4.7× the cost) |
 | Data files | `code_session`, `read_file` | Upload CSV/Excel/JSON → pandas analysis in a persistent code session → charts + interpretation on request |
 | Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment). Experience informs execution; it never expands authority |
 | Lessons | `!lessons` *(+ automatic)* | Negative procedural memory — approach-level boundaries harvested from observed failures, injected only after recurrence (evidence ≥ 2) |
@@ -110,16 +110,9 @@ Incoming images run through the multimodal foreground model automatically: attac
 vision: { enabled: true, model: "qwen3.8-27b", maxTokens: 512 },
 ```
 
-## WhatsApp
+## WhatsApp (removed 2026-08-10)
 
-Connects via [Baileys](https://github.com/WhiskeySockets/Baileys) (WebSocket, no Puppeteer/Chrome).
-
-1. `whatsapp: { enabled: true }` in config, start the bot
-2. A QR code appears in the terminal
-3. Phone: **WhatsApp → Settings → Linked Devices → Link a Device**, scan with WhatsApp's built-in scanner
-4. Session persists in `.baileys_auth/` — restarts reconnect automatically
-
-Re-link (expired session): `rm -rf .baileys_auth` and restart. WhatsApp may unlink devices after ~14 days of inactivity; reconnection is automatic, full logout needs a re-scan.
+The Baileys adapter was removed on principle, not usage: an agent that answers messages *as* the owner is impersonation — communication identity is not delegable (DECISIONS "the Invarail trim"). Slack, iMessage and MS Graph adapters went in the same trim (zero sessions ever). The 5-method `ChannelAdapter` interface still makes any platform a one-file addition if the identity question is answered differently.
 
 ## Document Generation
 

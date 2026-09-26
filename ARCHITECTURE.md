@@ -257,9 +257,9 @@ The ladder rung between propose_confirm and blanket `autoApproveTools`. Tools de
 
 The runtime agent's own DECISIONS.md: "approach X failed for task-shape Y; the boundary is Z." **Code detects** — candidates harvested from on-disk evidence (max-iteration dispatches with request previews, repeated tool failures, repair clusters, rejected autonomous actions, dead letters), never model self-assessment. **Model explains** — heartbeat-only grammar-constrained synthesis with stale-facts guards (max 3 new/cycle, batch distrust) and a dedup ladder that reinforces existing lessons. **Recurrence is the code gate:** lessons auto-save at evidence:1 (listed in the heartbeat report, `!lessons drop` reverses) but only steer at evidence ≥ 2 — injected as floor-gated one-liners (max 2) in user priming plus tool-tagged boundaries through findHints. Each lesson records the model that produced the failure; a model swap makes it a staleness candidate. Together: FalkorDB remembers the user, skills remember what worked, lessons remember where the boundaries are.
 
-### Skill System (procedural memory, `src/skills/`)
+### Skill System — retired 2026-08-10
 
-Successful plan-pipeline runs are distilled into markdown skills (generalized description + `triggers:` preserving up to 5 concrete past requests). Matching is **semantic-first** (embeddings in the shared EmbeddingStore under `source:'skill'`, floor 0.65 — measured, not guessed) with keyword scoring as fallback; save-time dedup runs a ladder (slug → hybrid match → grammar-constrained judge) that *revises* existing skills instead of minting near-duplicates. `cronMode` structurally blocks heartbeat/cron from matching or saving skills. ReAct specialists reach skills via the `skill_find` tool (progressive disclosure — catalog stays out of the prompt). All skill events flow through `logAutonomousAction` so the log shows the system living.
+Successful plan-pipeline runs used to be distilled into markdown skills with semantic matching and save-time dedup. Three hijacked runs in one week showed the failure mode: replayed recipes became an authority surface, and self-reinforcement made wrong matches stronger. Retired with the plan pipeline; the successor is graph experience memory under the invariant *experience informs execution, never expands authority* (DECISIONS "the Invarail trim"). Rebuilding skills under another name is the named failure mode.
 
 ## Security — the Authority Plane (6 layers in dispatch)
 
@@ -356,17 +356,16 @@ Resource limits          CPU/memory per exec           Roadmap
 |-----------|-----------|
 | Runtime | Node.js 22+ (ESM) |
 | Language | TypeScript 5.7 (strict) |
-| AI Backend | vLLM (foreground reasoning) + Ollama gateway (utility/modality models) |
+| AI Backend | Ollama-native hosts (A5000 foreground, 3060 utility, Mac mini embedder) + vLLM on the Spark (coding); mlx-audio on the Mac mini (voice); Laya System-One server (shadow router) |
 | Web Search | SearXNG (self-hosted, primary) — Brave/Perplexity/Grok/Tavily selectable |
 | Graph Memory | FalkorDB (Redis wire protocol, HNSW vectors) |
 | Knowledge Store | better-sqlite3 (vector embeddings) |
 | Discord | discord.js 14 |
 | Telegram | grammy |
-| WhatsApp | @whiskeysockets/baileys |
 | Browser | playwright-core |
 | Charts | matplotlib + seaborn (Python) |
 | Document Gen | LibreOffice (headless) |
 | Scheduling | croner |
 | Config | JSON5 + Zod |
 | Chrome Extension | WXT + React + TypeScript (Manifest V3) |
-| Testing | Vitest (451 tests, 33 files) |
+| Testing | Vitest (993 tests, 104 files) |

@@ -49,7 +49,7 @@ Frontier-model agent frameworks assume a model that reliably handles 15+ tools, 
 Invarail's response is structural, not prompt-hopeful:
 
 - **Router + Specialist** — a fast model (phi4 today; a 421M System-One encoder in shadow) classifies intent into one category; each specialist sees only its tools. No 80-tool menus.
-- **Deterministic pipelines** — most categories run typed stage sequences (extract → tool → synthesize → validate) where code decides "what step next," with grammar-constrained extraction, JSON repair, and per-stage degrade-not-abort fallbacks.
+- **Pipelines only where stages verify** — `research` and the heartbeat run typed stage sequences where code decides "what step next," with grammar-constrained extraction, JSON repair, and per-stage degrade-not-abort fallbacks. Everything else runs in the arena: an open ReAct loop inside the same walls (DECISIONS 2026-08-21 — the duel showed choreography cost 4.7× for the same result).
 - **Everything measured** — a [published 39-row engine-in-the-loop model eval](evals/2026-08-local-model-eval/) drives model/config choices. The same model swung 82%→100% on one thinking flag; there are no universal settings, only measured ones.
 - **Code gates, never model judgment** — every security boundary is enforced in code before any model is involved.
 
@@ -65,7 +65,7 @@ Each of these has a full section in the docs; the README keeps the one-paragraph
 
 **Research, verified.** The `research` pipeline gathers local-first (a personal web index before any SERP), decomposes into facets, drafts an analytical report, then checks its own claims against the cached pages that mention them and cross-checks the high-impact ones with one independent search each. Corrections are code-spliced sentences; zero sources aborts rather than answers from memory; rendering is deterministic (markdown in, LibreOffice PDF out, `verification.json` alongside). → [ARCHITECTURE.md: Research](ARCHITECTURE.md#research-claim-verification)
 
-**Models.** One principle, measured six swaps deep: the harness holds the value, not the weights. The foreground model is one config line (`defaultModel`, currently qwen3.8:27B on a 24GB A5000); phi4 routes and extracts on a 3060; the embedder lives alone on a Mac mini; coding goes to glm-5.3-flash on the Spark; a 421M Laya encoder shadows the router and is logged, never decides. Thinking is a per-stage property, not a per-model one. → [ARCHITECTURE.md: Multi-Model Strategy](ARCHITECTURE.md#multi-model-strategy-two-backends) · [ROUTING.md: Shadow Router](ROUTING.md#layer-4b-shadow-router-observation-only-2026-09-25)
+**Models.** One principle, measured five swaps deep: the harness holds the value, not the weights. The foreground model is one config line (`defaultModel`, currently qwen3.8:27B on a 24GB A5000); phi4 routes and extracts on a 3060; the embedder lives alone on a Mac mini; coding goes to glm-5.3-flash on the Spark; a 421M Laya encoder shadows the router and is logged, never decides. Thinking is a per-stage property, not a per-model one. → [ARCHITECTURE.md: Multi-Model Strategy](ARCHITECTURE.md#multi-model-strategy-two-backends) · [ROUTING.md: Shadow Router](ROUTING.md#layer-4b-shadow-router-observation-only-2026-09-25)
 
 **Capabilities, channels, console.** Web search and research, memory, Gmail/Calendar (read-only, owner-only), sandboxed execution and code sessions, cron, a task board, cross-channel messaging, a dual-mode browser, vision, voice (Kokoro + Whisper via mlx-audio), documents, image generation, Pi builds, the MCP bridge, standing grants, heartbeat and briefings, knowledge import, and a Chrome side panel — on Discord, Telegram, Gmail, the web API, and a management console with voice mode. → [FEATURES.md: Capabilities at a Glance](FEATURES.md#capabilities-at-a-glance)
 
@@ -80,13 +80,13 @@ git clone https://github.com/PeterGreenAppliedAI/Invarail.git
 cd Invarail
 npm install
 cd console && npm install && npm run build && cd ..
-npm run setup        # interactive wizard: models, channels, security, memory, voice, preflight
+npm run setup        # interactive wizard: tier, Ollama + models, channels, services (memory/search/voice), workspace, preflight
 npx tsx src/index.ts
 ```
 
 **Prerequisites:** Node 22+, [Ollama](https://ollama.ai) reachable, and models for the roles you enable (the wizard detects what you have). Python 3 + matplotlib/pandas for research charts. Docker for the exec sandbox and FalkorDB graph memory (the wizard offers auto-install). LibreOffice for document/PDF generation.
 
-**Search:** defaults to self-hosted **SearXNG** (`tools.web.search: { provider: "searxng", baseUrl: "..." }`, JSON format enabled in its settings). Brave/Perplexity/Grok/Tavily available by switching `provider`. Note from experience: a metasearch host spends its IP reputation with every upstream engine — Invarail ships per-provider politeness throttles because agents are out-of-distribution callers for human-paced infrastructure.
+**Search:** the reference deployment uses self-hosted **SearXNG** (`tools.web.search: { provider: "searxng", baseUrl: "..." }`, JSON format enabled in its settings); the schema default is `brave`, and Perplexity/Grok/Tavily are a `provider` switch away. Note from experience: a metasearch host spends its IP reputation with every upstream engine — Invarail ships per-provider politeness throttles because agents are out-of-distribution callers for human-paced infrastructure.
 
 **Security minimums** before exposing anything:
 
@@ -131,8 +131,10 @@ src/
   channels/            # adapters: Discord/Telegram/Gmail/Web (+ Chrome extension bridge)
   console/             # management console API
   exec/                # Docker sandbox + persistent code sessions
-  webindex/            # personal vertical index (RSS-first honest crawler)
-  cron/ tasks/ sessions/ services/ context/ config/
+  agents/ identity/     # workspace scoping + principals (who a sender is, across channels)
+  knowledge/ webindex/  # knowledge import store; personal vertical index (RSS-first honest crawler)
+  plugins/ setup/ cli/  # plugin loader; the setup wizard; terminal client
+  cron/ tasks/ sessions/ services/ context/ config/ temporal/ browser/
 console/               # React management console
 chrome-extension/      # WXT + React side panel companion
 evals/                 # published model evals + duel artifacts
@@ -175,10 +177,10 @@ Several architectural patterns were adapted from open source agent frameworks:
 |---------|----------------|
 | **[Hermes Agent](https://github.com/nousresearch/hermes-agent)** (NousResearch) | Structured context compression (Goal/Progress/Next Steps), frozen memory snapshots, character-bounded memory, smart model routing, tool-pair sanitization, CLI inspiration |
 | **[Deep Agents](https://github.com/langchain-ai/deepagents)** (LangChain) | Progressive disclosure (compact index, read on demand), subagent context isolation, tool argument truncation in older messages |
-| **[agent-reasoning](https://github.com/jasperan/agent-reasoning)** (jasperan) | Self-reflection stage for the plan pipeline (draft → critique → improve) |
+| **[agent-reasoning](https://github.com/jasperan/agent-reasoning)** (jasperan) | Self-reflection stage for the plan pipeline (draft → critique → improve) — the plan pipeline was retired for dispatch 2026-08-21; the pattern survives in research's verification stages |
 | **[Goose](https://github.com/aaif-goose/goose)** (AAIF/Block) | Tool-specific error recovery (errors as actionable prompts), structured sub-dispatch results, LLM-based observation summarization |
 
-Those frameworks assume frontier models drive the agent. Invarail's contribution is making the patterns hold when a local 27B is driving — deterministic pipelines control flow, code owns authority, and the model does only the parts that require judgment.
+Those frameworks assume frontier models drive the agent. Invarail's contribution is making the patterns hold when a local 27B is driving — pipelines control flow where stages can verify, the arena runs the rest inside code-owned walls, and the model does only the parts that require judgment.
 
 Coding substrate: **[Pi](https://pi.dev)** by Earendil Works (MIT, embedded via SDK).
 

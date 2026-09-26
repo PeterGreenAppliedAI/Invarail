@@ -1,5 +1,7 @@
 # Gateway Requirements — what Invarail needs from the inference gateway
 
+> **Status 2026-09-26:** no gateway is in the inference path any more — the utility tier moved to a 3060 reached directly as an Ollama-native backend (2026-09-19), the embedder to its own Mac mini, the foreground model to an A5000, coding to vLLM on the Spark. This document is kept as the contract for a gateway, should one return.
+>
 > **Status 2026-08-29:** the gateway now serves ONLY the utility tier (phi4:14b
 > router, phi4-mini NER, qwen3-embedding:8b, whisper). The foreground model
 > (glm-5.3-flash) is served directly by vLLM — not through the gateway — so the

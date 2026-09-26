@@ -61,7 +61,7 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 | Planned | **Coding substrate Phase C** | Falkor experience briefs into Pi sessions; post-session harvest (events → graph); memory verified only by the merge gate's own validation event |
 | Planned | **Weekly research newsletter** | Cron-scheduled verified research digest with flow-powered gathering |
 | Planned | **Self-wake** | `sleep_until`/`wake_on` tools with quotas (max pending, min interval, cronMode-filtered resume) — continuation machinery landed July 25 |
-| Blocked | **Gateway passthrough** | Constrained decoding + keep_alive + full num_ctx blocked on the gateway's normalization-layer refactor (GATEWAY-REQUIREMENTS.md has the contract + acceptance tests) |
+| Retired | **Gateway passthrough** | The gateway left the inference path 2026-09-19 — every host is Ollama-native direct (A5000, 3060, Mini) or vLLM direct (Spark). GATEWAY-REQUIREMENTS.md stays as the contract if a gateway returns |
 | Planned | **Cross-channel sessions** | Map user IDs across channels to shared sessions (Slice 3 — principal layer landed; dragons documented in CONTINUATION.md) |
 | Planned | **Rebrand** | Rename from Invarail to new identity (plan exists, 357 references mapped across 80 files) |
 

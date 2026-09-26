@@ -46,7 +46,7 @@ Then in your config:
 - Web search: add `tools.web.search` pointing at SearXNG
   (`http://localhost:8080`) and a `web_search` router category + specialist.
 - A chat channel: `channels.discord: { enabled: true, token: "${DISCORD_TOKEN}" }`
-  (token in `.env`). Telegram, Slack, and WhatsApp follow the same shape.
+  (token in `.env`). Telegram follows the same shape; Gmail is read-only and uses OAuth (see FEATURES.md).
 
 ## Tier 2 — power user
 

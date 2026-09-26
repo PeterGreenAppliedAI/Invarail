@@ -127,7 +127,7 @@ High-confidence patterns that the router model gets wrong often enough to warran
 | Pattern | Routes To | Why It Exists |
 |---------|-----------|---------------|
 | Message IS a bare URL (or a short "check this" wrapper with no other intent) | `website` | Model classified bare URLs as `web_search`. Narrowed July 2026: the original any-URL-anywhere rule hijacked "research X, start from <url>" into a page summary — a URL inside a larger request now lets the model see the full intent |
-| Email/calendar + time words | `personal` | Model classified "check my calendar" as `chat` |
+| ~~Email/calendar + time words~~ | ~~`personal`~~ | Retired with the category (2026-08-10). Email/calendar reads now reach `multi` through its description — 6/6 misroutes until the description said so (2026-09-25) |
 | "Make a PDF report" | `research` | Model classified report generation as `multi` or `chat` |
 | "Go to [site]" + domain | `multi` | Model didn't recognize browser navigation intent |
 | "Research/analyze" + "stock/market/trend" | `research` | Model classified research requests as `web_search` |
@@ -250,7 +250,7 @@ After classification, six security gates filter what a user can do. These run in
 
 ```
 Layer 1: allowedCategories
-  └── Channel whitelist. WhatsApp might only allow chat + web_search.
+  └── Channel whitelist. A public Telegram channel might only allow chat + web_search.
       Category not in the list → downgraded to chat.
 
 Layer 2: ownerOnlyTools
@@ -368,7 +368,7 @@ For trivial greetings ("hi", "thanks", "cool"), a lighter model handles the resp
 A critical architectural detail. There are two ways messages reach dispatch:
 
 ```
-Discord / Telegram / WhatsApp / iMessage
+Discord / Telegram / Gmail
   → orchestrator.handleMessage()
     → attachment pre-processing
     → resolveRoute()
