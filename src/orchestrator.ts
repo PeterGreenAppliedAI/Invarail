@@ -1558,8 +1558,13 @@ export class Orchestrator {
 
     // STT pre-processing: transcribe voice messages to text
     const hadAudio = !!msg.audio;
+    // Voice turns log a per-stage breakdown — "it's slow" was unanswerable without
+    // it (2026-09-25: the seconds were model eviction on the 3060, not the servers).
+    let sttMs = 0;
     if (msg.audio && this.sttService.enabled) {
+      const sttStart = Date.now();
       const transcription = await this.sttService.transcribe(msg.audio.data, msg.audio.mimeType);
+      sttMs = Date.now() - sttStart;
       if (transcription) {
         console.log(`[Orchestrator] STT transcribed: "${transcription.slice(0, 80)}${transcription.length > 80 ? '...' : ''}"`);
         msg.content = transcription;
@@ -1863,7 +1868,9 @@ export class Orchestrator {
       if (hadAudio && this.ttsService.enabled) {
         msg.onProgress?.('thinking');
 
+        const dispatchStart = Date.now();
         const result = await dispatchMessage({ ...dispatchBase });
+        const dispatchMs = Date.now() - dispatchStart;
 
         console.log(`[Orchestrator] → ${result.category} (${result.iterations} steps, voice)`);
 
@@ -1873,7 +1880,10 @@ export class Orchestrator {
         const voiceText = voiceMedia.cleanText || result.answer;
 
         msg.onProgress?.('tts');
+        const ttsStart = Date.now();
         const audioBuffer = await this.ttsService.synthesize(voiceText);
+        const ttsMs = Date.now() - ttsStart;
+        console.log(`[Voice] stt=${sttMs}ms dispatch=${dispatchMs}ms tts=${ttsMs}ms total=${sttMs + dispatchMs + ttsMs}ms model=${this.config.voice.model} reply=${voiceText.length} chars`);
         const target = { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id };
         const voiceAttachments = voiceMedia.attachments.length > 0 ? voiceMedia.attachments : undefined;
 
