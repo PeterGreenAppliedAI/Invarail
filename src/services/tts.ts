@@ -21,7 +21,7 @@ export class TTSService {
 
     try {
       const payload = {
-        model: 'tts-1',
+        model: this.config.model,
         input: text,
         voice: this.config.voice,
         response_format: this.config.format,
@@ -56,7 +56,7 @@ export class TTSService {
     if (!this.config.enabled || !text.trim()) return;
 
     const payload = {
-      model: 'tts-1',
+      model: this.config.model,
       input: text,
       voice: this.config.voice,
       response_format: this.config.format,

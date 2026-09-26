@@ -28,6 +28,10 @@ export class STTService {
       formData.append('file', blob, `audio.${ext}`);
       formData.append('model', this.config.model);
       formData.append('language', this.config.language);
+      // OpenAI-shaped {text} reply. mlx-audio's default is its native ndjson
+      // stream, which this parser cannot read (2026-09-25); OpenAI-compatible
+      // servers accept the field and return the same shape they always did.
+      formData.append('response_format', 'json');
 
       const res = await fetch(`${this.config.url}/v1/audio/transcriptions`, {
         method: 'POST',

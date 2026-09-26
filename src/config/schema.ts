@@ -354,6 +354,10 @@ export const BrowserConfigSchema = z.object({
 export const TTSConfigSchema = z.object({
   enabled: z.boolean().default(false),
   url: z.string().default('http://127.0.0.1:5005'),
+  /** Model id sent on /v1/audio/speech. Was the hardcoded literal 'tts-1' — a
+   *  server that resolves models by name (mlx-audio: an HF repo id such as
+   *  mlx-community/Kokoro-82M-bf16) cannot serve that (2026-09-25). */
+  model: z.string().default('tts-1'),
   voice: z.string().default('serena'),
   format: z.enum(['wav', 'opus', 'mp3']).default('opus'),
 });
