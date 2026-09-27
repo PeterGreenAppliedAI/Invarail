@@ -35,6 +35,8 @@ export interface DetectReport {
   searxng: { baseUrl: string; state: 'ok' | 'json-disabled' | 'unreachable'; start: string };
   libreoffice: Probe;
   python: Probe;
+  /** Optional: the vault tier is a folder of markdown; Obsidian is the viewer people expect for it. */
+  obsidian: Probe;
   config: { path: string; present: boolean };
   env: { present: boolean };
 }
@@ -73,6 +75,11 @@ export const INSTALL_HINTS: Record<string, Record<Platform, string>> = {
     mac: 'brew install --cask libreoffice',
     linux: 'sudo apt install libreoffice   (or your distro\'s package)',
     windows: 'winget install TheDocumentFoundation.LibreOffice',
+  },
+  obsidian: {
+    mac: 'brew install --cask obsidian   (https://obsidian.md/download)',
+    linux: 'flatpak install -y flathub md.obsidian.Obsidian   (or the AppImage from https://obsidian.md/download)',
+    windows: 'winget install Obsidian.Obsidian   (https://obsidian.md/download)',
   },
   python: {
     mac: 'python3 -m pip install matplotlib pandas   (python3 via brew install python)',
@@ -113,6 +120,28 @@ export async function detectLibreOffice(p: Platform = detectPlatform()): Promise
   const which = await run(p === 'windows' ? 'where' : 'which', ['soffice']);
   if (which.ok && which.out) return { found: true, detail: which.out.split('\n')[0] };
   return { found: false, detail: 'soffice not found', install: INSTALL_HINTS.libreoffice[p] };
+}
+
+const OBSIDIAN_CANDIDATES: Record<Platform, string[]> = {
+  mac: ['/Applications/Obsidian.app', `${process.env.HOME ?? ''}/Applications/Obsidian.app`],
+  linux: ['/usr/bin/obsidian', '/usr/local/bin/obsidian', '/snap/bin/obsidian', `${process.env.HOME ?? ''}/.local/share/flatpak/exports/bin/md.obsidian.Obsidian`, '/var/lib/flatpak/exports/bin/md.obsidian.Obsidian'],
+  windows: [`${process.env.LOCALAPPDATA ?? ''}\\Obsidian\\Obsidian.exe`, `${process.env.LOCALAPPDATA ?? ''}\\Programs\\Obsidian\\Obsidian.exe`],
+};
+
+/** Obsidian is optional — the vault is plain markdown — but it is what a vault-tier user opens. */
+export async function detectObsidian(p: Platform = detectPlatform()): Promise<Probe> {
+  for (const c of OBSIDIAN_CANDIDATES[p]) if (c && existsSync(c)) return { found: true, detail: c };
+  const which = await run(p === 'windows' ? 'where' : 'which', ['obsidian']);
+  if (which.ok && which.out) return { found: true, detail: which.out.split('\n')[0] };
+  return { found: false, detail: 'Obsidian not found', install: INSTALL_HINTS.obsidian[p] };
+}
+
+/** The argv that installs Obsidian on this platform — for the wizard's offer (never run unasked). */
+export function obsidianInstallArgs(p: Platform = detectPlatform()): { cmd: string; args: string[] } | undefined {
+  if (p === 'mac') return { cmd: 'brew', args: ['install', '--cask', 'obsidian'] };
+  if (p === 'windows') return { cmd: 'winget', args: ['install', 'Obsidian.Obsidian'] };
+  if (p === 'linux') return { cmd: 'flatpak', args: ['install', '-y', 'flathub', 'md.obsidian.Obsidian'] };
+  return undefined;
 }
 
 export async function detectPython(p: Platform = detectPlatform()): Promise<Probe> {
@@ -173,13 +202,14 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     ...(gpuMatch ? { gpuName: gpuMatch[1].trim(), gpuVramGb: Math.round(Number(gpuMatch[2]) / 1024 * 10) / 10 } : {}),
   };
   const ollamaBackends = await Promise.all((opts.ollamaBackendUrls ?? []).map(probeOllama));
-  const [ollama, docker, falkorUp, searxngState, libreoffice, python] = await Promise.all([
+  const [ollama, docker, falkorUp, searxngState, libreoffice, python, obsidian] = await Promise.all([
     probeOllama(ollamaUrl),
     detectDocker(p),
     opts.offline ? Promise.resolve(false) : tcpReachable(falkor.host, falkor.port),
     opts.offline ? Promise.resolve<DetectReport['searxng']['state']>('unreachable') : detectSearxng(searxngUrl),
     detectLibreOffice(p),
     detectPython(p),
+    detectObsidian(p),
   ]);
 
   return {
@@ -193,6 +223,7 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     searxng: { baseUrl: searxngUrl, state: searxngState, start: 'docker compose up -d searxng   (read SEARXNG.md first)' },
     libreoffice,
     python,
+    obsidian,
     config: { path: configPath, present: existsSync(configPath) },
     env: { present: existsSync('.env') },
   };

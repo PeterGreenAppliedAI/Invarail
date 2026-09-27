@@ -327,6 +327,16 @@ const TOOL_ACTION_VERBS: Record<string, string[]> = {
   calendar_read: ['checked', 'searched', 'looked', 'retrieved', 'found'],
 };
 
+/** "Let me add those now" / "I'll create the tasks" / "I need to call the tool" — an intent
+ *  to act stated in the answer's own voice, with nothing done. Short answers only: a long
+ *  answer that happens to contain "let me know" is a reply, not a stall. */
+export function announcesToolIntent(text: string): boolean {
+  const t = text.trim();
+  if (t.length === 0 || t.length > 600) return false;
+  return /\b(let me|i'?ll|i will|i need to|i should|i'?m going to|i am going to|now i(?:'ll| will)?)\b[^.!?\n]{0,80}\b(call|use|add|create|save|run|search|schedule|write|check|fetch|start|look up|set up|make|record|invoke)\b/i.test(t)
+    && !/\blet me know\b/i.test(t);
+}
+
 function claimsActionWithoutToolCall(text: string, recentToolNames: string[]): boolean {
   const claimsAction = ACTION_CLAIM_PATTERNS.some(p => p.test(text));
   const claimsData = DATA_CLAIM_PATTERNS.some(p => p.test(text));
@@ -546,6 +556,7 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
   const steps: ReActStep[] = [];
   let hallucinationRepairAttempted = false;
   let refusalRepairAttempted = false;
+  let intentRepairAttempted = false;   // 'let me add those now' with no call — one more nudge, once
   let emptyRetryAttempted = false;
   // The last NON-EMPTY answer a behavioral repair (hallucination / premature) sent
   // back for another try. If the retry comes back empty, this is returned instead:
@@ -936,6 +947,25 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
           + 'If NO tool is relevant to this request, simply restate your answer directly — do not invent tool calls.',
       });
       refusalRepairAttempted = true;
+      extraIterations++;
+      continue;
+    }
+
+    // Announced intent, no action: after the refusal repair a small model often concedes
+    // ("You're right — I need to actually call the tools. Let me add them.") and stops
+    // there. That is not a restated answer and not a refusal; it is a stall. One more
+    // nudge, once — bounded like every other repair (qwen3.5:9b, 3 of 5 e2e batteries
+    // on the task-board request, 2026-09-27).
+    if (hasToolAccess && steps.length === 0 && refusalRepairAttempted && !intentRepairAttempted && announcesToolIntent(answer)) {
+      console.log(`[ReAct] Step ${i + 1}: announced an action but made no tool call — "${answer.slice(0, 80)}..."`);
+      if (answer.trim()) lastRejectedAnswer = answer;
+      messages.push(msg);
+      messages.push({
+        role: 'user',
+        content: 'You announced an action but did not call any tool. Announcing is not doing: call the tool now. '
+          + 'If you are not going to act, say so plainly instead of saying you will.',
+      });
+      intentRepairAttempted = true;
       extraIterations++;
       continue;
     }

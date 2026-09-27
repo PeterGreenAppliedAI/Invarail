@@ -107,6 +107,31 @@ timeouts and 5-second reloads per battery — until the generated config also wr
 `ollama.defaultContextSize`; and the harness itself had to build its client from the
 generated config to see it.
 
+## Reliability: three reps of qwen3.5:9b (`reliability/`)
+
+The board is one rep per task. A reviewer (rightly) asked what that hides. Three full
+batteries of qwen3.5:9b under the wizard's own config (small profile, fresh workspace,
+33 task-reps):
+
+| Task | Passes | What happened |
+|---|---|---|
+| 9 of the 11 tasks, research included | **3/3** each | identical or near-identical traces every rep |
+| web-fact-to-file | 2/3 | one rep the router chose `exec` over `multi`; the task still ran but without a web search |
+| task-board | **0/3** | the same stall every time: "I'll add these three tasks now…", the repair prompt, then "You're right — I need to actually call the tools. Let me create them." and a stop |
+
+So the flip in the board's 94% row was not a flip. It is a **deterministic stall** on this
+model for this request shape: the premature-answer repair makes the model *concede*, and
+conceding is where it stops. That is a code-detectable pattern — an answer that announces
+an action in its own voice ("let me…", "I'll…", "I need to call…") with no tool call —
+so the engine now sends one more nudge, once, bounded like every repair: *"Announcing is
+not doing: call the tool now. If you are not going to act, say so plainly."* Rerun of the
+task under the nudge: **3/3** (`task-board-after-intent-nudge.log`) — two reps needed it,
+one went straight to the tools.
+
+Reliability, then, for a 9B through the real front door: 30/33 task-reps before the nudge,
+with the three misses being one behaviour that is now guarded, plus one routing flip in
+three on a request that is defensibly either category.
+
 ## Reading the numbers
 
 - **Prompt tokens per battery are ~77K for 11 tasks** on the 9B/12B — the system prompt is

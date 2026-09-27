@@ -18,9 +18,13 @@
  * mappings — enough for OKF's queryable fields without a YAML dependency.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { basename, extname, join, relative } from 'node:path';
+import { basename, extname, join, relative, sep } from 'node:path';
 
 export const OKF_VERSION = '0.2';
+
+/** Bundle-relative paths in artifacts (links, logs, reports, index keys) are always `/`-separated,
+ *  whatever the OS — a Windows install must not write backslash markdown links. */
+export const toPosix = (p: string): string => p.split(sep).join('/');
 export const RESERVED_FILES = new Set(['index.md', 'log.md']);
 
 export interface FrontMatter { [key: string]: unknown }
@@ -220,7 +224,7 @@ export function checkBundle(vaultPath: string): ConformanceIssue[] {
       const full = join(dir, d.name);
       if (d.isDirectory()) { walk(full); continue; }
       if (extname(d.name).toLowerCase() !== '.md' || isReservedName(d.name)) continue;
-      const rel = relative(vaultPath, full);
+      const rel = toPosix(relative(vaultPath, full));
       const { data, hasFrontMatter } = parseFrontMatter(readFileSync(full, 'utf-8'));
       if (!hasFrontMatter) issues.push({ file: rel, issue: 'no front matter' });
       else if (typeof data.type !== 'string' || !data.type) issues.push({ file: rel, issue: 'front matter has no `type`' });

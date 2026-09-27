@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { convertVaultToOkf } from '../../knowledge/okf.js';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { askText, askYesNo, askChoice, printStep, printSuccess, printWarning, printInfo, printError } from '../prompts.js';
-import { testHttpEndpoint, testDocker, installFalkorDB, composeUp } from '../connectivity.js';
+import { testHttpEndpoint, testDocker, installFalkorDB, composeUp, runInstallArgs } from '../connectivity.js';
+import { obsidianInstallArgs } from '../detect.js';
 import { findVisionModels, findReasoningModels } from '../defaults.js';
 import { detectSearxng, type DetectReport } from '../detect.js';
 import type { OllamaModel } from '../../ollama/types.js';
@@ -263,6 +264,25 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     if (tierIndex >= 2) {
       result.memory.vaultPath = await askText('Vault folder (your Obsidian vault, or a new folder)', 'vault');
       result.memory.okf = tierIndex === 3;
+      // The folder is just markdown: create it if it is new (not an install, no question).
+      if (!existsSync(result.memory.vaultPath)) {
+        mkdirSync(result.memory.vaultPath, { recursive: true });
+        printSuccess(`Created ${result.memory.vaultPath}`);
+      }
+      // Obsidian is the viewer people expect for it — optional, detected, offered, never silently installed.
+      if (report?.obsidian.found) {
+        printSuccess(`Obsidian: ${report.obsidian.detail}`);
+      } else if (report) {
+        printInfo(`Obsidian is not installed — the vault works with any editor; Obsidian is the nicest way to read and edit it.`);
+        const cmd = obsidianInstallArgs(report.platform);
+        if (cmd && await askYesNo(`Install Obsidian now (${cmd.cmd} ${cmd.args.join(' ')})?`, false)) {
+          if (runInstallArgs(cmd.cmd, cmd.args)) printSuccess('Obsidian installed');
+          else printError(`Install failed — do it yourself: ${report.obsidian.install}`);
+        } else {
+          printInfo(`Later: ${report.obsidian.install}`);
+        }
+      }
+      printInfo(`When setup finishes: open Obsidian → "Open folder as vault" → ${result.memory.vaultPath}. The indexes, log and fact notes Invarail writes appear there as ordinary notes with properties.`);
       if (result.memory.okf && result.memory.vaultPath && existsSync(result.memory.vaultPath)) {
         const pending = convertVaultToOkf(result.memory.vaultPath, { apply: false }).candidates;
         if (pending.length > 0) {

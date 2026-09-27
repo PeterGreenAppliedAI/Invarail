@@ -17,6 +17,7 @@ const base: DetectReport = {
   searxng: { baseUrl: 'http://localhost:8080', state: 'unreachable', start: 'docker compose up -d searxng' },
   libreoffice: { found: false, detail: 'soffice not found', install: 'brew install --cask libreoffice' },
   python: { found: true, detail: 'Python 3.12' },
+  obsidian: { found: false, detail: 'Obsidian not found', install: 'brew install --cask obsidian' },
   config: { path: 'invarail.config.json5', present: true },
   env: { present: true },
 };

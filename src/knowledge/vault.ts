@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { join, relative, extname, basename } from 'node:path';
 import { readDocument } from './chunker.js';
 import { normalizeAndChunk } from './vault-chunker.js';
-import { isReservedName, writeIndexes, appendLog } from './okf.js';
+import { isReservedName, writeIndexes, appendLog, toPosix } from './okf.js';
 import type { EmbeddingStore, MemorySearchResult } from '../memory/embeddings.js';
 import type { OllamaClient } from '../ollama/client.js';
 
@@ -81,7 +81,7 @@ export async function reindexVault(
       const name = basename(full);
       if (!SUPPORTED.has(extname(name).toLowerCase())) continue;
       if (isReservedName(name)) continue;   // index.md / log.md are navigation, not concepts
-      const rel = relative(vaultPath, full);
+      const rel = toPosix(relative(vaultPath, full));   // index key, search result, log link: `/` on every OS
       seen.add(rel);
 
       const mtimeMs = statSync(full).mtimeMs;

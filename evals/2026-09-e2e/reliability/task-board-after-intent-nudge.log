@@ -1,0 +1,8 @@
+[ReAct] Step 1: premature answer without tool use — "I'll add these three tasks to your task board now...."
+[ReAct] Step 2: announced an action but made no tool call — "You're right - I need to actually use the tools to add these tasks. Let me creat..."
+  task-board: 100% routed=task calls=7 ptok=8845 7s
+  task-board: 100% routed=task calls=2 ptok=3068 4s
+[ReAct] Step 1: premature answer without tool use — "I'll add these three tasks to your task board now...."
+[ReAct] Step 2: announced an action but made no tool call — "You're right - I need to actually create these tasks using the tools. Let me add..."
+  task-board: 100% routed=task calls=4 ptok=6184 5s
+  OVERALL: 100% · task 100% · 0.7m

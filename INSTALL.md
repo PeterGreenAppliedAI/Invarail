@@ -95,7 +95,10 @@ found: `graph` (FalkorDB + an embedding model — the reference setup), `flat` (
 facts, keyword recall, nothing to install), `vault` (flat facts plus your markdown folder,
 Obsidian-edited, exact-word search, no embedder), or `vault + OKF` (the folder as an
 Open Knowledge Format bundle: facts mirrored as notes with provenance, an `index.md`
-per folder the model navigates, a `log.md` history). Details and the trade-offs:
+per folder the model navigates, a `log.md` history). For the vault tiers it creates the
+folder if it is new, detects Obsidian, and offers the install command if it is missing
+(never runs it unasked — the vault is plain markdown and works with any editor). Details
+and the trade-offs:
 [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md#memory-tiers-the-same-memory-on-a-machine-that-is-not-this-one).
 
 ## Tier 1 — the daily driver
