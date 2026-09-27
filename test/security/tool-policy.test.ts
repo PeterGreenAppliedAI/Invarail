@@ -33,3 +33,21 @@ describe('checkToolPolicy — one answer for channel + specialist policy', () =>
     expect(checkToolPolicy(config, registry, { tool: 'exec', category: 'exec', channel: 'discord', senderId: 'peter', rawSenderId: 'discord-1' }).allowed).toBe(true);
   });
 });
+
+describe('category layers (re-review N01, 2026-09-27)', () => {
+  const cfg = {
+    ownerId: 'peter',
+    principals: {},
+    channels: { discord: { enabled: true, security: { allowedCategories: ['chat', 'web_search'], restrictedCategories: ['web_search'], trustedUsers: ['peter'] } } },
+    specialists: { web_search: { tools: ['web_search'] }, exec: { tools: ['exec'] } },
+  } as unknown as InvarailConfig;
+  it('a category the channel no longer allows is denied at confirmation time', () => {
+    const v = checkToolPolicy(cfg, registry, { tool: 'exec', category: 'exec', channel: 'discord', senderId: 'peter' });
+    expect(v.allowed).toBe(false);
+    expect((v as any).reason).toMatch(/not allowed/);
+  });
+  it('a restricted category is denied for an untrusted sender and allowed for a trusted one', () => {
+    expect(checkToolPolicy(cfg, registry, { tool: 'web_search', category: 'web_search', channel: 'discord', senderId: 'stranger' }).allowed).toBe(false);
+    expect(checkToolPolicy(cfg, registry, { tool: 'web_search', category: 'web_search', channel: 'discord', senderId: 'peter' }).allowed).toBe(true);
+  });
+});

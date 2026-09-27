@@ -40,7 +40,10 @@ function loadDotEnv(dir?: string): void {
  */
 function expandEnvVars(obj: unknown): unknown {
   if (typeof obj === 'string') {
-    return obj.replace(/\$\{([^}]+)}/g, (_, key: string) => process.env[key] ?? '');
+    return obj.replace(/\$\{([^}]+)}/g, (_, key: string) => {
+      if (process.env[key] === undefined) console.warn(`[config] \${${key}} is not set — resolved to an empty string`);
+      return process.env[key] ?? '';
+    });
   }
   if (Array.isArray(obj)) {
     return obj.map(expandEnvVars);

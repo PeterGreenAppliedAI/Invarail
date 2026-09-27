@@ -38,6 +38,7 @@
     web: {
       enabled: true,
       port: 3100,
+      host: "127.0.0.1",   // the console is a localhost tool at this tier. To reach it from other devices: bind 0.0.0.0 AND set token: "${WEB_TOKEN}"
     },
     // Tier 1: discord: { enabled: true, token: "${DISCORD_TOKEN}" }, etc.
   },

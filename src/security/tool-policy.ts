@@ -30,6 +30,13 @@ export function checkToolPolicy(config: InvarailConfig, registry: ToolRegistry, 
     || security.trustedUsers.includes(q.senderId)
     || (q.rawSenderId !== undefined && security.trustedUsers.includes(q.rawSenderId));
 
+  // Category layers first — dispatch applies them before any tool layer (re-review N01, 2026-09-27).
+  if (q.category && security?.allowedCategories && !security.allowedCategories.includes(q.category)) {
+    return deny(`category "${q.category}" is not allowed on the ${q.channel} channel`);
+  }
+  if (q.category && !trusted && security?.restrictedCategories?.includes(q.category)) {
+    return deny(`category "${q.category}" is restricted for untrusted users`);
+  }
   if (security?.blockedTools?.includes(q.tool)) return deny(`"${q.tool}" is blocked on the ${q.channel} channel`);
   if (!owner && security?.ownerOnlyTools?.includes(q.tool)) return deny(`"${q.tool}" is owner-only`);
   if (!trusted && security?.restrictedTools?.includes(q.tool)) return deny(`"${q.tool}" is restricted for untrusted users`);

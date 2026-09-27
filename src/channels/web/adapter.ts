@@ -1,5 +1,6 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { configInvalid } from '../../errors.js';
 import { join, extname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -44,6 +45,7 @@ export class WebApiAdapter implements ChannelAdapter {
   private currentStatus: ChannelStatus = 'disconnected';
   private pendingResponses = new Map<string, (content: MessageContent) => void>();
   private apiKey: string | undefined;
+  private allowedOrigins: string[] = [];
   private consoleDeps: ConsoleApiDeps | null = null;
 
   /** Inject console API dependencies after orchestrator is fully initialized */
@@ -53,17 +55,29 @@ export class WebApiAdapter implements ChannelAdapter {
   }
 
   async connect(config: ChannelAdapterConfig): Promise<void> {
-    const port = (config as any).port ?? 3100;
-    const host = (config as any).host ?? '0.0.0.0';
+    const port = typeof config.port === 'number' ? config.port : 3100;
+    const host = typeof config.host === 'string' ? config.host : '0.0.0.0';
     this.apiKey = config.token;
+    this.allowedOrigins = Array.isArray(config.allowedOrigins) ? (config.allowedOrigins as string[]) : [];
     this.currentStatus = 'connecting';
+
+    // A token key whose value resolved to '' (unset ${WEB_TOKEN}) LOOKS configured while
+    // the API is open — fail loudly instead (re-review, 2026-09-27). And a non-loopback
+    // bind with no token at all is refused unless the operator opts in explicitly.
+    if (config.token === '') {
+      throw configInvalid('channels.web.token resolved to an empty string — set WEB_TOKEN in .env (or remove the token line and bind 127.0.0.1)');
+    }
+    const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    if (!this.apiKey && !loopback && config.insecureOpen !== true) {
+      throw configInvalid(`channels.web binds ${host} with no token — anyone on the network (or any web page open on it) could act as the owner. Set "token", bind "host: 127.0.0.1", or set "insecureOpen: true" deliberately.`);
+    }
 
     this.server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = req.url ?? '';
 
       // Console API — delegate to console handler
       if (url.startsWith('/console/api/') && this.consoleDeps) {
-        const handled = await handleConsoleRequest(req, res, this.consoleDeps, this.apiKey);
+        const handled = await handleConsoleRequest(req, res, this.consoleDeps, this.apiKey, this.allowedOrigins);
         if (handled) return;
       }
 

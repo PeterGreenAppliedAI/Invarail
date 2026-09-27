@@ -168,6 +168,17 @@ export const ChannelSecuritySchema = z.object({
 export const ChannelConfigSchema = z.object({
   enabled: z.boolean().default(false),
   token: z.string().optional(),
+  /** Web channel: bind address (default 0.0.0.0) and port (default 3100). */
+  host: z.string().optional(),
+  port: z.number().int().positive().optional(),
+  /** Web channel: browser origins allowed to call the console API cross-origin. The
+   *  console UI itself is same-origin and needs nothing here; `chrome-extension://`
+   *  origins are always allowed (the side panel). Anything else is refused by omitting
+   *  the CORS headers (was `*` for every origin — outside review F01, 2026-09-27). */
+  allowedOrigins: z.array(z.string()).optional(),
+  /** Web channel: explicitly allow a non-loopback bind with NO token. Off by default —
+   *  the adapter refuses to start network-open without auth unless this is set. */
+  insecureOpen: z.boolean().optional(),
   allowFrom: ChannelAllowFromSchema.optional(),
   security: ChannelSecuritySchema.optional(),
 }).passthrough();

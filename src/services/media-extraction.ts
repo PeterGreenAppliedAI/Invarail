@@ -2,7 +2,7 @@
  * Extract [IMAGE:path] and [FILE:path] tokens from text, read files, return attachments + cleaned text.
  * Extracted from orchestrator for testability and reuse.
  */
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
 
 const IMAGE_TOKEN_RE = /\[IMAGE:([^\]]+)\]/g;
@@ -17,11 +17,29 @@ const MIME_MAP: Record<string, string> = {
 };
 
 export interface MediaExtractOptions {
-  /** Directories an attachment may be read from. Default: `<cwd>/data` — every tool
-   *  artifact (workspaces, media, uploads, builds) lives under it; `.env`, config and
-   *  source do not. The token is model-written text: a prompt-injected answer can name
-   *  ANY path, so containment is checked on the canonical (symlink-resolved) path. */
+  /** Directories an attachment may be read from. Default: `defaultArtifactRoots()` —
+   *  the directories tools WRITE artifacts to, and nothing else. The token is
+   *  model-written text: a prompt-injected answer can name ANY path, so containment is
+   *  checked on the canonical (symlink-resolved) path. The whole `data/` tree is NOT a
+   *  root: it also holds `data/secrets.json`, the ledgers, transcripts and memory
+   *  (re-review F04, 2026-09-27). */
   allowedRoots?: string[];
+}
+
+/** Per-workspace subdirectories that tools produce deliverable artifacts in. Identity
+ *  files at the workspace root (SOUL/USER/MEMORY/TASKS) and `memory/` are never here. */
+export const WORKSPACE_ARTIFACT_DIRS = ['images', 'diagrams', 'research', 'documents', 'builds'] as const;
+
+/** `data/media`, `data/uploads`, and `<workspace>/<artifact dir>` for every workspace. */
+export function defaultArtifactRoots(cwd = process.cwd()): string[] {
+  const roots = [resolve(cwd, 'data', 'media'), resolve(cwd, 'data', 'uploads')];
+  const ws = resolve(cwd, 'data', 'workspaces');
+  if (existsSync(ws)) {
+    for (const agent of readdirSync(ws)) {
+      for (const sub of WORKSPACE_ARTIFACT_DIRS) roots.push(resolve(ws, agent, sub));
+    }
+  }
+  return roots;
 }
 
 type PathCheck = { ok: true; path: string } | { ok: false; reason: 'missing' | 'outside' };
@@ -48,7 +66,7 @@ export function extractMediaAttachments(text: string, opts?: MediaExtractOptions
   attachments: Array<{ data: Buffer; mimeType: string; filename: string }>;
 } {
   const attachments: Array<{ data: Buffer; mimeType: string; filename: string }> = [];
-  const roots = opts?.allowedRoots ?? [resolve(process.cwd(), 'data')];
+  const roots = opts?.allowedRoots ?? defaultArtifactRoots();
 
   let cleanText = text.replace(IMAGE_TOKEN_RE, (match, filePath: string) => {
     const check = checkDeliverable(filePath, roots);

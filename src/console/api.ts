@@ -20,21 +20,37 @@ const API_PREFIX = '/console/api/';
  * Main console API dispatcher.
  * Returns true if the request was handled, false if it should fall through.
  */
+/** The origin to echo in Access-Control-Allow-Origin, or null to send no CORS headers.
+ *  `chrome-extension://…` (the side panel) is always allowed; everything else must be
+ *  listed in `channels.web.allowedOrigins` exactly (scheme://host[:port]). */
+export function corsOriginFor(origin: string | string[] | undefined, allowedOrigins: string[]): string | null {
+  const o = Array.isArray(origin) ? origin[0] : origin;
+  if (!o) return null;
+  if (o.startsWith('chrome-extension://')) return o;
+  return allowedOrigins.includes(o) ? o : null;
+}
+
 export async function handleConsoleRequest(
   req: IncomingMessage,
   res: ServerResponse,
   deps: ConsoleApiDeps,
   apiKey?: string,
+  allowedOrigins: string[] = [],
 ): Promise<boolean> {
   const url = req.url ?? '';
 
   // Only handle /console/api/* requests
   if (!url.startsWith(API_PREFIX)) return false;
 
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // CORS — echo only an allowed origin; any other cross-origin caller gets no headers
+  // and the browser refuses the response. Same-origin (the console UI) never needs them.
+  const origin = corsOriginFor(req.headers.origin, allowedOrigins);
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
