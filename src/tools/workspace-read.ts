@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
+import { containedPath } from '../security/paths.js';
 import { resolve } from 'node:path';
 import type { InvarailTool, ToolContext } from './types.js';
 
@@ -32,8 +33,8 @@ export function createWorkspaceReadTool(): InvarailTool {
         return 'Error: No workspace configured';
       }
 
-      const fullPath = resolve(workspace, file);
-      if (!fullPath.startsWith(resolve(workspace))) {
+      const fullPath = containedPath(workspace, file);
+      if (!fullPath) {
         return 'Error: Path traversal not allowed';
       }
 

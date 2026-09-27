@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, basename, extname } from 'node:path';
-import { execSync } from 'node:child_process';
+import { join, basename, extname, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { containedPath, containedInAny, safeBasename } from '../security/paths.js';
 import type { InvarailTool, ToolContext } from './types.js';
 import { conversionError } from '../errors.js';
 import { renderTemplate, AVAILABLE_TEMPLATES, type DocumentContent } from './document-templates.js';
@@ -30,15 +31,6 @@ tr:nth-child(even) td { background: #f9fafb; }
 ul, ol { margin: 8px 0 8px 20px; font-size: 14px; }
 li { margin-bottom: 4px; }
 `;
-
-/**
- * Resolve input path relative to workspace or absolute.
- */
-function resolvePath(inputPath: string, ctx: ToolContext): string {
-  if (inputPath.startsWith('/')) return inputPath;
-  if (!ctx.workspacePath) return inputPath;
-  return join(ctx.workspacePath, inputPath);
-}
 
 /**
  * Best-effort extraction of diagnostics from an execSync failure: exit
@@ -87,8 +79,11 @@ function convertFile(inputPath: string, format: string, outDir: string): string 
   const soffice = getSofficePath();
   let execError: unknown;
   try {
-    execSync(
-      `${soffice} --headless --convert-to ${format} --outdir "${outDir}" "${inputPath}"`,
+    // Argument array, no shell: a filename or path with `$()`, backticks or quotes was
+    // interpolated into a shell string before (review F14).
+    execFileSync(
+      soffice,
+      ['--headless', '--convert-to', format, '--outdir', outDir, inputPath],
       { timeout: 30_000, stdio: 'pipe' },
     );
   } catch (err) {
@@ -160,7 +155,10 @@ filename (optional): Output filename without extension (default: "document").`,
     execute: async (params: Record<string, unknown>, ctx: ToolContext): Promise<string> => {
       const action = params.action as string;
       const format = params.format as string;
-      const filename = (params.filename as string) || 'document';
+      // A plain name only — `../x` reached any writable parent, and shell-significant
+      // characters rode into the converter command (review F13/F14).
+      const filename = safeBasename((params.filename as string) || 'document');
+      if (!filename) return 'Error: filename must be a plain name (no path separators, no special characters).';
 
       if (!SUPPORTED_FORMATS.includes(format)) {
         return `Unsupported format "${format}". Supported: ${SUPPORTED_FORMATS.join(', ')}`;
@@ -241,7 +239,14 @@ filename (optional): Output filename without extension (default: "document").`,
         const inputPath = params.inputPath as string;
         if (!inputPath) return 'Missing "inputPath" parameter for convert action.';
 
-        const resolved = resolvePath(inputPath, ctx);
+        // Convert only from where artifacts live: the workspace, media, uploads. An
+        // absolute path anywhere on the host used to be accepted and its converted
+        // copy delivered as an attachment.
+        const roots = [ctx.workspacePath, resolve('data', 'media'), resolve('data', 'uploads')].filter((r): r is string => !!r);
+        const resolved = inputPath.startsWith('/')
+          ? containedInAny(roots, inputPath)
+          : containedPath(ctx.workspacePath ?? resolve('data', 'media'), inputPath);
+        if (!resolved) return `Error: inputPath must be inside the workspace, data/media or data/uploads.`;
         if (!existsSync(resolved)) {
           return `File not found: ${resolved}`;
         }

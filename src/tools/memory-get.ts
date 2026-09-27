@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import type { InvarailTool } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
+import { containedPath } from '../security/paths.js';
 
 export function createMemoryGetTool(workspacePath: string): InvarailTool {
   return {
@@ -17,13 +17,16 @@ export function createMemoryGetTool(workspacePath: string): InvarailTool {
     },
     category: 'memory',
 
-    async execute(params: Record<string, unknown>): Promise<string> {
+    async execute(params: Record<string, unknown>, ctx?: ToolContext): Promise<string> {
       const file = params.file as string;
       if (!file) return 'Error: file parameter is required';
 
-      const fullPath = resolve(join(workspacePath, file));
-      // Path traversal protection
-      if (!fullPath.startsWith(resolve(workspacePath))) {
+      // The dispatching agent's workspace, not the one captured at registration (review
+      // F16): a secondary agent read the default agent's memory. Canonical containment —
+      // `startsWith` accepted the sibling `main2/` for workspace `main`.
+      const root = ctx?.workspacePath || workspacePath;
+      const fullPath = containedPath(root, file);
+      if (!fullPath) {
         return 'Error: Path traversal not allowed';
       }
 

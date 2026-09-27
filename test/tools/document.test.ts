@@ -52,7 +52,8 @@ describe('document tool', () => {
   });
 
   it('reports file not found for convert', async () => {
-    const result = await tool.execute({ action: 'convert', inputPath: '/nonexistent/file.html', format: 'pdf' }, ctx);
+    // Workspace-relative: an absolute path outside the workspace is now a policy refusal (F13)
+    const result = await tool.execute({ action: 'convert', inputPath: 'nonexistent/file.html', format: 'pdf' }, ctx);
     expect(result).toContain('File not found');
   });
 
@@ -104,8 +105,9 @@ describe('document tool', () => {
 });
 
 describe('document tool conversion error logging', () => {
-  // Absolute: convert's inputPath is otherwise resolved against ctx.workspacePath
-  const TMP_DIR = resolve('test', '_tmp_doc_errs');
+  // Inside ctx.workspacePath: convert only accepts inputs from the workspace, data/media
+  // or data/uploads (review F13, 2026-09-27); absolute so the fake soffice path is too.
+  const TMP_DIR = resolve('test', '_tmp_doc', '_errs');
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   /** Write an executable fake soffice that behaves per `body`. */

@@ -1,4 +1,5 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { containedPath } from '../security/paths.js';
 import { dirname, resolve } from 'node:path';
 import type { InvarailTool, ToolContext } from './types.js';
 
@@ -43,8 +44,8 @@ export function createWorkspaceWriteTool(): InvarailTool {
         return 'Error: No workspace configured';
       }
 
-      const fullPath = resolve(workspace, file);
-      if (!fullPath.startsWith(resolve(workspace))) {
+      const fullPath = containedPath(workspace, file);
+      if (!fullPath) {
         return 'Error: Path traversal not allowed';
       }
 

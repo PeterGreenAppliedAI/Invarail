@@ -1,5 +1,6 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { basename, dirname, resolve, relative, isAbsolute } from 'node:path';
+import { basename, dirname, resolve, relative } from 'node:path';
+import { containedPath } from '../security/paths.js';
 import type { InvarailTool, ToolContext } from './types.js';
 
 /**
@@ -38,12 +39,6 @@ export function createWriteFileTool(): InvarailTool {
       if (!path) return 'Error: path parameter is required';
       if (content === undefined) return 'Error: content parameter is required';
 
-      // Block writes to protected files
-      const filename = basename(path);
-      if (PROTECTED_FILES.has(filename)) {
-        return `Error: ${filename} is a protected file and cannot be overwritten. Only humans can edit this file.`;
-      }
-
       // Workspace-only path validation
       const workspace = ctx.workspacePath;
       if (!workspace) {
@@ -60,10 +55,16 @@ export function createWriteFileTool(): InvarailTool {
         cleanPath = cleanPath.slice(workspaceRel.length + 1);
       }
 
-      const fullPath = resolve(workspace, cleanPath);
-      const rel = relative(resolve(workspace), fullPath);
-      if (rel.startsWith('..') || isAbsolute(rel)) {
+      const fullPath = containedPath(workspace, cleanPath);
+      if (!fullPath) {
         return 'Error: Path traversal not allowed — must write within workspace';
+      }
+
+      // Protected files — decided on the CANONICAL path, after normalization: the raw
+      // input `SOUL.md/.` has basename `.` but resolves to SOUL.md (review F12).
+      const filename = basename(fullPath);
+      if (PROTECTED_FILES.has(filename)) {
+        return `Error: ${filename} is a protected file and cannot be overwritten. Only humans can edit this file.`;
       }
 
       try {
