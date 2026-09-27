@@ -141,7 +141,7 @@ High-confidence patterns that the router model gets wrong often enough to warran
 Multi-turn conversations should stay in the same category. If you're chatting about cooking and ask "what about chicken?", that should stay in `chat`, not route to `web_search` because the model sees a question.
 
 **How it works:**
-- Sticky categories: `chat`, `memory`, `briefing` (replies are answers, target `chat`), and `cron`. Most pipeline categories (web_search, exec, research) finish in one turn — no sticking needed.
+- Sticky categories: `chat`, `briefing` (replies are answers, target `chat`), and `cron`. `memory` was sticky until 2026-09-26: a memory question is one-shot, and a session that landed there had no breaker for plain conversation — a 40-turn DM spent 20 turns in the memory arena (10–42s replies, repair-prompted tool calls) while the shadow router said chat on every one. Follow-ups now re-route through the model, which says memory again if it is one. Most pipeline categories (web_search, exec, research) finish in one turn — no sticking needed.
 - `cron` is sticky because post-scheduling follow-ups ("did we do all three?", a re-paste of jobs that didn't get created) belong back in the cron pipeline, whose list branch answers from `cron_list` — without it, "did we do all three?" routed to memory and confabulated from a saved fact (July 20 incident).
 - Short follow-up messages stay on the previous category.
 - Long messages (>200 chars) also stay sticky — they're likely continuing a discussion.

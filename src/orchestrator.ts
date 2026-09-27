@@ -512,6 +512,7 @@ export class Orchestrator {
             'Do NOT extract search results, tool output, event listings, or web content the assistant found.',
             'Do NOT extract things the assistant TOLD the user — only things the user TOLD the assistant or that reveal who the user IS.',
             'Do NOT infer. Record what the user STATED, not what it implies. If a fact contains "aiming for", "rather than", "in order to", or a motive/model/plan the user did not put into words, it is your inference — drop it. First live capture (2026-09-20) turned "my goal is to make me redundant" into "one-time setup rather than recurring revenue"; the user\'s next message said the opposite (retainer).',
+            'When the user gives a REASON for a decision in their own words ("too rich for my blood", "because X"), keep the reason inside the fact — the reason is the part worth remembering later. Stated reasons only, never one you supply.',
             'CONSOLIDATE related info into ONE fact. If a task has a due date, priority, and description — that is ONE fact, not three.',
             'Aim for the FEWEST facts that capture ALL the information. Fewer is better.',
             'Use ABSOLUTE dates, never relative ones — "yesterday"/"next Thursday" are meaningless when the fact is read weeks later; convert to the actual date.',

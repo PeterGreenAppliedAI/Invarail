@@ -146,7 +146,11 @@ function isGreeting(message: string): boolean {
  * pipeline, whose list branch answers questions about jobs from cron_list.
  * Without this, "did we do all three?" routed to memory and confabulated
  * from a saved fact (July 20). */
-const STICKY_CATEGORIES = new Set(['chat', 'memory', 'briefing', 'cron']);
+// `memory` is NOT sticky (2026-09-26): a memory question is one-shot, and a session
+// that stuck there had no way out — a 40-turn DM spent 20 turns in the memory arena
+// (10–42s replies, repair-prompted tool calls) with the shadow router saying chat on
+// every one. Follow-ups re-route through the model, which says memory again if it is one.
+const STICKY_CATEGORIES = new Set(['chat', 'briefing', 'cron']);
 
 /** Sticky target per category — briefing replies land in chat (there is no 'briefing' specialist) */
 const STICKY_TARGET: Record<string, string> = { briefing: 'chat' };

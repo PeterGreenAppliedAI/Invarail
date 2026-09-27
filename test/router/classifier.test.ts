@@ -183,3 +183,21 @@ describe('browse-a-named-site is not a pre-model override (2026-09-26)', () => {
     expect(result.category).toBe('web_search');
   });
 });
+
+describe('memory is not sticky (2026-09-26)', () => {
+  // A memory question is one-shot. When memory WAS sticky, a session that landed there
+  // had no breaker for plain conversation: 20 consecutive turns of small talk ran the
+  // memory arena at 10–42s a reply while the shadow router said chat on every one.
+  it('a conversational follow-up after a memory turn goes back to the model', async () => {
+    const client = { generate: vi.fn().mockResolvedValue({ response: 'chat' }) } as unknown as OllamaClient;
+    const result = await classifyMessage(client, defaultConfig, 'Eh it’s fine. I have a multi node proxmox cluster that has a truenas box behind it.', 'memory');
+    expect(result.confidence).toBe('model');
+    expect(result.category).toBe('chat');
+  });
+
+  it('chat and cron still stick', async () => {
+    const client = { generate: vi.fn().mockResolvedValue({ response: 'web_search' }) } as unknown as OllamaClient;
+    expect((await classifyMessage(client, defaultConfig, 'what about the pricing?', 'chat')).confidence).toBe('sticky');
+    expect((await classifyMessage(client, defaultConfig, 'did we do all three?', 'cron')).confidence).toBe('sticky');
+  });
+});
