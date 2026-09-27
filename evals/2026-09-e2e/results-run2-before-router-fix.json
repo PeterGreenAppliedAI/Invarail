@@ -1,0 +1,1627 @@
+{
+  "provenance": {
+    "date": "2026-09-27T19:09:52.353Z",
+    "gitCommit": "887e4c3",
+    "ollamaUrl": "http://10.9.8.19:11434",
+    "reps": 1,
+    "profile": "full",
+    "tasks": [
+      "chat-plain",
+      "chat-exact-word",
+      "task-board",
+      "memory-save-recall",
+      "exec-csv-revenue",
+      "exec-fib-script",
+      "multi-release-notes",
+      "cron-schedule",
+      "web-fact-to-file",
+      "website-summarize",
+      "research-report"
+    ]
+  },
+  "results": [
+    {
+      "model": "qwen3.5:9b",
+      "profile": "full",
+      "think": false,
+      "configTokens": {
+        "specialists": 0
+      },
+      "reps": [
+        [
+          {
+            "id": "chat-plain",
+            "expected": [
+              "chat"
+            ],
+            "routed": "chat",
+            "routedBy": "fallback",
+            "checks": [
+              {
+                "name": "routed to chat",
+                "pass": true,
+                "detail": "chat"
+              },
+              {
+                "name": "mentions mutability",
+                "pass": true
+              },
+              {
+                "name": "short (≤ 4 sentences)",
+                "pass": true,
+                "detail": "2 sentences"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3020,
+            "promptTokens": 960,
+            "completionTokens": 53,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "A Python list is mutable, meaning you can change its elements after creation, whereas a tuple is immutable and cannot be altered once defined. Lists are generally used for collections of items that may change, while tuples are preferred for fixed data like coordinates or database records.",
+            "webCalls": []
+          },
+          {
+            "id": "chat-exact-word",
+            "expected": [
+              "chat"
+            ],
+            "routed": "chat",
+            "routedBy": "fallback",
+            "checks": [
+              {
+                "name": "routed to chat",
+                "pass": true,
+                "detail": "chat"
+              },
+              {
+                "name": "exactly READY",
+                "pass": true,
+                "detail": "\"READY\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 1111,
+            "promptTokens": 955,
+            "completionTokens": 2,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "READY",
+            "webCalls": []
+          },
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 4797,
+            "promptTokens": 6192,
+            "completionTokens": 290,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "All three tasks have been added to your task board:\n\n1. **Renew SSL certificate** (ID: 001eb1c6) — high priority\n2. **Water the plants** (ID: dd5e0b58) — low priority  \n3. **Submit quarterly report** (ID: 3aa1b42f) — medium priority, due 2026-08-28\n\nNote: I set \"Submit quarterly report\" to medium priority since you didn't specify one. Is that okay, or would you like me to adjust it?",
+            "webCalls": []
+          },
+          {
+            "id": "memory-save-recall",
+            "expected": [
+              "memory"
+            ],
+            "routed": "memory",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to memory",
+                "pass": true,
+                "detail": "memory"
+              },
+              {
+                "name": "fact persisted",
+                "pass": true
+              },
+              {
+                "name": "recalled in follow-up",
+                "pass": true,
+                "detail": "\"Your deployment freeze starts on **2026-09-01**.\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3555,
+            "promptTokens": 3608,
+            "completionTokens": 108,
+            "modelCalls": 3,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "Your deployment freeze starts on **2026-09-01**.",
+            "webCalls": []
+          },
+          {
+            "id": "exec-csv-revenue",
+            "expected": [
+              "exec",
+              "multi"
+            ],
+            "routed": "chat",
+            "routedBy": "fallback",
+            "checks": [
+              {
+                "name": "routed to exec|multi",
+                "pass": false,
+                "detail": "chat"
+              },
+              {
+                "name": "revenue.txt = 94",
+                "pass": false,
+                "detail": "\"\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.5,
+            "durationMs": 1629,
+            "promptTokens": 981,
+            "completionTokens": 49,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "I'll compute the total revenue from `sales.csv` and save it to `revenue.txt`. Let me start by reading the CSV file.\n\n<invoke_tool>read_file</invoke_tool>\n<path>sales.csv</path>",
+            "webCalls": []
+          },
+          {
+            "id": "exec-fib-script",
+            "expected": [
+              "exec",
+              "multi"
+            ],
+            "routed": "chat",
+            "routedBy": "fallback",
+            "checks": [
+              {
+                "name": "routed to exec|multi",
+                "pass": false,
+                "detail": "chat"
+              },
+              {
+                "name": "fib.py exists",
+                "pass": false
+              },
+              {
+                "name": "fib.txt = 6765",
+                "pass": false,
+                "detail": "\"\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.4,
+            "durationMs": 2441,
+            "promptTokens": 989,
+            "completionTokens": 126,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "Here's your `fib.py` script:\n\n```python\n# fib.py - Computes the nth Fibonacci number (fib(1)=1, fib(2)=1)\ndef fib(n):\n    a, b = 1, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return a\n\nprint(fib(20))\n```\n\nRun it with:\n```bash\npython3 fib.py > fib.txt\n```\n\nLet me know if you'd like me to execute it now or refine anything!",
+            "webCalls": []
+          },
+          {
+            "id": "multi-release-notes",
+            "expected": [
+              "multi",
+              "exec",
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to multi|exec|task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "task with version",
+                "pass": false,
+                "detail": "Evaluate new version 1.2.3"
+              },
+              {
+                "name": "summary covers ≥2 changes",
+                "pass": false,
+                "detail": "0/4 phrases, 0 chars"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.6,
+            "durationMs": 3930,
+            "promptTokens": 2963,
+            "completionTokens": 248,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "Now I need to read the releases.txt file to see what changes are listed. However, I don't have a direct tool to read files from the workspace. Let me check if there's a way to access this information or if you can provide the contents of releases.txt.\n\nActually, looking at my available tools, I don't have a file reading capability. Could you please share the contents of releases.txt so I can:\n1. Create the release-summary.md file with the actual changes\n2. Ensure the task details are accurate\n\nAlternatively, if you'd like me to proceed with creating the summary based on what you tell me about the changes, please provide that information.",
+            "webCalls": []
+          },
+          {
+            "id": "cron-schedule",
+            "expected": [
+              "cron"
+            ],
+            "routed": "cron",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to cron",
+                "pass": true,
+                "detail": "cron"
+              },
+              {
+                "name": "job created",
+                "pass": true,
+                "detail": "1 jobs"
+              },
+              {
+                "name": "weekday 8am schedule",
+                "pass": true,
+                "detail": "0 8 * * 1-5"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3027,
+            "promptTokens": 2601,
+            "completionTokens": 163,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "Done! I've scheduled a reminder to check the build dashboard every weekday at 8am. The job will send you a message in your Discord channel (e2e).",
+            "webCalls": []
+          },
+          {
+            "id": "web-fact-to-file",
+            "expected": [
+              "web_search",
+              "multi"
+            ],
+            "routed": "multi",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to web_search|multi",
+                "pass": true,
+                "detail": "multi"
+              },
+              {
+                "name": "searched the web",
+                "pass": true,
+                "detail": "web_search(Node.js first release year)"
+              },
+              {
+                "name": "year in file or answer",
+                "pass": true,
+                "detail": "\"2009\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 5804,
+            "promptTokens": 6961,
+            "completionTokens": 360,
+            "modelCalls": 4,
+            "iterations": 3,
+            "hitMaxIterations": false,
+            "answer": "Done. The file contains: 2009",
+            "webCalls": [
+              "web_search(Node.js first release year)"
+            ]
+          },
+          {
+            "id": "website-summarize",
+            "expected": [
+              "website",
+              "web_search"
+            ],
+            "routed": "website",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to website|web_search",
+                "pass": true,
+                "detail": "website"
+              },
+              {
+                "name": "fetched the page",
+                "pass": true,
+                "detail": "web_fetch(https://example-docs.test/guide)"
+              },
+              {
+                "name": "≥2 facts from the page",
+                "pass": true,
+                "detail": "5/5"
+              },
+              {
+                "name": "no invented facts (no port other than 8443)",
+                "pass": true
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 2479,
+            "promptTokens": 1868,
+            "completionTokens": 122,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "- **Service Configuration**: Listens on port 8443 with TLS; config stored in `/etc/widget/config.toml` and reloaded via `SIGHUP`.  \n- **Backup Schedule**: Nightly at 02:00 UTC to the \"widget-backups\" bucket, retained for 30 days.  \n- **Health Endpoint**: `/healthz` returns `503` during backup operations.",
+            "webCalls": [
+              "web_fetch(https://example-docs.test/guide)"
+            ]
+          },
+          {
+            "id": "research-report",
+            "expected": [
+              "research"
+            ],
+            "routed": "chat",
+            "routedBy": "fallback",
+            "checks": [
+              {
+                "name": "routed to research",
+                "pass": false,
+                "detail": "chat"
+              },
+              {
+                "name": "pipeline ran to a report (not the evidence-gate abort)",
+                "pass": false,
+                "detail": "0 chars of report text, 0 web calls"
+              },
+              {
+                "name": "report uses ≥3 corpus facts",
+                "pass": false,
+                "detail": "0/8"
+              },
+              {
+                "name": "cites ≥2 corpus URLs",
+                "pass": false,
+                "detail": "0 cited"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.3333333333333333,
+            "durationMs": 20823,
+            "promptTokens": 982,
+            "completionTokens": 1834,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "Here is a research report on the state of local LLM inference on consumer GPUs as it stands in 2026.\n\n***\n\n# Local LLM Inference on Consumer GPUs: State Report (2026)\n\n## Executive Summary\nBy 2026, the landscape has shifted from \"can I run a model?\" to \"which efficiency and speed tradeoffs do I want?\" The proliferation of open weights models (Llama-4 series, Mistral-Nemo successors) has made consumer GPUs viable for serious work. The primary bottleneck is no longer raw FLOPS but memory bandwidth and VRAM capacity. Quantization (INT8/INT4) is the standard default; FP16 is reserved for high-priority tasks like image generation or training fine-tuning.\n\n## 1. Hardware Landscape: What Fits on Which Cards\n\nThe market has matured around three distinct tiers based on VRAM size and memory bandwidth.\n\n### A. The Entry Tier (8GB – 12GB VRAM)\n*   **Hardware:** NVIDIA RTX 3050/4060, AMD RX 6600/7600, Intel Arc A-series.\n*   **Capacity Limits:**\n    *   **Standard Models (Llama-3.1 / Llama-4 variants):** Limited to ~8B parameter models at INT4 quantization (approx. 5GB model size + context).\n    *   **Advanced Models:** Struggles with models >7B parameters unless heavily compressed.\n*   **Vibe Check:** Great for chatting, browsing the web, and light coding assistance. Doable for basic creative writing. Not suitable for complex reasoning chains without heavy quantization (NF4/INT2).\n\n### B. The Sweet Spot (16GB – 24GB VRAM)\n*   **Hardware:** NVIDIA RTX 3060 16GB, 4070 Ti Super 16GB, AMD RX",
+            "webCalls": []
+          }
+        ]
+      ],
+      "taskScores": {
+        "chat-plain": 1,
+        "chat-exact-word": 1,
+        "task-board": 1,
+        "memory-save-recall": 1,
+        "exec-csv-revenue": 0.5,
+        "exec-fib-script": 0.4,
+        "multi-release-notes": 0.6,
+        "cron-schedule": 1,
+        "web-fact-to-file": 1,
+        "website-summarize": 1,
+        "research-report": 0.3333333333333333
+      },
+      "categoryScores": {
+        "chat": 1,
+        "task": 1,
+        "memory": 1,
+        "exec": 0.45,
+        "multi": 0.6,
+        "cron": 1,
+        "web_search": 1,
+        "website": 1,
+        "research": 0.3333333333333333
+      },
+      "overall": 0.8030303030303031,
+      "totalMs": 56261
+    },
+    {
+      "model": "gemma4:12b",
+      "profile": "full",
+      "think": false,
+      "configTokens": {
+        "specialists": 0
+      },
+      "reps": [
+        [
+          {
+            "id": "chat-plain",
+            "expected": [
+              "chat"
+            ],
+            "routed": "chat",
+            "routedBy": "fallback",
+            "checks": [
+              {
+                "name": "routed to chat",
+                "pass": true,
+                "detail": "chat"
+              },
+              {
+                "name": "mentions mutability",
+                "pass": true
+              },
+              {
+                "name": "short (≤ 4 sentences)",
+                "pass": true,
+                "detail": "2 sentences"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 19403,
+            "promptTokens": 999,
+            "completionTokens": 43,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "A list is mutable, meaning you can change, add, or remove elements after it is created. A tuple is immutable, meaning its contents are fixed once defined, making it faster and safer for constant data.",
+            "webCalls": []
+          },
+          {
+            "id": "chat-exact-word",
+            "expected": [
+              "chat"
+            ],
+            "routed": "chat",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to chat",
+                "pass": true,
+                "detail": "chat"
+              },
+              {
+                "name": "exactly READY",
+                "pass": true,
+                "detail": "\"READY\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 2459,
+            "promptTokens": 994,
+            "completionTokens": 2,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "READY",
+            "webCalls": []
+          },
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 4990,
+            "promptTokens": 5021,
+            "completionTokens": 148,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "I've added those three tasks to your board:\n\n1. **Renew SSL certificate** (High priority)\n2. **Water the plants** (Low priority)\n3. **Submit quarterly report** (Due 2026-08-28)",
+            "webCalls": []
+          },
+          {
+            "id": "memory-save-recall",
+            "expected": [
+              "memory"
+            ],
+            "routed": "memory",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to memory",
+                "pass": true,
+                "detail": "memory"
+              },
+              {
+                "name": "fact persisted",
+                "pass": true
+              },
+              {
+                "name": "recalled in follow-up",
+                "pass": true,
+                "detail": "\"Your deployment freeze starts on September 1, 2026.\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 5791,
+            "promptTokens": 3038,
+            "completionTokens": 81,
+            "modelCalls": 3,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "Your deployment freeze starts on September 1, 2026.",
+            "webCalls": []
+          },
+          {
+            "id": "exec-csv-revenue",
+            "expected": [
+              "exec",
+              "multi"
+            ],
+            "routed": "multi",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to exec|multi",
+                "pass": true,
+                "detail": "multi"
+              },
+              {
+                "name": "revenue.txt = 94",
+                "pass": true,
+                "detail": "\"94\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 5845,
+            "promptTokens": 5275,
+            "completionTokens": 179,
+            "modelCalls": 3,
+            "iterations": 3,
+            "hitMaxIterations": false,
+            "answer": "The total revenue has been calculated and written to `revenue.txt`.",
+            "webCalls": []
+          },
+          {
+            "id": "exec-fib-script",
+            "expected": [
+              "exec",
+              "multi"
+            ],
+            "routed": "multi",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to exec|multi",
+                "pass": true,
+                "detail": "multi"
+              },
+              {
+                "name": "fib.py exists",
+                "pass": true
+              },
+              {
+                "name": "fib.txt = 6765",
+                "pass": true,
+                "detail": "\"6765\\n\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 15289,
+            "promptTokens": 7977,
+            "completionTokens": 625,
+            "modelCalls": 6,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "The script `fib.py` has been created, executed, and the result has been saved.\n\n1.  **Created `fib.py`**: Implemented a function to calculate the $n$-th Fibonacci number.\n2.  **Executed**: Ran the script, which calculated the 20th Fibonacci number as **6765**.\n3.  **Saved Output**: The result was saved to `fib.txt`.",
+            "webCalls": []
+          },
+          {
+            "id": "multi-release-notes",
+            "expected": [
+              "multi",
+              "exec",
+              "task"
+            ],
+            "routed": "multi",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to multi|exec|task",
+                "pass": true,
+                "detail": "multi"
+              },
+              {
+                "name": "task with version",
+                "pass": true,
+                "detail": "Evaluate version v0.6.2"
+              },
+              {
+                "name": "summary covers ≥2 changes",
+                "pass": true,
+                "detail": "4/4 phrases, 366 chars"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 24495,
+            "promptTokens": 7970,
+            "completionTokens": 576,
+            "modelCalls": 6,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "I've processed the release information for you:\n\n1.  **Task Created**: Added \"Evaluate version v0.6.2\" to your task board.\n2.  **Summary Written**: Created `notes/release-summary.md` with the details of the Rust frontend rework, MTP speculative decoding, KV cache compression, and the deadlock fix.",
+            "webCalls": []
+          },
+          {
+            "id": "cron-schedule",
+            "expected": [
+              "cron"
+            ],
+            "routed": "cron",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to cron",
+                "pass": true,
+                "detail": "cron"
+              },
+              {
+                "name": "job created",
+                "pass": true,
+                "detail": "1 jobs"
+              },
+              {
+                "name": "weekday 8am schedule",
+                "pass": true,
+                "detail": "0 8 * * 1-5"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 13272,
+            "promptTokens": 2131,
+            "completionTokens": 96,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "I've scheduled a reminder for you. You'll get a notification to check the build dashboard every weekday at 8:00 AM.",
+            "webCalls": []
+          },
+          {
+            "id": "web-fact-to-file",
+            "expected": [
+              "web_search",
+              "multi"
+            ],
+            "routed": "multi",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to web_search|multi",
+                "pass": true,
+                "detail": "multi"
+              },
+              {
+                "name": "searched the web",
+                "pass": true,
+                "detail": "web_search(year Node.js was first released)"
+              },
+              {
+                "name": "year in file or answer",
+                "pass": true,
+                "detail": "\"2009\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 9759,
+            "promptTokens": 6114,
+            "completionTokens": 316,
+            "modelCalls": 4,
+            "iterations": 3,
+            "hitMaxIterations": false,
+            "answer": "Node.js was first released in 2009. I've written that year to `node-year.txt`.",
+            "webCalls": [
+              "web_search(year Node.js was first released)"
+            ]
+          },
+          {
+            "id": "website-summarize",
+            "expected": [
+              "website",
+              "web_search"
+            ],
+            "routed": "website",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to website|web_search",
+                "pass": true,
+                "detail": "website"
+              },
+              {
+                "name": "fetched the page",
+                "pass": true,
+                "detail": "web_fetch(https://example-docs.test/guide)"
+              },
+              {
+                "name": "≥2 facts from the page",
+                "pass": true,
+                "detail": "4/5"
+              },
+              {
+                "name": "no invented facts (no port other than 8443)",
+                "pass": true
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3901,
+            "promptTokens": 1436,
+            "completionTokens": 154,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "Here is a summary of the Widget Service Operator Guide:\n\n*   **Connectivity & Config:** The service operates on port 8443 with TLS; configuration is managed via `/etc/widget/config.toml` and can be reloaded using SIGHUP without a restart.\n*   **Backup Protocol:** Automated nightly backups occur at 02:00 UTC to the \"widget-backups\" bucket with a 30-day retention period.\n*   **Health Monitoring:** The `/healthz` endpoint provides status updates, specifically returning a 503 error during active backup windows.",
+            "webCalls": [
+              "web_fetch(https://example-docs.test/guide)"
+            ]
+          },
+          {
+            "id": "research-report",
+            "expected": [
+              "research"
+            ],
+            "routed": "research",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to research",
+                "pass": true,
+                "detail": "research"
+              },
+              {
+                "name": "pipeline ran to a report (not the evidence-gate abort)",
+                "pass": false,
+                "detail": "0 chars of report text, 40 web calls"
+              },
+              {
+                "name": "report uses ≥3 corpus facts",
+                "pass": false,
+                "detail": "0/8"
+              },
+              {
+                "name": "cites ≥2 corpus URLs",
+                "pass": false,
+                "detail": "0 cited"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.5,
+            "durationMs": 145560,
+            "promptTokens": 28137,
+            "completionTokens": 7486,
+            "modelCalls": 28,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "By 2026, local LLM inference is defined by a clear divide between high-speed NVIDIA GPUs, which are ideal for smaller models under 35B parameters, and unified memory systems like Apple Silicon, which allow for much larger models at the cost of lower processing speeds. Quantization has reached a critical threshold where 4-bit weights are the standard for maintaining model integrity, while dropping below this level significantly degrades performance and reliability in complex tasks like tool-calling. For autonomous agents, larger 27B models are preferred over 9B models because they maintain better logical consistency and reliability across long, multi-step workflows.\n\n(Note: the report was generated but the PDF conversion did not produce a file.)",
+            "webCalls": [
+              "web_search(state local LLM inference consumer news)",
+              "web_search(state local LLM inference consumer announcements September 2026)",
+              "web_search(model size vs VRAM capacity 2026)",
+              "web_search(GGUF Q4_K_M vs Q8_0 quantization tradeoffs)",
+              "web_search(Apple Silicon vs Strix Halo unified memory)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://small-models.example/9b-vs-27b-tool-use)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_search(llama.cpp vs vLLM vs Ollama for single user)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://small-models.example/9b-vs-27b-tool-use)",
+              "web_search(9B vs 27B models for tool-using agents)",
+              "web_fetch(https://small-models.example/9b-vs-27b-tool-use)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_search(inference speed benchmarks for GGUF vs EXL2)",
+              "web_search(vLLM PagedAttention vs llama.cpp memory efficiency)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_search(amd apple specific sweet spot model size)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)"
+            ]
+          }
+        ]
+      ],
+      "taskScores": {
+        "chat-plain": 1,
+        "chat-exact-word": 1,
+        "task-board": 1,
+        "memory-save-recall": 1,
+        "exec-csv-revenue": 1,
+        "exec-fib-script": 1,
+        "multi-release-notes": 1,
+        "cron-schedule": 1,
+        "web-fact-to-file": 1,
+        "website-summarize": 1,
+        "research-report": 0.5
+      },
+      "categoryScores": {
+        "chat": 1,
+        "task": 1,
+        "memory": 1,
+        "exec": 1,
+        "multi": 1,
+        "cron": 1,
+        "web_search": 1,
+        "website": 1,
+        "research": 0.5
+      },
+      "overall": 0.9545454545454546,
+      "totalMs": 287056
+    },
+    {
+      "model": "qwen2.5:7b",
+      "profile": "full",
+      "configTokens": {
+        "specialists": 0
+      },
+      "reps": [
+        [
+          {
+            "id": "chat-plain",
+            "expected": [
+              "chat"
+            ],
+            "routed": "chat",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to chat",
+                "pass": true,
+                "detail": "chat"
+              },
+              {
+                "name": "mentions mutability",
+                "pass": true
+              },
+              {
+                "name": "short (≤ 4 sentences)",
+                "pass": true,
+                "detail": "2 sentences"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 2474,
+            "promptTokens": 937,
+            "completionTokens": 46,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "A Python list is mutable, allowing elements to be added, removed, or changed, while a tuple is immutable, meaning its elements cannot be altered once assigned. Lists are denoted by square brackets [] and tuples by parentheses ().",
+            "webCalls": []
+          },
+          {
+            "id": "chat-exact-word",
+            "expected": [
+              "chat"
+            ],
+            "routed": "chat",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to chat",
+                "pass": true,
+                "detail": "chat"
+              },
+              {
+                "name": "exactly READY",
+                "pass": true,
+                "detail": "\"READY\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 787,
+            "promptTokens": 932,
+            "completionTokens": 2,
+            "modelCalls": 1,
+            "iterations": 1,
+            "hitMaxIterations": false,
+            "answer": "READY",
+            "webCalls": []
+          },
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3201,
+            "promptTokens": 2392,
+            "completionTokens": 180,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "Here are the tasks added to your task board:\n\n1. **Renew SSL certificate** - Priority: High, Status: Todo\n2. **Water the plants** - Priority: Low, Status: Todo\n3. **Submit quarterly report** - Priority: Medium, Status: Todo, Due: 2026-08-28\n\nWould you like to modify or add any more tasks?",
+            "webCalls": []
+          },
+          {
+            "id": "memory-save-recall",
+            "expected": [
+              "memory"
+            ],
+            "routed": "memory",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to memory",
+                "pass": true,
+                "detail": "memory"
+              },
+              {
+                "name": "fact persisted",
+                "pass": true
+              },
+              {
+                "name": "recalled in follow-up",
+                "pass": true,
+                "detail": "\"I've confirmed that your deployment freeze started on 2026-09-01. Is there anything else you need he\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3852,
+            "promptTokens": 6786,
+            "completionTokens": 226,
+            "modelCalls": 6,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "I've confirmed that your deployment freeze started on 2026-09-01. Is there anything else you need help with regarding this?",
+            "webCalls": []
+          },
+          {
+            "id": "exec-csv-revenue",
+            "expected": [
+              "exec",
+              "multi"
+            ],
+            "routed": "exec",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to exec|multi",
+                "pass": true,
+                "detail": "exec"
+              },
+              {
+                "name": "revenue.txt = 94",
+                "pass": false,
+                "detail": "\"\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.75,
+            "durationMs": 3871,
+            "promptTokens": 2783,
+            "completionTokens": 296,
+            "modelCalls": 3,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "It seems there was an issue with running the Python command. Let's try another approach using the `python3` tool directly to ensure we can process the CSV file correctly.\n\nLet's use the `python3` tool to compute the total revenue from the `sales.csv` file and write the result to `revenue.txt`.",
+            "webCalls": []
+          },
+          {
+            "id": "exec-fib-script",
+            "expected": [
+              "exec",
+              "multi"
+            ],
+            "routed": "exec",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to exec|multi",
+                "pass": true,
+                "detail": "exec"
+              },
+              {
+                "name": "fib.py exists",
+                "pass": true
+              },
+              {
+                "name": "fib.txt = 6765",
+                "pass": true,
+                "detail": "\"6765\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 2715,
+            "promptTokens": 2715,
+            "completionTokens": 196,
+            "modelCalls": 3,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "The 20th Fibonacci number is 6765. This value has been saved in the file `fib.txt`.",
+            "webCalls": []
+          },
+          {
+            "id": "multi-release-notes",
+            "expected": [
+              "multi",
+              "exec",
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to multi|exec|task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "task with version",
+                "pass": false,
+                "detail": "Evaluate new version"
+              },
+              {
+                "name": "summary covers ≥2 changes",
+                "pass": false,
+                "detail": "0/4 phrases, 0 chars"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.6,
+            "durationMs": 4632,
+            "promptTokens": 4892,
+            "completionTokens": 423,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "It seems like the task has already been created and is marked as `todo`. Let's proceed with reading the `releases.txt` file to gather the necessary information for evaluating the new version.\n\nI will now call the `read_releases_file` function to extract the version number and any relevant changes.",
+            "webCalls": []
+          },
+          {
+            "id": "cron-schedule",
+            "expected": [
+              "cron"
+            ],
+            "routed": "cron",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to cron",
+                "pass": true,
+                "detail": "cron"
+              },
+              {
+                "name": "job created",
+                "pass": true,
+                "detail": "1 jobs"
+              },
+              {
+                "name": "weekday 8am schedule",
+                "pass": true,
+                "detail": "0 8 * * 1-5"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 2894,
+            "promptTokens": 4482,
+            "completionTokens": 208,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "I've scheduled a reminder for you to check the build dashboard every weekday at 8am. You can manage this task using the commands provided. If you need any further assistance, feel free to ask!",
+            "webCalls": []
+          },
+          {
+            "id": "web-fact-to-file",
+            "expected": [
+              "web_search",
+              "multi"
+            ],
+            "routed": "web_search",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to web_search|multi",
+                "pass": true,
+                "detail": "web_search"
+              },
+              {
+                "name": "searched the web",
+                "pass": true,
+                "detail": "web_search(Node.js release year); web_fetch(data/workspaces/main/node-year.txt); web_search(Node.js "
+              },
+              {
+                "name": "year in file or answer",
+                "pass": true,
+                "detail": "\"\""
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3701,
+            "promptTokens": 4089,
+            "completionTokens": 278,
+            "modelCalls": 6,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "answer": "Node.js was first released in 2009. I will now write the year 2009 to node-year.txt in your workspace.\n\nHere is the content that was found:\n- Node.js was first released in 2009 by Ryan Dahl, built on Google's V8 engine. npm arrived in 2010. The io.js fork in 2014 merged back in 2015 under the Node.js project.\n\nLet me proceed with writing the year 2009 to node-year.txt.",
+            "webCalls": [
+              "web_search(Node.js release year)",
+              "web_fetch(data/workspaces/main/node-year.txt)",
+              "web_search(Node.js first release year)"
+            ]
+          },
+          {
+            "id": "website-summarize",
+            "expected": [
+              "website",
+              "web_search"
+            ],
+            "routed": "website",
+            "routedBy": "keyword",
+            "checks": [
+              {
+                "name": "routed to website|web_search",
+                "pass": true,
+                "detail": "website"
+              },
+              {
+                "name": "fetched the page",
+                "pass": true,
+                "detail": "web_fetch(https://example-docs.test/guide)"
+              },
+              {
+                "name": "≥2 facts from the page",
+                "pass": true,
+                "detail": "4/5"
+              },
+              {
+                "name": "no invented facts (no port other than 8443)",
+                "pass": true
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 1795,
+            "promptTokens": 1505,
+            "completionTokens": 96,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "- The Widget Service operates on port 8443 with TLS required.\n- Configurations are managed in `/etc/widget/config.toml` and reloaded with a SIGHUP signal.\n- Nightly backups occur at 02:00 UTC, retained for 30 days in the \"widget-backups\" bucket.",
+            "webCalls": [
+              "web_fetch(https://example-docs.test/guide)"
+            ]
+          },
+          {
+            "id": "research-report",
+            "expected": [
+              "research"
+            ],
+            "routed": "research",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to research",
+                "pass": true,
+                "detail": "research"
+              },
+              {
+                "name": "pipeline ran to a report (not the evidence-gate abort)",
+                "pass": false,
+                "detail": "0 chars of report text, 27 web calls"
+              },
+              {
+                "name": "report uses ≥3 corpus facts",
+                "pass": false,
+                "detail": "0/8"
+              },
+              {
+                "name": "cites ≥2 corpus URLs",
+                "pass": false,
+                "detail": "0 cited"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 0.5,
+            "durationMs": 85876,
+            "promptTokens": 25847,
+            "completionTokens": 8540,
+            "modelCalls": 26,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "answer": "By 2026, local LLM inference on consumer GPUs has seen significant advancements, with specific models and quantization techniques optimizing performance and efficiency. A 12GB GPU like the RTX 3060 can handle 7-12B parameter models in 4-bit GGUF, while a 24GB GPU like the RTX 3090 can manage 27-35B parameter models. Throughput varies, with a 27B model on a 4090 running at about 35-45 tokens per second, and a 12B model on a 3060 at around 25 tokens per second. Unified memory solutions, such as those in Apple silicon and Strix Halo, can handle larger models but introduce latency due to lower bandwidth.\n\n(Note: the report was generated but the PDF conversion did not produce a file.)",
+            "webCalls": [
+              "web_search(state local LLM inference consumer news)",
+              "web_search(state local LLM inference consumer announcements September 2026)",
+              "web_search(LLM inference VRAM limits 2026)",
+              "web_search(Unified memory impact on LLM inference)",
+              "web_search(GGUF quantization methods comparison)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://small-models.example/9b-vs-27b-tool-use)",
+              "web_search(Serving stacks for individual users)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://gpu-inference.example/consumer-gpus-2026)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://small-models.example/9b-vs-27b-tool-use)",
+              "web_search(Tool-using agent model size efficiency)",
+              "web_fetch(https://serving-stacks.example/llamacpp-vs-vllm-vs-ollama)",
+              "web_fetch(https://small-models.example/9b-vs-27b-tool-use)",
+              "web_fetch(https://quant-notes.example/gguf-quantization-guide)",
+              "web_fetch(https://unified-memory.example/apple-strix-halo)"
+            ]
+          }
+        ]
+      ],
+      "taskScores": {
+        "chat-plain": 1,
+        "chat-exact-word": 1,
+        "task-board": 1,
+        "memory-save-recall": 1,
+        "exec-csv-revenue": 0.75,
+        "exec-fib-script": 1,
+        "multi-release-notes": 0.6,
+        "cron-schedule": 1,
+        "web-fact-to-file": 1,
+        "website-summarize": 1,
+        "research-report": 0.5
+      },
+      "categoryScores": {
+        "chat": 1,
+        "task": 1,
+        "memory": 1,
+        "exec": 0.875,
+        "multi": 0.6,
+        "cron": 1,
+        "web_search": 1,
+        "website": 1,
+        "research": 0.5
+      },
+      "overall": 0.8954545454545454,
+      "totalMs": 120063
+    }
+  ]
+}

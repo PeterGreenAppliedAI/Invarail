@@ -35,7 +35,7 @@ export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBacken
     category: 'exec',
 
     async execute(params: Record<string, unknown>, ctx: ToolContext): Promise<string> {
-      const command = params.command as string;
+      let command = params.command as string;
       if (!command) return 'Error: command parameter is required';
 
       // Handle args as string (split on spaces) or array
@@ -44,6 +44,22 @@ export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBacken
         args = params.args.split(/\s+/).filter(Boolean);
       } else if (Array.isArray(params.args)) {
         args = params.args;
+      }
+
+      // Models — small ones every time, big ones often — put the whole command LINE in
+      // `command` ("python3 fib.py > fib.txt"). execFile then looks for a binary literally
+      // named that and fails with a spawn ENOENT the model cannot read (e2e eval 2026-09-27:
+      // three retries into a code_session detour on a 9B). Accommodate at the boundary: split
+      // the line into binary + args (quote-aware), and REFUSE shell operators with the reason
+      // instead of letting the shell-less spawn fail cryptically.
+      if (/\s/.test(command.trim()) && args.length === 0 && !params.code) {
+        const unquoted = command.replace(/"[^"]*"|'[^']*'/g, '');
+        if (/[|><&;`]|\$\(/.test(unquoted)) {
+          return 'Error: shell operators (>, |, &&, ;, $()) do not work here — there is no shell. Run the command alone; its output is returned to you. To save output to a file, write it from inside your code or use write_file.';
+        }
+        const parts = command.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+        command = parts[0] ?? command;
+        args = parts.slice(1).map(p => p.replace(/^(["'])(.*)\1$/, '$2'));
       }
 
       // Docker execution path — no allowlist needed

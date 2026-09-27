@@ -21,7 +21,14 @@ Two runs of the same harness — [20B–124B in August](evals/2026-08-local-mode
 | Router · NER · extraction · consolidation | phi4-mini (3.8B) | phi4 (14B) |
 | Embeddings | qwen3-embedding:4b | qwen3-embedding:8b |
 | **Foreground: chat + tools** | **qwen3.5:9b, `think: false`** (92%, 6.6GB) — or gemma4:12b (92%, better code) | a 27B with thinking off (97–100%) |
-| Research synthesis · coding | 27B | 27B+ or a hosted model |
+| Research (the pipeline does the scaffolding) | qwen2.5:7b runs it end to end — verified claims, PDF | a 27B writes noticeably better prose |
+| Coding (Pi) | 27B | 27B+ or a hosted model |
+
+Those are engine numbers. The same models were also run **as Invarail** — a wizard-generated
+config through the real router, specialists, stores and pipelines
+([evals/2026-09-e2e](evals/2026-09-e2e/)): gemma4:12b 100%, qwen3.5:9b 94%, qwen2.5:7b 92%,
+research at 100% on all three. Where a small model misses, it is discipline (answering in
+prose instead of calling the tool, or inventing a number when its code fails), not capability.
 
 Native tool use begins at 9–12B; qwen2.5:7b (81%) is the fallback for an 8GB machine.
 phi4 and the gemma3 small models cannot native-tool-call on Ollama at all (their chat

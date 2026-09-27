@@ -1,0 +1,83 @@
+[config] ${SLACK_BOT_TOKEN} is not set — resolved to an empty string
+[config] ${SLACK_APP_TOKEN} is not set — resolved to an empty string
+[config] ${MSGRAPH_USER_ID} is not set — resolved to an empty string
+[config] ${BLUEBUBBLES_URL} is not set — resolved to an empty string
+[config] ${BLUEBUBBLES_PASSWORD} is not set — resolved to an empty string
+E2E eval — 3 model(s) × 11 task(s) × 1 rep(s) → /Users/petergreen/LocalClaw/data/model-eval/e2e-2026-09-27
+
+================ qwen3.5:9b ================
+[Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
+[Pipelines] Registered 11 pipeline(s)
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2087ms (memory running in parallel)
+[Dispatch] Category: chat (fallback)
+[Dispatch] Memory priming: 5914ms (waited after routing)
+[Chat] model=qwen3.5:9b wall=5323ms prompt=960tok/335ms gen=46tok/480ms load=4498ms
+  chat-plain: 100% routed=chat calls=1 ptok=960 13s
+[Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
+[Pipelines] Registered 11 pipeline(s)
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2006ms (memory running in parallel)
+[Dispatch] Category: chat (fallback)
+[Dispatch] Memory priming: 3921ms (waited after routing)
+[Chat] model=qwen3.5:9b wall=4830ms prompt=955tok/334ms gen=2tok/12ms load=4476ms
+  chat-exact-word: 100% routed=chat calls=1 ptok=955 11s
+[Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
+[Pipelines] Registered 11 pipeline(s)
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2002ms (memory running in parallel)
+[Dispatch] Category: task (keyword)
+[Dispatch] Memory priming: 3961ms (waited after routing)
+[Dispatch] Pipeline dispatch: "task" for category "task"
+[Pipeline] Starting "task" (1 stages)
+[Pipeline] Running stage "route" (llm_branch)
+[Pipeline] LlmBranch "route" → "list" (raw="", 3 stages)
+[Pipeline] Running stage "extract_list" (extract)
+[Pipeline] Stage "extract_list" done in 0.2s
+[Pipeline] Running stage "list" (tool)
+[Pipeline] Stage "list" done in 0.0s
+[Pipeline] Running stage "format_list" (llm)
+[Pipeline] Stage "format_list" done in 0.2s
+[Pipeline] Stage "route" done in 5.1s
+[Pipeline] Finished "task" — answer length: 37
+[Pipeline] "task" profile: total 5.1s · slowest: route=5.1s format_list=0.2s extract_list=0.2s
+  task-board: 50% routed=task calls=2 ptok=361 11s — ✗ three tasks exist, priorities correct, due date correct
+[Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
+[Pipelines] Registered 11 pipeline(s)
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2003ms (memory running in parallel)
+[Dispatch] Category: memory (keyword)
+[Dispatch] Memory priming: 3831ms (waited after routing)
+[Dispatch] Pipeline dispatch: "memory" for category "memory"
+[Pipeline] Starting "memory" (1 stages)
+[Pipeline] Running stage "route" (llm_branch)
+[Pipeline] LlmBranch "route" → "recall" (raw="", 3 stages)
+[Pipeline] Running stage "extract_recall" (extract)
+[Pipeline] Stage "extract_recall" done in 0.2s
+[Pipeline] Running stage "search" (tool)
+[Pipeline] Stage "search" done in 0.0s
+[Pipeline] Running stage "format_results" (llm)
+[Pipeline] Stage "format_results" done in 0.8s
+[Pipeline] Stage "route" done in 5.7s
+[Pipeline] Finished "memory" — answer length: 263
+[Pipeline] "memory" profile: total 5.7s · slowest: route=5.7s format_results=0.8s extract_recall=0.2s
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2003ms (memory running in parallel)
+[Dispatch] Category: chat (fallback)
+[Dispatch] Memory priming: 3893ms (waited after routing)
+[Chat] model=qwen3.5:9b wall=5296ms prompt=1143tok/403ms gen=42tok/438ms load=4447ms
+  memory-save-recall: 80% routed=memory calls=3 ptok=1378 23s — ✗ fact persisted
+[Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
+[Pipelines] Registered 11 pipeline(s)
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2002ms (memory running in parallel)
+[Dispatch] Category: chat (fallback)
+[Chat] model=qwen3.5:9b wall=9699ms prompt=981tok/341ms gen=72tok/757ms load=8592ms
+  exec-csv-revenue: 50% routed=chat calls=1 ptok=981 12s — ✗ routed to exec|multi, revenue.txt = 94
+[Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
+[Pipelines] Registered 11 pipeline(s)
+[Router] OLLAMA_INFERENCE_ERROR: Classification failed — Router timed out after 2000ms
+[Dispatch] Routing: 2002ms (memory running in parallel)
+[Dispatch] Category: chat (fallback)
+[Dispatch] Memory priming: 3938ms (waited after routing)
+RUN1_DONE

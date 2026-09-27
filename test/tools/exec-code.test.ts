@@ -28,6 +28,28 @@ describe('exec code param with RELATIVE workspacePath', () => {
     expect(out.trim()).toBe('6765');
   });
 
+  it('accepts a whole command line in `command` (binary + args split, quotes kept)', async () => {
+    const tool = createExecTool(config, undefined);
+    const ctx = { agentId: 't', sessionKey: 't', workspacePath: wsAbs } as ToolContext;
+    const out = await tool.execute({ command: 'node -e "console.log(2+2)"' }, ctx);
+    expect(out.trim()).toBe('4');
+  });
+
+  it('refuses shell operators with the reason, instead of a spawn ENOENT on the whole line', async () => {
+    const tool = createExecTool(config, undefined);
+    const ctx = { agentId: 't', sessionKey: 't', workspacePath: wsAbs } as ToolContext;
+    const out = await tool.execute({ command: 'node fib.js > fib.txt' }, ctx);
+    expect(out).toMatch(/^Error: shell operators/);
+    expect(out).toMatch(/write_file/);
+    expect(out).not.toMatch(/ENOENT/);
+  });
+
+  it('still refuses a binary outside the allowlist when given as a command line', async () => {
+    const tool = createExecTool(config, undefined);
+    const ctx = { agentId: 't', sessionKey: 't', workspacePath: wsAbs } as ToolContext;
+    expect(await tool.execute({ command: 'rm -rf x' }, ctx)).toMatch(/not in the allowlist/);
+  });
+
   it('runs inline code when workspacePath is absolute (unchanged behavior)', async () => {
     const tool = createExecTool(config, undefined);
     const ctx = { agentId: 't', sessionKey: 't', workspacePath: wsAbs } as ToolContext;
