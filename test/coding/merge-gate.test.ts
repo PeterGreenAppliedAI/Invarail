@@ -125,3 +125,36 @@ describe('runMergeGate', () => {
     expect(() => lstatSync(join(worktree, 'node_modules'))).toThrow(); // symlink removed
   });
 });
+
+describe('validators come from the main tree (re-review N02, 2026-09-27)', () => {
+  function git(cwd: string, ...args: string[]): string {
+    return execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
+  }
+  it('with repoRoot, tsc and vitest are invoked via node from <repoRoot>/node_modules, never npx in the worktree', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'gate-trusted-'));
+    git(repo, 'init', '-q', '-b', 'main');
+    git(repo, 'config', 'user.email', 't@t'); git(repo, 'config', 'user.name', 't'); git(repo, 'config', 'commit.gpgsign', 'false');
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 1;\n');
+    git(repo, 'add', '-A'); git(repo, 'commit', '-q', '-m', 'init');
+    const worktree = join(repo, 'wt');
+    git(repo, 'worktree', 'add', '-q', '-b', 'self-mod/y', worktree, 'HEAD');
+    const baseSha = git(repo, 'rev-parse', 'HEAD');
+    mkdirSync(join(worktree, 'src'), { recursive: true });
+    writeFileSync(join(worktree, 'src', 'x.ts'), 'export const x = 1;\n');
+    git(worktree, 'add', '-A'); git(worktree, 'commit', '-q', '-m', 'change');
+
+    const calls: Array<{ name: string; command: string; args: string[] }> = [];
+    const recorder: CheckRunner = async (name, command, args) => { calls.push({ name, command, args }); return { name, pass: true, output: 'ok', durationMs: 1 }; };
+    await runMergeGate({ worktreePath: worktree, baseSha, checkRunner: recorder, repoRoot: repo });
+
+    const tsc = calls.find(c => c.name === 'tsc')!; const vitest = calls.find(c => c.name === 'vitest')!;
+    expect(tsc.command).toBe(process.execPath);
+    expect(tsc.args[0]).toContain(join(repo, 'node_modules', 'typescript'));
+    expect(tsc.args).toContain(worktree);
+    expect(vitest.command).toBe(process.execPath);
+    expect(vitest.args[0]).toContain(join(repo, 'node_modules', 'vitest'));
+    expect(vitest.args).toContain('--root');
+    expect(calls.some(c => c.command === 'npx')).toBe(false);
+    rmSync(repo, { recursive: true, force: true });
+  });
+});

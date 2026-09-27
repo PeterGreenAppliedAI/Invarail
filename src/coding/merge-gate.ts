@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, lstatSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 /**
@@ -129,6 +129,10 @@ export interface MergeGateOptions {
   timeoutMs?: number;
   /** Injectable for tests; defaults to the real scrubbed-env runner */
   checkRunner?: CheckRunner;
+  /** The main repository root. When set, tsc and vitest are invoked from ITS
+   *  node_modules with the worktree as project/root — never from the worktree's own
+   *  copied node_modules, which the coding session can edit (re-review N02, 2026-09-27). */
+  repoRoot?: string;
 }
 
 export async function runMergeGate(opts: MergeGateOptions): Promise<GateVerdict> {
@@ -173,11 +177,16 @@ export async function runMergeGate(opts: MergeGateOptions): Promise<GateVerdict>
     depsReinstalled = true;
   }
 
+  const trusted = opts.repoRoot && !depsReinstalled ? resolve(opts.repoRoot, 'node_modules') : null;
   if (checks.every(c => c.pass)) {
-    checks.push(await run('tsc', 'npx', ['tsc', '--noEmit'], opts.worktreePath, timeoutMs));
+    checks.push(trusted
+      ? await run('tsc', process.execPath, [join(trusted, 'typescript', 'bin', 'tsc'), '--noEmit', '-p', opts.worktreePath], opts.worktreePath, timeoutMs)
+      : await run('tsc', 'npx', ['tsc', '--noEmit'], opts.worktreePath, timeoutMs));
   }
   if (checks.every(c => c.pass)) {
-    checks.push(await run('vitest', 'npx', ['vitest', 'run'], opts.worktreePath, timeoutMs));
+    checks.push(trusted
+      ? await run('vitest', process.execPath, [join(trusted, 'vitest', 'vitest.mjs'), 'run', '--root', opts.worktreePath], opts.worktreePath, timeoutMs)
+      : await run('vitest', 'npx', ['vitest', 'run'], opts.worktreePath, timeoutMs));
   }
 
   return {

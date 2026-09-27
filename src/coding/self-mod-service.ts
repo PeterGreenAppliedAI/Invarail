@@ -194,6 +194,7 @@ export class SelfModService {
       this.autoCommitLeftovers(active.worktreePath, slug);
 
       const preGate = await this.gateRunner({
+      repoRoot: this.repoRoot,
         worktreePath: active.worktreePath,
         baseSha: active.baseSha,
         protectedPathsExtra: this.config.selfMod.protectedPathsExtra,
@@ -249,6 +250,7 @@ export class SelfModService {
         reversible: true, outcome: 'proposed', detail: active.slug,
       });
       const gate = await this.gateRunner({
+        repoRoot: this.repoRoot,
         worktreePath: active.worktreePath,
         baseSha: mainSha,
         protectedPathsExtra: this.config.selfMod.protectedPathsExtra,

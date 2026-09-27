@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 /**
@@ -29,8 +30,11 @@ export function startRunJournal(agentId: string | undefined, sessionKey: string 
   if (!agentId || !sessionKey) return NOOP;
   try {
     mkdirSync(dir, { recursive: true });
-    const path = join(dir, `${Date.now().toString(36)}-${safe(agentId)}-${safe(sessionKey)}.jsonl`);
-    appendFileSync(path, JSON.stringify({ type: 'start', ts: new Date().toISOString(), agentId, sessionKey, userMessage: userMessage.slice(0, 200) }) + '\n');
+    // Random suffix + exclusive create: the lossy safe() names collided (`channel:a` vs
+    // `channel/a`, same millisecond), and closing one run unlinked the other's journal
+    // (re-review N05). The sweep reads identity from the start record, not the name.
+    const path = join(dir, `${Date.now().toString(36)}-${safe(agentId)}-${safe(sessionKey)}-${randomUUID().slice(0, 8)}.jsonl`);
+    appendFileSync(path, JSON.stringify({ type: 'start', ts: new Date().toISOString(), agentId, sessionKey, userMessage: userMessage.slice(0, 200) }) + '\n', { flag: 'ax' });
     return {
       step(i: number, tool: string, observation: string): void {
         try {

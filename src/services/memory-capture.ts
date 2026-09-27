@@ -67,6 +67,10 @@ export interface MemoryCaptureDeps {
 export class MemoryCapture {
   /** Sessions with a capture in flight — a slow utility model must not stack runs. */
   private readonly inFlight = new Set<string>();
+  /** Bumped by takeSessionTail (a !reset). A capture that started under an older
+   *  generation drops its result instead of storing pre-reset facts and recreating
+   *  the marker the reset just deleted (re-review N04, 2026-09-27). */
+  private readonly generation = new Map<string, number>();
 
   constructor(private readonly deps: MemoryCaptureDeps) {}
 
@@ -123,6 +127,8 @@ export class MemoryCapture {
    */
   takeSessionTail(agentId: string, sessionKey: string, transcript: ConversationTurn[]): { tail: ConversationTurn[]; captured: CapturedFact[] } {
     const overlapTurns = this.deps.config.memory?.capture?.overlapTurns ?? 2;
+    const genKey = `${agentId}:${sessionKey}`;
+    this.generation.set(genKey, (this.generation.get(genKey) ?? 0) + 1);
     const state = this.loadState(agentId);
     const record = state[sessionKey] ?? { processed: 0, captured: [] };
     delete state[sessionKey];
@@ -174,12 +180,17 @@ export class MemoryCapture {
     }
 
     this.inFlight.add(guardKey);
+    const startedGeneration = this.generation.get(guardKey) ?? 0;
     try {
       const recentlyRemoved = this.deps.factStore()?.loadRecentlyRemoved(senderId) ?? [];
       const facts = await withTimeout(
         this.deps.extract(window, recentlyRemoved, senderId),
         timeoutMs,
       );
+      if ((this.generation.get(guardKey) ?? 0) !== startedGeneration) {
+        console.log(`[Capture] Session ${sessionKey} was reset during extraction — result dropped`);
+        return 0;
+      }
 
       // 'observed' is the schema default, but say it here: this is the one path
       // where a reader might assume a mid-conversation capture is the user's word.
@@ -208,9 +219,12 @@ export class MemoryCapture {
 
       // Advance the marker even when extraction yields nothing: the turns were
       // read. Not advancing would re-send the same window on every later message.
-      // Saved AFTER the writes so the captured list is never ahead of the stores.
-      state[sessionKey] = { processed: transcript.length, captured };
-      this.saveState(agentId, state);
+      // Saved AFTER the writes so the captured list is never ahead of the stores —
+      // and merged into a FRESH read of the file: the snapshot taken before the await
+      // is stale once another session's capture finished meanwhile (re-review N03).
+      const fresh = this.loadState(agentId);
+      fresh[sessionKey] = { processed: transcript.length, captured };
+      this.saveState(agentId, fresh);
 
       if (observed.length === 0) return 0;
       console.log(`[Capture] ${written || observed.length} fact(s) from ${sessionKey} (turns ${record.processed}→${transcript.length})`);

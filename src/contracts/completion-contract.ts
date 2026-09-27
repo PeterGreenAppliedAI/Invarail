@@ -36,6 +36,9 @@ export interface ConditionResult {
   condition: Postcondition;
   pass: boolean;
   detail: string;
+  /** The verifier itself threw — the outcome is UNKNOWN, not failed. Never a pass
+   *  (re-review N07), never a reason to send the model back to redo the work. */
+  errored?: boolean;
 }
 
 export interface ContractResult {
@@ -173,8 +176,10 @@ export function checkContract(contract: CompletionContract, deps: ContractCheckD
         }
       }
     } catch (err) {
-      // A broken check must fail SAFE for the user (do not block completion on our bug)
-      return { condition, pass: true, detail: `check errored (${err instanceof Error ? err.message : err}) — not counted against completion` };
+      // A broken check is an UNKNOWN outcome: not a pass (that reported unverified work
+      // as verified), not a model-directed rejection (that would chase our bug). It fails
+      // the contract so the honest wrap says "could not verify" — see buildContractHook.
+      return { condition, pass: false, errored: true, detail: `could not verify ${condition.kind} ${'path' in condition ? condition.path : ''} (${err instanceof Error ? err.message : err})`.replace(/\s+\(/, ' (') };
     }
   });
   const failed = results.filter(r => !r.pass);
@@ -205,6 +210,10 @@ export function buildContractHook(
   return async (answer, _steps, phase) => {
     const result = checkContract(contract, { ...deps, answer });
     if (result.pass) return { accept: true };
+    // Only checks that genuinely FAILED can send the model back; errored checks are ours to
+    // report, not the model's to fix — accept, and the post-loop wrap carries the caveat.
+    const actionable = result.failed.filter(f => !f.errored);
+    if (actionable.length === 0 && phase !== 'cap') return { accept: true };
     // At the cap the engine cannot grant iterations — a reject REPLACES the answer, so the
     // feedback must be user-facing honesty, never model-directed instructions.
     if (phase === 'cap') {
