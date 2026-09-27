@@ -6,16 +6,40 @@ remove a piece and the feature disappears; nothing breaks.
 
 | Tier | You need | You get | Time |
 |------|----------|---------|------|
-| **0 — Try** | Node 22+, [Ollama](https://ollama.com), one ~8GB model | Chat with persistent memory in the web console | ~15 min |
+| **0 — Try** | Node 22+, [Ollama](https://ollama.com), one model (gemma4:12b, 7.6GB; qwen2.5:7b on 8GB RAM) | Chat with persistent memory in the web console | ~15 min |
 | **1 — Run** | + `docker compose up -d` (2 sidecars), + a Discord/Telegram token | Daily-driver assistant: graph memory, real web search, heartbeat, briefings, cron reminders | +30 min |
 | **2 — Own** | + Docker exec sandbox, Google OAuth (read-only), a vision model | Sandboxed code execution, email/calendar, documents & PDFs, image understanding, browser extension | +1–2 h |
 | **3 — Fleet** | Multiple inference hosts | The reference build: Ollama-native hosts by role (plus vLLM for coding), compiled [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) workflows, verified research reports | a weekend |
 
+## Model minimums (measured)
+
+Two runs of the same harness — [20B–124B in August](evals/2026-08-local-model-eval/) and
+[3.8B–14.7B on September 27](evals/2026-09-small-tier/) — draw the lines:
+
+| Role | Floor | Comfortable |
+|---|---|---|
+| Router · NER · extraction · consolidation | phi4-mini (3.8B) | phi4 (14B) |
+| Embeddings | qwen3-embedding:4b | qwen3-embedding:8b |
+| **Foreground: chat + tools** | **gemma4:12b, `think: false`** (92%) | a 27B with thinking off (97–100%) |
+| Research synthesis · coding | 27B | 27B+ or a hosted model |
+
+Native tool use begins at 12B; qwen2.5:7b (81%) is the fallback for an 8GB machine.
+phi4 and the gemma3 small models cannot native-tool-call on Ollama at all (their chat
+templates lack it) — router/extraction only. `npm run doctor` tells you whether your
+foreground model fits this machine.
+
+| Machine | Fits |
+|---|---|
+| 8GB RAM, no GPU | qwen2.5:7b doing everything — chat, most tools, no code |
+| 16GB RAM or a 12GB GPU | gemma4:12b foreground + phi4-mini utility |
+| 24GB GPU or 32GB unified | a 27B foreground + the utility pair — everything |
+
 ## Tier 0 — fifteen minutes to a working agent
 
 ```bash
-# 1. A local model (any capable 7-14B instruct model works)
-ollama pull qwen3:8b
+# 1. A local model — gemma4:12b is the measured floor for tool use (7.6GB);
+#    qwen2.5:7b on an 8GB machine
+ollama pull gemma4:12b
 
 # 2. Invarail
 git clone <this repo> && cd Invarail && npm install

@@ -21,13 +21,13 @@ export async function runTierStep(): Promise<SetupTier> {
 export async function runStarterGenerate(models: string[]): Promise<void> {
   const model = models.length > 0
     ? await askChoice('Which model should do everything?', models)
-    : 'qwen3:8b';
+    : 'gemma4:12b';
   if (models.length === 0) {
-    printWarning('No models found in Ollama — defaulting to qwen3:8b. Pull it with: ollama pull qwen3:8b');
+    printWarning('No models found in Ollama — defaulting to gemma4:12b (the measured floor for tool use). Pull it with: ollama pull gemma4:12b');
   }
 
   let template = readFileSync('invarail.config.starter.json5', 'utf-8');
-  template = template.replaceAll('qwen3:8b', model);
+  template = template.replaceAll('gemma4:12b', model);
 
   // Exposure is a choice; the token comes with it (see channels step for why).
   if (await askYesNo('Reach the console from OTHER devices on your network (phone, the Chrome extension)?', false)) {

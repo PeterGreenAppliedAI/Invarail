@@ -4,6 +4,18 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Where Tool Use Begins — the Small-Tier Eval (September 27 2026)
+
+Peter: *"We'd need to define what models are minimum for some of this."* The August eval covered 20B–124B; the starter preset assumed `qwen3:8b`, which nobody had measured and neither box held. Peter: *"check to see which models are on the GPU node… it should have some smaller ones for you to test with"* — and he stopped Invarail for the run so the 3060 was uncontended. Same harness, same 14 tasks × 3 reps, every small model on the utility box (3.8B–14.7B, Q4_K_M), ~50 minutes. Published: `evals/2026-09-small-tier/`.
+
+**Board:** gemma4:12b@off **92%** (tool 100, extract 100, chat 89, code 78, long-horizon 100, 3.9 min) · qwen2.5:7b 81% (tool 92, code 33) · gemma4:12b@on 79% (tool 83, 5× slower) · llama3.1:8b 69% · phi4 67% · phi4-mini 61% · mistral 61% · gemma3:4b 54% · gemma3n:e4b 42%.
+
+**What it settles.** (1) Extraction is solved at every size — grammar-constrained decoding, not the model, is doing the work; the utility tier stays tiny. (2) **Native tool use begins at 12B**; below it only qwen2.5:7b comes close. (3) Thinking hurts a 12B exactly as it hurt the 27Bs: 13 points and 5× the time — "models fail at budgets" holds a tier down. (4) phi4, gemma3:4b and gemma3n:e4b returned HTTP 400 on every tool task: their Ollama templates have no native tool support (`SERVING_INCOMPATIBLE`, a serving fact, not a score) — router/extraction models, or `toolStyle: "text"`, never native arena specialists. phi4 with no tools in the prompt: 100% extraction, 89% code. (5) Code stays a 27B-class job.
+
+**Shipped on the strength of row 1:** the starter preset and the wizard's first-pull recommendation are `gemma4:12b` with `think: false` (qwen2.5:7b when the machine has under 12GB); INSTALL carries the role floors and a hardware→tier table; `detect` reads RAM and NVIDIA VRAM and each Ollama model's size, and `doctor` says whether the foreground model fits this machine (85% of VRAM, else 60% of RAM) with the smaller-model fix beside it. **A caveat I raised mid-run and withdraw:** I read `/api/ps` showing a 4096 context and worried the long-horizon and code tasks were context-starved; the harness passes `contextSize: 16384` to the tool loop — the snapshot caught the think-probe load. The numbers stand.
+
+---
+
 ## The Wizard Detects Before It Asks — and SearXNG Gets Its Warning (September 27 2026)
 
 Peter, after the review week: *"It still feels very big and weighty… not a ton of walking through and installing the stuff via CLI or making the setup clean and easy."* Then: *"any joe schmoe can use this and install… and the system can pull the information it needs to make those connections."* The security plane had engineering discipline; setup never did. Read first: a real 1,400-line wizard existed (tier question, Ollama probe, token validation, a FalkorDB installer, preflight) — its problems were specific. It **asked** what it could detect (~30 questions), offered four hosted search providers and not the one the compose file ships, never generated the web token the adapter now requires, and its hand-templated output had drifted from the schema (`ollama.host` — silently ignored, the schema only has `url`; no `defaultModel`; the router model as the voice model). And nothing after install told you what was missing.

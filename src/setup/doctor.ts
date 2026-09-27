@@ -67,6 +67,21 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
   }
   if (!report.env.present) push('.env', 'WARN', 'no .env — every ${VAR} in the config resolves to empty', 'cp .env.example .env and fill what your config references');
 
+  // Does the foreground model fit? Ollama reports each model's on-disk size; a Q4 model
+  // needs roughly that much memory plus KV headroom. Budget: 85% of VRAM when there is a
+  // GPU, else 60% of RAM (the OS and the process need the rest).
+  if (config && report.ollama.reachable) {
+    const fg = (config as { defaultModel?: string }).defaultModel ?? config.specialists.chat?.model;
+    const size = fg ? report.ollama.modelSizes[fg] ?? report.ollama.modelSizes[`${fg}:latest`] : undefined;
+    if (fg && size) {
+      const gb = size / 1e9;
+      const budget = report.memory.gpuVramGb ? report.memory.gpuVramGb * 0.85 : report.memory.totalGb * 0.6;
+      const where = report.memory.gpuVramGb ? `${report.memory.gpuName} ${report.memory.gpuVramGb}GB VRAM` : `${report.memory.totalGb}GB RAM, no NVIDIA GPU`;
+      if (gb <= budget) push('Foreground model fits', 'PASS', `${fg} is ${gb.toFixed(1)}GB; ${where}`);
+      else push('Foreground model fits', 'WARN', `${fg} is ${gb.toFixed(1)}GB — ${where} leaves ~${budget.toFixed(0)}GB usable; expect CPU offload and slow replies`, 'pick a smaller foreground model (evals/2026-09-small-tier: gemma4:12b at 7.6GB, qwen2.5:7b at 4.7GB) or serve it from a bigger box via inference.ollamaBackends');
+    }
+  }
+
   if (!report.ollama.reachable) {
     push('Ollama', 'FAIL', `not reachable at ${report.ollama.url}`, `start Ollama, or install: ${report.ollama.install}`);
   } else {

@@ -9,7 +9,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
-import { platform } from 'node:os';
+import { platform, totalmem } from 'node:os';
 import { OllamaClient } from '../ollama/client.js';
 
 export type Platform = 'mac' | 'linux' | 'windows';
@@ -25,7 +25,9 @@ export interface Probe {
 export interface DetectReport {
   platform: Platform;
   node: { version: string; ok: boolean };
-  ollama: { url: string; reachable: boolean; models: string[]; install: string };
+  ollama: { url: string; reachable: boolean; models: string[]; modelSizes: Record<string, number>; install: string };
+  /** RAM in GB; GPU VRAM in GB when nvidia-smi answers (NVIDIA only — Apple silicon is unified memory, counted as RAM). */
+  memory: { totalGb: number; gpuVramGb?: number; gpuName?: string };
   /** Extra Ollama-native hosts from inference.ollamaBackends[] — probed individually. */
   ollamaBackends: Array<{ url: string; reachable: boolean; models: string[] }>;
   docker: Probe;
@@ -155,22 +157,24 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
   const configPath = opts.configPath ?? 'invarail.config.json5';
 
   const probeOllama = async (url: string) => {
-    if (opts.offline) return { url, reachable: false, models: [] as string[] };
+    if (opts.offline) return { url, reachable: false, models: [] as string[], modelSizes: {} as Record<string, number> };
     const client = new OllamaClient(url);
     const reachable = await client.isAvailable();
     let models: string[] = [];
-    if (reachable) { try { models = (await client.listModels()).map(m => m.name); } catch { /* reachable, no list */ } }
-    return { url, reachable, models };
+    const modelSizes: Record<string, number> = {};
+    if (reachable) { try { for (const m of await client.listModels()) { models.push(m.name); modelSizes[m.name] = m.size; } } catch { /* reachable, no list */ } }
+    return { url, reachable, models, modelSizes };
+  };
+  const gpu = await run('nvidia-smi', ['--query-gpu=name,memory.total', '--format=csv,noheader,nounits'], 4000);
+  const gpuLine = gpu.ok ? gpu.out.split('\n')[0] : '';
+  const gpuMatch = gpuLine.match(/^(.*),\s*(\d+)\s*$/);
+  const memory = {
+    totalGb: Math.round(totalmem() / 1e9 * 10) / 10,
+    ...(gpuMatch ? { gpuName: gpuMatch[1].trim(), gpuVramGb: Math.round(Number(gpuMatch[2]) / 1024 * 10) / 10 } : {}),
   };
   const ollamaBackends = await Promise.all((opts.ollamaBackendUrls ?? []).map(probeOllama));
   const [ollama, docker, falkorUp, searxngState, libreoffice, python] = await Promise.all([
-    opts.offline ? Promise.resolve({ reachable: false, models: [] as string[] }) : (async () => {
-      const client = new OllamaClient(ollamaUrl);
-      const reachable = await client.isAvailable();
-      let models: string[] = [];
-      if (reachable) { try { models = (await client.listModels()).map(m => m.name); } catch { /* reachable, no list */ } }
-      return { reachable, models };
-    })(),
+    probeOllama(ollamaUrl),
     detectDocker(p),
     opts.offline ? Promise.resolve(false) : tcpReachable(falkor.host, falkor.port),
     opts.offline ? Promise.resolve<DetectReport['searxng']['state']>('unreachable') : detectSearxng(searxngUrl),
@@ -181,8 +185,9 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
   return {
     platform: p,
     node: { version: process.versions.node, ok: nodeMajor >= 22 },
-    ollama: { url: ollamaUrl, ...ollama, install: INSTALL_HINTS.ollama[p] },
+    ollama: { ...ollama, install: INSTALL_HINTS.ollama[p] },
     ollamaBackends,
+    memory,
     docker,
     falkordb: { ...falkor, reachable: falkorUp, start: 'docker compose up -d falkordb' },
     searxng: { baseUrl: searxngUrl, state: searxngState, start: 'docker compose up -d searxng   (read SEARXNG.md first)' },

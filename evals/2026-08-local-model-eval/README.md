@@ -1,5 +1,7 @@
 # The Local Model Eval That Kept Finding Our Bugs Instead
 
+> Companion run for the 3.8B–14.7B tier (where a first-time user actually is): [2026-09-small-tier](../2026-09-small-tier/).
+
 **39 scorecard rows · 23 base models (20–124B) · thinking on/off/low A/B · 14 tasks × 3 repetitions · deterministic code checks only**
 
 An engine-in-the-loop evaluation of every local model on our cluster, run through the

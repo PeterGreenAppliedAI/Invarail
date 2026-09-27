@@ -12,6 +12,9 @@ describe('starter preset', () => {
     expect(config.channels.web?.enabled).toBe(true);
     // `ollama.host` was silently ignored by the schema (it only has `url`) — 2026-09-27
     expect(config.ollama.url).toBe('http://localhost:11434');
+    // The measured floor for tool use, thinking off (evals/2026-09-small-tier)
+    expect(config.specialists.chat?.model).toBe('gemma4:12b');
+    expect(config.specialists.chat?.think).toBe(false);
   });
 
   it('requires nothing external: no tokens, no backends, no tool providers', () => {

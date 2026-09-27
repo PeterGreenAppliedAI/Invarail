@@ -3,8 +3,10 @@ import { testOllama, runInstallArgs } from '../connectivity.js';
 import type { OllamaModel } from '../../ollama/types.js';
 import type { DetectReport } from '../detect.js';
 
-/** The model the starter tier assumes; small enough for an 8GB machine. */
-export const RECOMMENDED_FIRST_MODEL = 'qwen3:8b';
+/** The starter model: the measured floor for native tool use (92% on the harness battery,
+ *  evals/2026-09-small-tier) at 7.6GB. On an 8GB machine the wizard suggests qwen2.5:7b. */
+export const RECOMMENDED_FIRST_MODEL = 'gemma4:12b';
+export const RECOMMENDED_SMALL_MODEL = 'qwen2.5:7b';
 
 export interface OllamaStepResult {
   url: string;
@@ -51,16 +53,19 @@ export async function runOllamaStep(report?: DetectReport): Promise<OllamaStepRe
   } else {
     printWarning('No models found in Ollama.');
     // Offer, never silently install: this pulls several GB.
-    if (await askYesNo(`Pull ${RECOMMENDED_FIRST_MODEL} now (a capable general model, ~5GB)?`, true)) {
-      printInfo(`Running: ollama pull ${RECOMMENDED_FIRST_MODEL}`);
-      if (runInstallArgs('ollama', ['pull', RECOMMENDED_FIRST_MODEL])) {
+    const totalGb = report?.memory.totalGb ?? 0;
+    const pick = totalGb > 0 && totalGb < 12 ? RECOMMENDED_SMALL_MODEL : RECOMMENDED_FIRST_MODEL;
+    const why = pick === RECOMMENDED_SMALL_MODEL ? `this machine has ${totalGb.toFixed(0)}GB — the 7B fits; the 12B would not` : 'the measured floor for tool use, ~7.6GB';
+    if (await askYesNo(`Pull ${pick} now (${why})?`, true)) {
+      printInfo(`Running: ollama pull ${pick}`);
+      if (runInstallArgs('ollama', ['pull', pick])) {
         result = await testOllama(url);
-        printSuccess(`Pulled ${RECOMMENDED_FIRST_MODEL}`);
+        printSuccess(`Pulled ${pick}`);
       } else {
-        printError(`Pull failed — run it yourself: ollama pull ${RECOMMENDED_FIRST_MODEL}`);
+        printError(`Pull failed — run it yourself: ollama pull ${pick}`);
       }
     } else {
-      printInfo(`Later: ollama pull ${RECOMMENDED_FIRST_MODEL}`);
+      printInfo(`Later: ollama pull ${pick}`);
     }
   }
 

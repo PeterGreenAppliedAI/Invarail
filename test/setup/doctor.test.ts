@@ -6,7 +6,8 @@ import type { InvarailConfig } from '../../src/config/types.js';
 const base: DetectReport = {
   platform: 'mac',
   node: { version: '22.1.0', ok: true },
-  ollama: { url: 'http://127.0.0.1:11434', reachable: true, models: ['qwen3:8b', 'phi4:latest'], install: 'brew install ollama' },
+  ollama: { url: 'http://127.0.0.1:11434', reachable: true, models: ['qwen3:8b', 'phi4:latest'], modelSizes: { 'qwen3:8b': 5.2e9, 'phi4:latest': 9.1e9 }, install: 'brew install ollama' },
+  memory: { totalGb: 16 },
   ollamaBackends: [],
   docker: { found: true, detail: 'server 29' },
   falkordb: { host: 'localhost', port: 6379, reachable: false, start: 'docker compose up -d falkordb' },
@@ -72,5 +73,14 @@ describe('doctor', () => {
     expect(out).not.toMatch(/\[PASS\]/);
     expect(out).toMatch(/\[WARN\] LibreOffice/);
     expect(out).toMatch(/fix: brew install --cask libreoffice/);
+  });
+
+  it('foreground fit: passes within budget, warns with a smaller-model fix when it does not', () => {
+    const fits = doctorChecks(base, cfg()).find(c => c.name === 'Foreground model fits')!;
+    expect(fits.status).toBe('PASS');   // 5.2GB vs 60% of 16GB
+    const tight = doctorChecks({ ...base, memory: { totalGb: 8 } }, cfg()).find(c => c.name === 'Foreground model fits')!;
+    expect(tight.status).toBe('WARN'); expect(tight.fix).toMatch(/qwen2\.5:7b/);
+    const gpu = doctorChecks({ ...base, memory: { totalGb: 8, gpuVramGb: 12, gpuName: 'RTX 3060' } }, cfg()).find(c => c.name === 'Foreground model fits')!;
+    expect(gpu.status).toBe('PASS'); expect(gpu.detail).toMatch(/RTX 3060/);
   });
 });
