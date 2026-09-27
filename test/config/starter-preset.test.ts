@@ -13,7 +13,7 @@ describe('starter preset', () => {
     // `ollama.host` was silently ignored by the schema (it only has `url`) — 2026-09-27
     expect(config.ollama.url).toBe('http://localhost:11434');
     // The measured floor for tool use, thinking off (evals/2026-09-small-tier)
-    expect(config.specialists.chat?.model).toBe('gemma4:12b');
+    expect(config.specialists.chat?.model).toBe('qwen3.5:9b');
     expect(config.specialists.chat?.think).toBe(false);
   });
 

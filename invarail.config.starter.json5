@@ -1,7 +1,8 @@
 // Invarail starter preset — Tier 0 (see INSTALL.md).
 // One local model does everything; web console only; nothing else to install.
-// gemma4:12b with thinking OFF is the measured floor for tool use (92% on the
-// harness battery, evals/2026-09-small-tier); on an 8GB machine use qwen2.5:7b.
+// qwen3.5:9b with thinking OFF is the measured floor for tool use (92% on the harness
+// battery, evals/2026-09-small-tier; qwen3.5:9b ties it with better code); on an 8GB
+// machine use qwen2.5:7b.
 // Every capability above this is one config block — the upgrade path is
 // commented inline. Copy to invarail.config.json5 (or let the setup wizard
 // do it) and replace the model with one you have pulled in Ollama.
@@ -15,7 +16,7 @@
   router: {
     // One category = every message routes to chat. Add categories as you add
     // capabilities (see invarail.config.example.json5 for the full set).
-    model: "gemma4:12b",
+    model: "qwen3.5:9b",
     timeout: 4000,
     defaultCategory: "chat",
     categories: {
@@ -25,7 +26,7 @@
 
   specialists: {
     chat: {
-      model: "gemma4:12b",
+      model: "qwen3.5:9b",
       think: false,   // thinking cost this model 5x the time and 12 points on the battery
       temperature: 0.7,
       maxTokens: 2048,

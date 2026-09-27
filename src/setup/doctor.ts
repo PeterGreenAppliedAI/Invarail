@@ -82,7 +82,7 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
       const budget = report.memory.gpuVramGb ? report.memory.gpuVramGb * 0.85 : report.memory.totalGb * 0.6;
       const where = report.memory.gpuVramGb ? `${report.memory.gpuName} ${report.memory.gpuVramGb}GB VRAM` : `${report.memory.totalGb}GB RAM, no NVIDIA GPU`;
       if (gb <= budget) push('Foreground model fits', 'PASS', `${fg} is ${gb.toFixed(1)}GB; ${where}`);
-      else push('Foreground model fits', 'WARN', `${fg} is ${gb.toFixed(1)}GB — ${where} leaves ~${budget.toFixed(0)}GB usable; expect CPU offload and slow replies`, 'pick a smaller foreground model (evals/2026-09-small-tier: gemma4:12b at 7.6GB, qwen2.5:7b at 4.7GB) or serve it from a bigger box via inference.ollamaBackends');
+      else push('Foreground model fits', 'WARN', `${fg} is ${gb.toFixed(1)}GB — ${where} leaves ~${budget.toFixed(0)}GB usable; expect CPU offload and slow replies`, 'pick a smaller foreground model (evals/2026-09-small-tier: qwen3.5:9b at 6.6GB, gemma4:12b at 7.6GB, qwen2.5:7b at 4.7GB) or serve it from a bigger box via inference.ollamaBackends');
     }
   }
 

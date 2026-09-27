@@ -4,8 +4,9 @@ import type { OllamaModel } from '../../ollama/types.js';
 import type { DetectReport } from '../detect.js';
 
 /** The starter model: the measured floor for native tool use (92% on the harness battery,
- *  evals/2026-09-small-tier) at 7.6GB. On an 8GB machine the wizard suggests qwen2.5:7b. */
-export const RECOMMENDED_FIRST_MODEL = 'gemma4:12b';
+ *  evals/2026-09-small-tier, zero flipped checks) at 6.6GB; gemma4:12b ties it with better
+ *  code. On an 8GB machine the wizard suggests qwen2.5:7b. */
+export const RECOMMENDED_FIRST_MODEL = 'qwen3.5:9b';
 export const RECOMMENDED_SMALL_MODEL = 'qwen2.5:7b';
 
 export interface OllamaStepResult {
@@ -55,7 +56,7 @@ export async function runOllamaStep(report?: DetectReport): Promise<OllamaStepRe
     // Offer, never silently install: this pulls several GB.
     const totalGb = report?.memory.totalGb ?? 0;
     const pick = totalGb > 0 && totalGb < 12 ? RECOMMENDED_SMALL_MODEL : RECOMMENDED_FIRST_MODEL;
-    const why = pick === RECOMMENDED_SMALL_MODEL ? `this machine has ${totalGb.toFixed(0)}GB — the 7B fits; the 12B would not` : 'the measured floor for tool use, ~7.6GB';
+    const why = pick === RECOMMENDED_SMALL_MODEL ? `this machine has ${totalGb.toFixed(0)}GB — the 7B fits; the 9B would not` : 'the measured floor for tool use, ~6.6GB';
     if (await askYesNo(`Pull ${pick} now (${why})?`, true)) {
       printInfo(`Running: ollama pull ${pick}`);
       if (runInstallArgs('ollama', ['pull', pick])) {
