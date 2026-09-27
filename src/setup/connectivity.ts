@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { platform } from 'node:os';
 import { OllamaClient } from '../ollama/client.js';
 import type { OllamaModel } from '../ollama/types.js';
@@ -22,14 +22,15 @@ export function commandExists(cmd: string): boolean {
   }
 }
 
-/** Run a shell command with visible output. Returns true on success. */
-export function runInstall(cmd: string): boolean {
-  try {
-    execSync(cmd, { stdio: 'inherit' });
-    return true;
-  } catch {
-    return false;
-  }
+/** Run a command with visible output. Returns true on success. Argument array — never a shell string. */
+export function runInstallArgs(cmd: string, args: string[]): boolean {
+  const r = spawnSync(cmd, args, { stdio: 'inherit' });
+  return r.status === 0;
+}
+
+/** Start a docker-compose sidecar from the repo's compose file. */
+export function composeUp(service: 'falkordb' | 'searxng'): boolean {
+  return runInstallArgs('docker', ['compose', 'up', '-d', service]);
 }
 
 /** Check if a Docker container is running by name. */
@@ -42,9 +43,9 @@ export function isContainerRunning(name: string): boolean {
   }
 }
 
-/** Start FalkorDB via Docker. */
+/** Start FalkorDB via the compose file (same container the docs describe). */
 export function installFalkorDB(): boolean {
-  return runInstall('docker run -d --name falkordb -p 6379:6379 -v falkordb_data:/var/lib/falkordb/data falkordb/falkordb:latest');
+  return composeUp('falkordb');
 }
 
 

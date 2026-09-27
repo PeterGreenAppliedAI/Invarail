@@ -84,6 +84,8 @@ npm run setup        # interactive wizard: tier, Ollama + models, channels, serv
 npx tsx src/index.ts
 ```
 
+**Check the machine first:** `npm run doctor` lists every dependency your config enables, found or missing, with the install command beside each miss; `npm start` runs it quietly before booting. The wizard detects before it asks.
+
 **Prerequisites:** Node 22+, [Ollama](https://ollama.ai) reachable, and models for the roles you enable (the wizard detects what you have). Python 3 + matplotlib/pandas for research charts. Docker for the exec sandbox and FalkorDB graph memory (the wizard offers auto-install). LibreOffice for document/PDF generation.
 
 **Search:** the reference deployment uses self-hosted **SearXNG** (`tools.web.search: { provider: "searxng", baseUrl: "..." }`, JSON format enabled in its settings); the schema default is `brave`, and Perplexity/Grok/Tavily are a `provider` switch away. Note from experience: a metasearch host spends its IP reputation with every upstream engine — Invarail ships per-provider politeness throttles because agents are out-of-distribution callers for human-paced infrastructure.

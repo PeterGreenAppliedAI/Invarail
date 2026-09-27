@@ -248,6 +248,7 @@ src/
     registry.ts             #   ToolRegistry class
     register-all.ts         #   registerAllTools() — wires all tools
     ssrf.ts                 #   SSRF protection for URL-fetching tools
+    search-quota.ts         #   Daily outbound search ceiling (tools.web.search.dailyQueryCeiling) — volume gate beside the rate throttle; SEARXNG.md
     document.ts             #   LibreOffice headless document creation/conversion (markdown in → code-owned styling; models never write HTML/CSS)
     document-templates.ts   #   HTML templates (report/memo/invoice/letter/simple) for document tool
     gmail-read.ts           #   Gmail search + read (OAuth2, read-only)
@@ -346,9 +347,11 @@ src/
   tasks/                    # Task management
     store.ts                #   TaskStore
 
-  setup/                    # Interactive setup wizard
-    index.ts                #   Entry point
-    steps/                  #   Individual setup steps
+  setup/                    # Interactive setup wizard + doctor
+    index.ts                #   Entry point — detect() first, then only the questions that are the owner's
+    detect.ts               #   Environment probes (Ollama hosts+models, Docker, FalkorDB, SearXNG, LibreOffice, Python) with per-OS install hints
+    doctor.ts               #   Checks against what the config ENABLES → PASS/WARN/FAIL + fix; `npm run doctor`, quiet pre-start, GET /console/api/doctor
+    steps/                  #   Individual setup steps (generate.ts round-trips through the real schema — test/setup/wizard-generate.test.ts)
 
   utils/
     text.ts                   #   stripThinkingTags, splitFinalMessage (extracted from orchestrator)
@@ -516,7 +519,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + build + console build on every push/PR to main
-- **Current:** 1065 tests across 118 files
+- **Current:** 1079 tests across 121 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { askText, askYesNo, printStep, printSuccess, printWarning, printError, printInfo } from '../prompts.js';
 import { testDiscordToken, testTelegramToken } from '../connectivity.js';
 
@@ -5,6 +6,8 @@ export interface ChannelResult {
   enabled: boolean;
   token?: string;
   port?: number;     // Web only
+  /** Web only: bind address. 127.0.0.1 unless the owner chose LAN exposure. */
+  host?: string;
   username?: string;  // Bot username from validation
 }
 
@@ -65,7 +68,18 @@ export async function runChannelsStep(): Promise<ChannelsStepResult> {
     result.web.enabled = true;
     const portStr = await askText('Web interface port', '3100');
     result.web.port = parseInt(portStr, 10) || 3100;
-    printSuccess(`Web interface will run on port ${result.web.port}`);
+    // Exposure is a choice, and the token comes with it: a network bind with no token
+    // lets any web page open on the LAN act as the owner (the adapter refuses to start
+    // that way). The wizard generates the token so nobody has to invent one.
+    const lan = await askYesNo('Reach the console from OTHER devices on your network (phone, the Chrome extension on a laptop)?', false);
+    if (lan) {
+      result.web.host = '0.0.0.0';
+      result.web.token = randomBytes(32).toString('hex');
+      printSuccess(`Web console on all interfaces, port ${result.web.port} — a bearer token was generated (WEB_TOKEN in .env; paste it into the console Login page and the extension settings)`);
+    } else {
+      result.web.host = '127.0.0.1';
+      printSuccess(`Web console on http://127.0.0.1:${result.web.port} (this machine only)`);
+    }
   }
 
   // Summary

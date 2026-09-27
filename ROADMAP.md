@@ -48,6 +48,7 @@ Invarail is a local-model-first AI agent framework running on personal infrastru
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
+| **Now** | **Setup that detects, not asks** | `npm run doctor` + the wizard's detect-first flow landed 2026-09-27; next: a fresh-clone CI smoke that boots against a stub model, `doctor` in the console dashboard, and a `bin` entry (`npx invarail setup/doctor/start`) |
 | **Now** | **Shadow router → `router.backend` switch** | Laya v3 logged beside phi4 on real traffic (`data/router-shadow.jsonl`). Decide on the disagreement rate + who was right on disagreements over a few days (66 msgs in: 88% agree, Laya right 5/8). Likely a **v4 fine-tune with state** (`{previous_category, assistant_last_reply, message}` — replaces sticky routing too) before any switch. Then: additive `router.backend: "systemone"` with keyword fallback; move the server to the Mini (needs Remote Login); same recipe for the steward's `needsPeter` |
 | Next | **Memory synthesis pass** | Heartbeat-time "so what" over entity clusters as `(:Synthesis)` nodes with `provenance: inferred`, structural DERIVED_FROM edges, short expiry. Designed; NOT built — gate (`scripts/memory-cluster-check.ts`) failed on 24 facts. Re-run after capture has fed the graph a few weeks |
 | Next | **Repo manifest + generalized merge gate** | Extend SIP beyond the Invarail repo: per-repo manifest, generalized merge gate, draft-PR path (DECISIONS: "The Factory") |

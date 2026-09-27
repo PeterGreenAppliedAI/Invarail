@@ -1,16 +1,20 @@
-import { askText, printStep, printSuccess, printError, printWarning, printInfo } from '../prompts.js';
-import { testOllama } from '../connectivity.js';
+import { askText, askYesNo, printStep, printSuccess, printError, printWarning, printInfo } from '../prompts.js';
+import { testOllama, runInstallArgs } from '../connectivity.js';
 import type { OllamaModel } from '../../ollama/types.js';
+import type { DetectReport } from '../detect.js';
+
+/** The model the starter tier assumes; small enough for an 8GB machine. */
+export const RECOMMENDED_FIRST_MODEL = 'qwen3:8b';
 
 export interface OllamaStepResult {
   url: string;
   models: OllamaModel[];
 }
 
-export async function runOllamaStep(): Promise<OllamaStepResult> {
+export async function runOllamaStep(report?: DetectReport): Promise<OllamaStepResult> {
   printStep(1, 7, 'Ollama Connection');
 
-  const defaultUrl = 'http://127.0.0.1:11434';
+  const defaultUrl = report?.ollama.url ?? 'http://127.0.0.1:11434';
   printInfo(`Testing Ollama at ${defaultUrl}...`);
 
   let url = defaultUrl;
@@ -45,9 +49,19 @@ export async function runOllamaStep(): Promise<OllamaStepResult> {
       printInfo(`  - ${m.name} (${sizeMB} MB)`);
     }
   } else {
-    printWarning('No models found. Pull some models before running Invarail:');
-    printInfo('  ollama pull phi4-mini');
-    printInfo('  ollama pull qwen3-coder:30b');
+    printWarning('No models found in Ollama.');
+    // Offer, never silently install: this pulls several GB.
+    if (await askYesNo(`Pull ${RECOMMENDED_FIRST_MODEL} now (a capable general model, ~5GB)?`, true)) {
+      printInfo(`Running: ollama pull ${RECOMMENDED_FIRST_MODEL}`);
+      if (runInstallArgs('ollama', ['pull', RECOMMENDED_FIRST_MODEL])) {
+        result = await testOllama(url);
+        printSuccess(`Pulled ${RECOMMENDED_FIRST_MODEL}`);
+      } else {
+        printError(`Pull failed — run it yourself: ollama pull ${RECOMMENDED_FIRST_MODEL}`);
+      }
+    } else {
+      printInfo(`Later: ollama pull ${RECOMMENDED_FIRST_MODEL}`);
+    }
   }
 
   return { url, models: result.models };

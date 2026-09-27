@@ -26,13 +26,21 @@ npm run setup        # choose "Starter" at the first question
 # …or copy the preset by hand:
 cp invarail.config.starter.json5 invarail.config.json5
 
-# 4. Start (builds the console the first time), then open http://localhost:3100
-npm start
+# 4. Check the machine, then start (builds the console the first time)
+npm run doctor       # every dependency, found or missing, with the install command
+npm start            # runs the doctor quietly first; open http://localhost:3100
 ```
 
 That's the whole thing: one model routes and chats, memory persists to flat
 files under `data/`, and the web console needs no accounts. The starter preset
 is commented with exactly where each upgrade plugs in.
+
+The wizard **detects before it asks**: it probes Ollama (and offers to pull a
+first model if there are none), Docker, FalkorDB, SearXNG, LibreOffice and
+Python, and only asks the questions that are yours — which model, whether the
+console should be reachable from other devices (it generates the token), which
+channels. `npm run doctor` re-checks the same list any time, against what your
+config enables, and prints the fix beside each miss.
 
 ## Tier 1 — the daily driver
 
@@ -45,6 +53,10 @@ Then in your config:
   and upgrades memory in place (flat files remain the automatic fallback).
 - Web search: add `tools.web.search` pointing at SearXNG
   (`http://localhost:8080`) and a `web_search` router category + specialist.
+  **Read [SEARXNG.md](SEARXNG.md) first** — a metasearch instance spends *your*
+  IP's reputation with every engine it queries. The compose file mounts a
+  suggested `searxng/settings.yml`; set `dailyQueryCeiling` in the search config.
+  A hosted provider key (Brave, Perplexity, Grok, Tavily) avoids the issue.
 - A chat channel: `channels.discord: { enabled: true, token: "${DISCORD_TOKEN}" }`
   (token in `.env`). Telegram follows the same shape; Gmail is read-only and uses OAuth (see FEATURES.md).
 - **Reaching the console from another device** (phone, the Chrome extension on

@@ -1,12 +1,39 @@
+import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { askText, askYesNo, askChoice, printStep, printSuccess, printWarning, printInfo, printError } from '../prompts.js';
-import { testHttpEndpoint, testDocker, isContainerRunning, installFalkorDB, commandExists } from '../connectivity.js';
+import { testHttpEndpoint, testDocker, installFalkorDB, composeUp } from '../connectivity.js';
 import { findVisionModels, findReasoningModels } from '../defaults.js';
+import { detectSearxng, type DetectReport } from '../detect.js';
 import type { OllamaModel } from '../../ollama/types.js';
+
+export const SEARXNG_WARNING = [
+  'SearXNG is a metasearch proxy: every query is forwarded to Google, Bing, DuckDuckGo, Brave',
+  'and others FROM YOUR IP ADDRESS. Engines rate-limit and CAPTCHA-flag IPs that search faster',
+  'than a human, and an agent researching a topic sends bursts. Two days of research traffic',
+  'earned this project a DuckDuckGo CAPTCHA flag and Brave/Wikidata suspensions.',
+  'Invarail paces itself (1 query / 1.5s) and caps volume (250 queries/day, in config), and',
+  'the shipped searxng/settings.yml is a conservative SUGGESTED profile. Keep the instance',
+  'private, point nothing else at it, and read SEARXNG.md — it explains what being flagged',
+  'looks like and the alternatives that do not spend your IP (a hosted key, the local index).',
+].join('\n  ');
+
+/** Put a real secret into the shipped settings.yml if it still carries the placeholder. */
+export function ensureSearxngSecret(path = 'searxng/settings.yml'): boolean {
+  if (!existsSync(path)) return false;
+  const text = readFileSync(path, 'utf-8');
+  if (!text.includes('secret_key: "REPLACE-ME"')) return false;
+  writeFileSync(path, text.replace('secret_key: "REPLACE-ME"', `secret_key: "${randomBytes(32).toString('hex')}"`));
+  return true;
+}
 
 export interface WebSearchResult {
   enabled: boolean;
-  provider?: 'brave' | 'perplexity' | 'grok' | 'tavily';
+  provider?: 'searxng' | 'brave' | 'perplexity' | 'grok' | 'tavily';
   apiKey?: string;
+  /** searxng only */
+  baseUrl?: string;
+  /** Outbound queries per day, all providers. The wizard writes 250. */
+  dailyQueryCeiling?: number;
 }
 
 export interface TTSResult {
@@ -73,8 +100,9 @@ export interface ServicesStepResult {
   pi: PiResult;
 }
 
-export async function runServicesStep(models: OllamaModel[], enabledChannels: string[]): Promise<ServicesStepResult> {
+export async function runServicesStep(models: OllamaModel[], enabledChannels: string[], report?: DetectReport): Promise<ServicesStepResult> {
   printStep(4, 7, 'Services & Features');
+  const dockerFound = report ? report.docker.found : await testDocker();
 
   const result: ServicesStepResult = {
     webSearch: { enabled: false },
@@ -90,13 +118,43 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     pi: { enabled: false },
   };
 
-  // Web Search
+  // Web Search — SearXNG (self-hosted, no key) is offered first when Docker can run it,
+  // behind an explicit-consent warning; hosted providers spend THEIR reputation instead.
   if (await askYesNo('Enable Web Search?', false)) {
-    result.webSearch.enabled = true;
-    const provider = await askChoice('Search provider:', ['brave', 'perplexity', 'grok', 'tavily']);
-    result.webSearch.provider = provider as WebSearchResult['provider'];
-    result.webSearch.apiKey = await askText(`${provider} API key`);
-    printSuccess(`Web search: ${provider}`);
+    const searxngLabel = 'searxng (self-hosted, no API key — needs Docker; spends YOUR IP\'s reputation)';
+    const choices = dockerFound ? [searxngLabel, 'brave', 'perplexity', 'grok', 'tavily'] : ['brave', 'perplexity', 'grok', 'tavily'];
+    const chosen = await askChoice('Search provider:', choices);
+    const provider = chosen.startsWith('searxng') ? 'searxng' : chosen;
+    if (provider === 'searxng') {
+      printWarning('Before you choose SearXNG:');
+      printInfo(SEARXNG_WARNING);
+      if (!await askYesNo('I have read this and want to run SearXNG', false)) {
+        printInfo('Skipping web search — pick a hosted provider later under tools.web.search, or enable the local index.');
+      } else {
+        result.webSearch.enabled = true;
+        result.webSearch.provider = 'searxng';
+        result.webSearch.baseUrl = 'http://localhost:8080';
+        result.webSearch.dailyQueryCeiling = 250;
+        const state = report && !report.searxng.state.includes('unreachable') ? report.searxng.state : await detectSearxng(result.webSearch.baseUrl);
+        if (state === 'ok') {
+          printSuccess('SearXNG is already running with the JSON API on');
+        } else if (state === 'json-disabled') {
+          printWarning('SearXNG is running but its JSON API is off — searxng/settings.yml has it on; docker compose restart searxng');
+        } else if (await askYesNo('Start SearXNG now (docker compose up -d searxng, with the suggested settings)?', true)) {
+          if (ensureSearxngSecret()) printInfo('Wrote a random secret_key into searxng/settings.yml');
+          if (composeUp('searxng')) printSuccess('SearXNG started on http://localhost:8080');
+          else printError('docker compose failed — start it yourself: docker compose up -d searxng');
+        } else {
+          printInfo('Start it when ready: docker compose up -d searxng');
+        }
+      }
+    } else {
+      result.webSearch.enabled = true;
+      result.webSearch.provider = provider as WebSearchResult['provider'];
+      result.webSearch.apiKey = await askText(`${provider} API key`);
+      result.webSearch.dailyQueryCeiling = 250;
+      printSuccess(`Web search: ${provider}`);
+    }
   }
 
   // TTS
@@ -149,50 +207,39 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     printSuccess(`Browser: enabled (headless: ${result.browser.headless})`);
   }
 
-  // Exec security
-  const execChoice = await askChoice('Code execution security:', ['allowlist (default)', 'docker']);
-  if (execChoice.startsWith('docker')) {
-    result.exec.security = 'docker';
-    printInfo('Testing Docker availability...');
-    const dockerOk = await testDocker();
-    if (dockerOk) {
-      printSuccess('Docker is available');
-    } else {
-      printWarning('Docker not available — falling back to allowlist');
-      result.exec.security = 'allowlist';
-    }
+  // Exec security — the sandbox is only offered when Docker can actually provide it.
+  if (dockerFound) {
+    const execChoice = await askChoice('Code execution security:', ['docker (sandboxed — recommended)', 'allowlist (host commands)']);
+    result.exec.security = execChoice.startsWith('docker') ? 'docker' : 'allowlist';
   } else {
     result.exec.security = 'allowlist';
+    printInfo(`Exec sandbox needs Docker (${report?.docker.install ?? 'https://docs.docker.com/get-docker/'}) — using the host allowlist until then.`);
   }
   printSuccess(`Exec security: ${result.exec.security}`);
 
-  // Graph Memory (FalkorDB)
-  if (await askYesNo('Enable Graph Memory (FalkorDB)? Requires Docker.', false)) {
-    const dockerOk = await testDocker();
-    if (!dockerOk) {
-      printError('Docker is required for FalkorDB but not available.');
-      printInfo('Install Docker: https://docs.docker.com/get-docker/');
-      printWarning('Graph memory disabled — using flat file store');
-    } else if (isContainerRunning('falkordb')) {
+  // Graph Memory (FalkorDB) — detected, not asked, when it is already running.
+  if (report?.falkordb.reachable) {
+    result.graphMemory.enabled = true;
+    printSuccess(`Graph memory: FalkorDB is running on ${report.falkordb.host}:${report.falkordb.port}`);
+  } else if (!dockerFound) {
+    printInfo('Graph memory (FalkorDB) needs Docker — memory uses flat files until then; it upgrades in place later.');
+  } else if (await askYesNo('Start graph memory (FalkorDB in Docker — entity graph + vector search; flat files otherwise)?', true)) {
+    printInfo('docker compose up -d falkordb ...');
+    if (installFalkorDB()) {
       result.graphMemory.enabled = true;
-      printSuccess('FalkorDB is already running');
+      printSuccess('FalkorDB running on port 6379');
     } else {
-      printInfo('FalkorDB is not running.');
-      if (await askYesNo('Install and start FalkorDB now?', true)) {
-        printInfo('Pulling and starting FalkorDB...');
-        if (installFalkorDB()) {
-          result.graphMemory.enabled = true;
-          printSuccess('FalkorDB installed and running on port 6379');
-        } else {
-          printError('FalkorDB install failed. You can start it manually:');
-          printInfo('  docker run -d --name falkordb -p 6379:6379 -v falkordb_data:/var/lib/falkordb/data falkordb/falkordb:latest');
-        }
-      } else {
-        printInfo('Start FalkorDB manually when ready:');
-        printInfo('  docker run -d --name falkordb -p 6379:6379 -v falkordb_data:/var/lib/falkordb/data falkordb/falkordb:latest');
-        result.graphMemory.enabled = true; // config enables it, they just need to start the container
-      }
+      printError('docker compose failed — start it yourself: docker compose up -d falkordb');
+      result.graphMemory.enabled = true; // config is right; the container just needs to come up
     }
+  }
+
+  // Detected-only capabilities: nothing to ask, just say what will and won't work.
+  if (report) {
+    if (report.libreoffice.found) printSuccess(`Documents / research PDFs: LibreOffice at ${report.libreoffice.detail}`);
+    else printInfo(`Documents / research PDFs need LibreOffice — ${report.libreoffice.install}`);
+    if (report.python.found) printSuccess(`Research charts: ${report.python.detail}`);
+    else printInfo(`Research charts need Python + matplotlib/pandas — ${report.python.install}`);
   }
 
   // Heartbeat
