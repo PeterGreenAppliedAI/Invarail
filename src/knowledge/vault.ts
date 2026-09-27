@@ -1,6 +1,6 @@
 import { readdirSync, statSync, existsSync, appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, relative, extname } from 'node:path';
+import { join, relative, extname, basename } from 'node:path';
 import { readDocument } from './chunker.js';
 import { normalizeAndChunk } from './vault-chunker.js';
 import { isReservedName, writeIndexes, appendLog } from './okf.js';
@@ -67,11 +67,19 @@ export async function reindexVault(
   if (!existsSync(vaultPath)) return report;
 
   const seen = new Set<string>();
+  // An Obsidian vault is nested; every file under a top-level folder belongs to that
+  // domain, however deep. Dot-folders (.obsidian, .trash) are skipped.
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(d => {
+    if (d.name.startsWith('.')) return [];
+    const full = join(dir, d.name);
+    if (d.isDirectory()) return walk(full);
+    return d.isFile() ? [full] : [];
+  });
   for (const domain of listDomains(vaultPath)) {
     const dir = join(vaultPath, domain);
-    for (const name of readdirSync(dir)) {
-      const full = join(dir, name);
-      if (!statSync(full).isFile() || !SUPPORTED.has(extname(name).toLowerCase())) continue;
+    for (const full of walk(dir)) {
+      const name = basename(full);
+      if (!SUPPORTED.has(extname(name).toLowerCase())) continue;
       if (isReservedName(name)) continue;   // index.md / log.md are navigation, not concepts
       const rel = relative(vaultPath, full);
       seen.add(rel);

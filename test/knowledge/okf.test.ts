@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseFrontMatter, serializeFrontMatter, conceptForFact, writeIndexes, appendLog, checkBundle, ensureFrontMatter, isReservedName, factConceptPath } from '../../src/knowledge/okf.js';
+import { parseFrontMatter, serializeFrontMatter, conceptForFact, writeIndexes, writeIndexesReport, appendLog, checkBundle, ensureFrontMatter, isReservedName, factConceptPath, GENERATED_MARK } from '../../src/knowledge/okf.js';
 
 const vault = () => mkdtempSync(join(tmpdir(), 'okf-'));
 
@@ -70,7 +70,32 @@ describe('index.md / log.md / conformance', () => {
     expect(domain).not.toMatch(/index\.md/);
     const root = readFileSync(join(v, 'index.md'), 'utf-8');
     expect(root).toMatch(/okf_version: 0\.2/);
-    expect(root).toMatch(/\* \[business\]\(business\/index\.md\) - 2 concept\(s\)/);
+    expect(root).toMatch(/\* \[business\/\]\(business\/index\.md\) - 2 concept\(s\)/);
+  });
+
+  it('an existing Obsidian vault: nested notes are listed, nothing is cleared, and a person\'s own index.md / log.md is left alone', () => {
+    const v = vault();
+    mkdirSync(join(v, 'projects', 'invarail', 'ideas'), { recursive: true });
+    mkdirSync(join(v, '.obsidian'));
+    writeFileSync(join(v, '.obsidian', 'app.json'), '{}');
+    writeFileSync(join(v, 'projects', 'invarail', 'roadmap.md'), '# Roadmap\n\nplain Obsidian note, no front matter\n');
+    writeFileSync(join(v, 'projects', 'invarail', 'ideas', 'okf.md'), '---\ntype: Idea\ntitle: Adopt OKF\ndescription: front matter as the interface\n---\n');
+    writeFileSync(join(v, 'projects', 'index.md'), '# My own projects index\n\nhand-written, keep me\n');
+    writeFileSync(join(v, 'log.md'), '# My journal\n\nmine\n');
+    const { written, skipped } = writeIndexesReport(v);
+    expect(skipped).toEqual([join(v, 'projects', 'index.md')]);
+    expect(readFileSync(join(v, 'projects', 'index.md'), 'utf-8')).toMatch(/hand-written, keep me/);
+    expect(readFileSync(join(v, 'projects', 'invarail', 'index.md'), 'utf-8')).toMatch(/\* \[ideas\/\]\(ideas\/index\.md\) - 1 concept\(s\)/);
+    expect(readFileSync(join(v, 'projects', 'invarail', 'index.md'), 'utf-8')).toMatch(/\* \[roadmap\]\(roadmap\.md\)/);   // no front matter, still listed as-is
+    expect(readFileSync(join(v, 'projects', 'invarail', 'ideas', 'index.md'), 'utf-8')).toMatch(/\[Adopt OKF\]\(okf\.md\) - front matter as the interface/);
+    expect(readFileSync(join(v, 'index.md'), 'utf-8')).toMatch(/\* \[projects\/\]\(projects\/index\.md\) - 2 concept\(s\)/);
+    expect(written.every(p => readFileSync(p, 'utf-8').includes(GENERATED_MARK))).toBe(true);
+    expect(readFileSync(join(v, 'projects', 'invarail', 'roadmap.md'), 'utf-8')).toBe('# Roadmap\n\nplain Obsidian note, no front matter\n');   // untouched
+    appendLog(v, [{ kind: 'Creation', text: 'x' }]);
+    expect(readFileSync(join(v, 'log.md'), 'utf-8')).toBe('# My journal\n\nmine\n');   // theirs, untouched
+    // running again overwrites only what is ours
+    const again = writeIndexesReport(v);
+    expect(again.skipped).toEqual(skipped);
   });
 
   it('log.md is newest-first under ISO date headings and merges a same-day entry', () => {
