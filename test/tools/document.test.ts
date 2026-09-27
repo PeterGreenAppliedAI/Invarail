@@ -190,6 +190,8 @@ describe('document tool conversion error logging', () => {
     expect(err).toMatchObject({ code: 'CONVERSION_ERROR' });
     expect((err as Error).message).toContain(input);
     expect(warnOutput()).toContain(`input="${input}"`);
-    expect(warnOutput()).toMatch(/ENOENT|no such file|spawn/i);
+    // macOS sh says "No such file or directory"; Ubuntu dash (GitHub runners) says "not found".
+    // Deterministic ENOENT needs execFile instead of a shell string (review F14).
+    expect(warnOutput()).toMatch(/ENOENT|no such file|not found|spawn/i);
   });
 });
