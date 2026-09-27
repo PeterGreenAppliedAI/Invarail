@@ -36,16 +36,21 @@ interface PendingAction {
 const ACTION_TIMEOUT_MS = 30_000;
 
 class RemoteBrowserBridge {
-  private pending: PendingAction | null = null;
+  /** FIFO. A single slot let a second sendAction overwrite the first, whose timeout then
+   *  never fired because it was no longer "current" — an agent turn hung forever
+   *  (outside review F24, 2026-09-27). Every queued request now settles: result,
+   *  timeout, or disconnect. */
+  private queue: PendingAction[] = [];
   private connected = false;
 
   /** Mark extension as connected */
   setConnected(connected: boolean): void {
     this.connected = connected;
-    if (!connected && this.pending) {
-      this.pending.reject(new Error('Extension disconnected'));
-      clearTimeout(this.pending.timeoutId);
-      this.pending = null;
+    if (!connected) {
+      for (const p of this.queue.splice(0)) {
+        clearTimeout(p.timeoutId);
+        p.reject(new Error('Extension disconnected'));
+      }
     }
   }
 
@@ -64,32 +69,30 @@ class RemoteBrowserBridge {
 
     return new Promise<string>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        if (this.pending?.action.id === id) {
-          this.pending = null;
+        const idx = this.queue.findIndex(p => p.action.id === id);
+        if (idx !== -1) {
+          this.queue.splice(idx, 1);
           reject(new Error(`Browser action timed out: ${action.action}`));
         }
       }, ACTION_TIMEOUT_MS);
 
-      this.pending = { action: fullAction, resolve, reject, timeoutId };
+      this.queue.push({ action: fullAction, resolve, reject, timeoutId });
     });
   }
 
-  /** Called by extension polling — returns pending action or null */
+  /** Called by extension polling — the head of the queue, or null */
   getPendingAction(): BrowserAction | null {
-    return this.pending?.action ?? null;
+    return this.queue[0]?.action ?? null;
   }
 
   /** Called by extension after executing action */
   resolveAction(result: BrowserActionResult): void {
-    if (!this.pending || this.pending.action.id !== result.id) return;
-
-    clearTimeout(this.pending.timeoutId);
-    if (result.success) {
-      this.pending.resolve(result.result);
-    } else {
-      this.pending.reject(new Error(result.result));
-    }
-    this.pending = null;
+    const idx = this.queue.findIndex(p => p.action.id === result.id);
+    if (idx === -1) return;
+    const [p] = this.queue.splice(idx, 1);
+    clearTimeout(p.timeoutId);
+    if (result.success) p.resolve(result.result);
+    else p.reject(new Error(result.result));
   }
 }
 

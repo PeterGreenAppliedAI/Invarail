@@ -110,7 +110,11 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
     return { handled: true, reply: `That doesn't match a pending action — it may have expired or already run.${openList}` };
   }
 
-  store.consume(pending.id);
+  // Consumption must PERSIST before anything runs: an entry still on disk is still
+  // confirmable, and a repeated side effect is worse than a refused one (re-review F19).
+  if (!store.consume(pending.id)) {
+    return { handled: true, reply: '❌ Not executed: the confirmation could not be recorded durably (ledger write failed). Nothing ran — check disk space and try again.' };
+  }
 
   // Re-authorize the STORED action against the policy that applies now. The scope that
   // recorded it is gone; the executor below is scoped to exactly this tool, so this is

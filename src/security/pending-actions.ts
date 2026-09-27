@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /**
@@ -77,12 +77,18 @@ export class PendingActionStore {
     }
   }
 
-  private save(actions: PendingAction[]): void {
+  /** Atomic (tmp + rename) and honest: returns false when the write did not land. A
+   *  swallowed failure let the same entry be confirmed again (re-review F19). */
+  private save(actions: PendingAction[]): boolean {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
-      writeFileSync(this.path, JSON.stringify(actions, null, 2));
+      const tmp = `${this.path}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(actions, null, 2));
+      renameSync(tmp, this.path);
+      return true;
     } catch (err) {
       console.warn('[PendingActions] Save failed:', err instanceof Error ? err.message : err);
+      return false;
     }
   }
 
@@ -128,13 +134,18 @@ export class PendingActionStore {
     return this.load().filter(a => a.sender === sender);
   }
 
-  /** Remove and return an entry — single-use semantics. */
+  /** Remove and return an entry — single-use semantics. Returns null when the removal
+   *  could not be PERSISTED: an entry that is still on disk is still confirmable, so the
+   *  caller must not execute it (fail closed). */
   consume(id: string): PendingAction | null {
     const actions = this.load();
     const idx = actions.findIndex(a => a.id === id);
     if (idx === -1) return null;
     const [action] = actions.splice(idx, 1);
-    this.save(actions);
+    if (!this.save(actions)) {
+      console.warn(`[PendingActions] Could not persist consumption of ${id} — refusing to execute`);
+      return null;
+    }
     return action;
   }
 }

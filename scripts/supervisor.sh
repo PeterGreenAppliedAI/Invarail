@@ -33,7 +33,15 @@ marker_field() { node -e "try{process.stdout.write(String(JSON.parse(require('fs
 rollback() {
   log "ROLLBACK: git reset --hard ${1:0:8}"
   [ -f "$MARKER" ] && mv "$MARKER" "$FAILED_MARKER"
+  local from; from="$(git rev-parse HEAD)"
   git reset --hard "$1"
+  # node_modules is ignored and survives the reset: restored source + the failed deploy's
+  # dependency tree kept a "recovered" service broken (re-review N06). Reinstall when the
+  # lockfile differs between what we left and what we restored.
+  if ! git diff --quiet "$from" "$1" -- package-lock.json; then
+    log "rollback: lockfile differs — npm ci to match the restored source"
+    npm ci --no-audit --no-fund || log "rollback: npm ci FAILED — dependencies do not match the restored lockfile"
+  fi
 }
 gates_ok() { log "gates: tsc + vitest"; npx tsc --noEmit && npx vitest run; }
 

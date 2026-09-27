@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { InvarailTool } from '../tools/types.js';
 
@@ -51,12 +51,17 @@ export class GrantStore {
     }
   }
 
-  private save(grants: StandingGrant[]): void {
+  /** Atomic (tmp + rename); false when the write did not land (re-review F19). */
+  private save(grants: StandingGrant[]): boolean {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
-      writeFileSync(this.path, JSON.stringify(grants, null, 2));
+      const tmp = `${this.path}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(grants, null, 2));
+      renameSync(tmp, this.path);
+      return true;
     } catch (err) {
       console.warn('[Grants] Save failed:', err instanceof Error ? err.message : err);
+      return false;
     }
   }
 
@@ -89,7 +94,10 @@ export class GrantStore {
     const idx = grants.findIndex(g => g.id === id && g.principal === principal);
     if (idx === -1) return null;
     const [revoked] = grants.splice(idx, 1);
-    this.save(grants);
+    if (!this.save(grants)) {
+      console.warn(`[Grants] Revocation of ${id} did not persist — the grant is still in force`);
+      return null;
+    }
     console.log(`[Grants] Revoked: ${revoked.tool} → ${revoked.target} (id=${revoked.id})`);
     return revoked;
   }

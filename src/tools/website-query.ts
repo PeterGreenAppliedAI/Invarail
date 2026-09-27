@@ -32,8 +32,13 @@ export function createWebsiteQueryTool(config?: WebsiteConfig): InvarailTool {
 
       const method = (params.method as string) ?? 'GET';
 
-      // Build URL with query params
+      // Build URL with query params — and pin the origin: `new URL(endpoint, base)` accepts an
+      // absolute URL or `//host/path`, which sent the configured bearer key to a caller-chosen
+      // server (outside review F10, 2026-09-27).
       const url = new URL(endpoint, baseUrl);
+      if (url.origin !== new URL(baseUrl).origin) {
+        return `Error: endpoint must be a path on the configured site (${new URL(baseUrl).origin}); "${endpoint}" resolves to ${url.origin}.`;
+      }
       if (params.query) {
         try {
           const queryParams = typeof params.query === 'string' ? JSON.parse(params.query) : params.query;
@@ -56,6 +61,7 @@ export function createWebsiteQueryTool(config?: WebsiteConfig): InvarailTool {
         const fetchOptions: RequestInit = {
           method,
           headers,
+          redirect: 'error',   // a redirect off-origin would carry the key with it
           signal: AbortSignal.timeout(15_000),
         };
 

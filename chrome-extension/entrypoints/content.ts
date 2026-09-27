@@ -108,7 +108,10 @@ function walkDOM(node: Node, lines: string[]): void {
       const input = el as HTMLInputElement;
       const type = input.type || 'text';
       const placeholder = input.placeholder ? ` (placeholder: "${input.placeholder}")` : '';
-      const value = input.value ? ` = "${input.value.slice(0, 40)}"` : '';
+      // Never the value of a credential field: a snapshot on a sign-in form returned the
+      // typed/autofilled password as plain text to the model (outside review F17).
+      const sensitive = type === 'password' || /^(cc-|new-password|current-password|one-time-code)/.test(input.autocomplete || '');
+      const value = input.value ? (sensitive ? ' = "••••"' : ` = "${input.value.slice(0, 40)}"`) : '';
       // Try to find associated label
       if (input.id) {
         const labelEl = document.querySelector(`label[for="${input.id}"]`);
