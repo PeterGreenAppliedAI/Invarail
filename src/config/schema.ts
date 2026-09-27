@@ -364,6 +364,10 @@ export const BrowserConfigSchema = z.object({
   display: z.string().optional(),
   /** Vision model for visual browser interactions (e.g., "qwen3-vl:8b"). Falls back to config.vision.model. */
   visionModel: z.string().optional(),
+  /** Hosts the browser may navigate to even though they resolve to private/loopback
+   *  addresses (hostname or IP literal, exact match). Every open/navigate URL passes the
+   *  same SSRF guard as web_fetch; this is the deliberate exception list (2026-09-27). */
+  allowedPrivateHosts: z.array(z.string()).default([]),
   /** Model for browser-control reasoning (extension remote-bridge mode). Falls back to the dispatched specialist's model. */
   controlModel: z.string().optional(),
 });

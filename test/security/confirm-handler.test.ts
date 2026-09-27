@@ -214,3 +214,27 @@ describe('continuation replay circuit breaker (Aug 10)', () => {
     expect(store.consume(rec.id)).toBeNull();   // gone — single-use held
   });
 });
+
+describe('confirmation cannot widen scope (review F02, 2026-09-27)', () => {
+  it('a stored action the current policy forbids is consumed and refused, not executed', async () => {
+    const executor = vi.fn().mockResolvedValue('sent!');
+    const ctx = {
+      channel: 'discord',
+      config: {
+        ownerId: 'peter',
+        principals: { peter: { aliases: ['discord-1'] } },
+        channels: { discord: { enabled: true, security: { ownerOnlyTools: ['send_message'] } } },
+        agents: { default: 'main', list: [], bindings: [] },
+      } as unknown as InvarailConfig,
+      toolRegistry: { createScopedExecutor: () => executor } as unknown as ToolRegistry,
+      store,
+    };
+    const { id } = store.record({ tool: 'send_message', params: { text: 'hi' }, sender: 'guest', channel: 'discord', agentId: 'main', sessionKey: 's' } as any);
+    const out = await handleConfirmation({ ...ctx, message: `confirm ${id}`, senderId: 'guest' });
+    expect(out.handled).toBe(true);
+    expect(out.reply).toMatch(/Not executed/);
+    expect(out.reply).toMatch(/owner-only/);
+    expect(executor).not.toHaveBeenCalled();
+    expect(store.findById(id, 'guest')).toBeUndefined();
+  });
+});

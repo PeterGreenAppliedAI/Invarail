@@ -1062,6 +1062,9 @@ async function runSpecialist(
   const recordedPending: Array<{ id: string; tool: string }> = [];
   const executor: import('./tools/types.js').ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
+        // Scope BEFORE confirmation: a tool policy stripped must get the scope denial, not a
+        // preview a later "confirm" would authorize (outside review F02, 2026-09-27).
+        if (!allowedToolSet.has(toolName)) return scopedExecutor(toolName, toolParams, ctx);
         if (confirmSet.has(toolName)) {
           const principal = resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown';
           const grantApproval = resolveGrantApproval(
@@ -1347,6 +1350,9 @@ async function runPipelineDispatch(
   const recordedPending: Array<{ id: string; tool: string }> = [];
   const gatedExecutor: ToolExecutor = confirmSet.size > 0
     ? async (toolName, toolParams, ctx) => {
+        // Scope BEFORE confirmation: a tool policy stripped must get the scope denial, not a
+        // preview a later "confirm" would authorize (outside review F02, 2026-09-27).
+        if (!allowedToolSet.has(toolName)) return scopedExecutor(toolName, toolParams, ctx);
         if (confirmSet.has(toolName)) {
           const principal = resolvePrincipal(params.sourceContext?.senderId, config) ?? 'unknown';
           const grantApproval = resolveGrantApproval(

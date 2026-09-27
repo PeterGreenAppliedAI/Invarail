@@ -5,6 +5,24 @@ import { BrowserClient } from '../browser/client.js';
 import type { BrowserConfig } from '../config/types.js';
 import { visualSnapshot, type VisualBrowserConfig } from '../browser/visual.js';
 import { remoteBridge } from '../browser/remote-bridge.js';
+import { assertPublicUrl } from './ssrf.js';
+
+/**
+ * The browser tool navigates wherever it is told — the one fetcher that skipped the SSRF
+ * guard (outside review, 2026-09-27). A prompt-injected page could steer it to the
+ * inference hosts or the console on the LAN. Same guard as web_fetch; the deliberate
+ * exceptions are `tools.browser.allowedPrivateHosts` in config. Redirects inside the
+ * page are NOT re-validated here (a browser follows them itself) — the guard is on the
+ * address the model asked for.
+ */
+export async function browserUrlBlockReason(url: string, config?: BrowserConfig): Promise<string | null> {
+  let hostname: string;
+  try { hostname = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase(); }
+  catch { return `Error: invalid URL "${url}"`; }
+  if ((config?.allowedPrivateHosts ?? []).some(h => h.toLowerCase() === hostname)) return null;
+  try { await assertPublicUrl(url); return null; }
+  catch { return `Error: navigation blocked — "${url}" is not a public address (SSRF guard). If this host is intended, add it to tools.browser.allowedPrivateHosts.`; }
+}
 
 let sharedClient: BrowserClient | null = null;
 
@@ -100,6 +118,10 @@ tab (optional): Tab ID.`,
     async execute(params: Record<string, unknown>, ctx): Promise<string> {
       const action = params.action as string;
       if (!action) return 'Error: action parameter is required';
+      if ((action === 'open' || action === 'navigate') && typeof params.url === 'string' && params.url) {
+        const blocked = await browserUrlBlockReason(params.url, config);
+        if (blocked) { console.warn(`[Browser] ${blocked}`); return blocked; }
+      }
 
       // Remote extension bridge — only for extension (console channel), never for Discord/Telegram/etc.
       if (remoteBridge.isConnected() && ctx?.channel === 'console') {

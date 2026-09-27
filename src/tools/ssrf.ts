@@ -35,15 +35,46 @@ export function isPrivateIpAddress(ip: string): boolean {
   if (/^f[cd]/i.test(lower)) return true;   // unique local (fc00::/7)
   if (/^ff/i.test(lower)) return true;      // multicast
 
-  // IPv4-mapped IPv6 (::ffff:x.x.x.x)
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIpAddress(mapped[1]);
-
-  // IPv4-compatible IPv6 (::x.x.x.x)
-  const compat = lower.match(/^::(\d+\.\d+\.\d+\.\d+)$/);
-  if (compat) return isPrivateIpAddress(compat[1]);
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) addresses, in ANY
+  // spelling. WHATWG URL parsing canonicalizes `::ffff:127.0.0.1` to `::ffff:7f00:1`,
+  // which a dotted-only regex accepted as public (outside review F11, 2026-09-27).
+  const embedded = ipv6EmbeddedIpv4(lower);
+  if (embedded) return isPrivateIpAddress(embedded);
 
   return false;
+}
+
+/** If `ip` is an IPv6 address whose low 32 bits carry an IPv4 address under the
+ *  ::ffff:0:0/96 (mapped) or ::/96 (compatible) prefix, return that IPv4 in dotted
+ *  form — whatever spelling was used (compressed, expanded, hex or dotted tail). */
+export function ipv6EmbeddedIpv4(ip: string): string | null {
+  let s = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!s.includes(':')) return null;
+  // A dotted tail becomes two hex groups so the whole thing expands uniformly.
+  const dotted = s.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const q = dotted[1].split('.').map(Number);
+    if (q.length !== 4 || q.some(n => n > 255)) return null;
+    s = s.slice(0, -dotted[1].length) + ((q[0] << 8) | q[1]).toString(16) + ':' + ((q[2] << 8) | q[3]).toString(16);
+  }
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  let groups: string[];
+  if (halves.length === 2) {
+    const missing = 8 - head.length - tail.length;
+    if (missing < 1) return null;
+    groups = [...head, ...Array<string>(missing).fill('0'), ...tail];
+  } else {
+    groups = head;
+  }
+  if (groups.length !== 8 || groups.some(g => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+  const n = groups.map(g => parseInt(g, 16));
+  if (!n.slice(0, 5).every(g => g === 0)) return null;
+  if (n[5] !== 0xffff && n[5] !== 0) return null;
+  if (n[5] === 0 && n[6] === 0 && n[7] <= 1) return null;   // :: and ::1 are not embedded IPv4
+  return `${n[6] >> 8}.${n[6] & 255}.${n[7] >> 8}.${n[7] & 255}`;
 }
 
 export function isBlockedHostname(hostname: string): boolean {

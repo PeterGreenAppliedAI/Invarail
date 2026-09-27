@@ -2,7 +2,8 @@
  * Extract [IMAGE:path] and [FILE:path] tokens from text, read files, return attachments + cleaned text.
  * Extracted from orchestrator for testability and reuse.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { resolve, relative, isAbsolute } from 'node:path';
 
 const IMAGE_TOKEN_RE = /\[IMAGE:([^\]]+)\]/g;
 const FILE_TOKEN_RE = /\[FILE:([^\]]+)\]/g;
@@ -15,26 +16,58 @@ const MIME_MAP: Record<string, string> = {
   csv: 'text/csv', txt: 'text/plain', html: 'text/html',
 };
 
-export function extractMediaAttachments(text: string): {
+export interface MediaExtractOptions {
+  /** Directories an attachment may be read from. Default: `<cwd>/data` — every tool
+   *  artifact (workspaces, media, uploads, builds) lives under it; `.env`, config and
+   *  source do not. The token is model-written text: a prompt-injected answer can name
+   *  ANY path, so containment is checked on the canonical (symlink-resolved) path. */
+  allowedRoots?: string[];
+}
+
+type PathCheck = { ok: true; path: string } | { ok: false; reason: 'missing' | 'outside' };
+
+/** Canonicalize and confine. `missing` keeps the token as text (old behavior for a
+ *  path that does not exist); `outside` strips the token and attaches nothing. */
+function checkDeliverable(raw: string, roots: string[]): PathCheck {
+  const p = raw.trim();
+  if (!p) return { ok: false, reason: 'missing' };
+  let real: string;
+  try { real = realpathSync(resolve(p)); } catch { return { ok: false, reason: 'missing' }; }
+  for (const root of roots) {
+    let r: string;
+    try { r = realpathSync(resolve(root)); } catch { continue; }
+    const rel = relative(r, real);
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return { ok: true, path: real };
+  }
+  console.warn(`[Media] Blocked attachment outside allowed roots: ${p}`);
+  return { ok: false, reason: 'outside' };
+}
+
+export function extractMediaAttachments(text: string, opts?: MediaExtractOptions): {
   cleanText: string;
   attachments: Array<{ data: Buffer; mimeType: string; filename: string }>;
 } {
   const attachments: Array<{ data: Buffer; mimeType: string; filename: string }> = [];
+  const roots = opts?.allowedRoots ?? [resolve(process.cwd(), 'data')];
 
   let cleanText = text.replace(IMAGE_TOKEN_RE, (match, filePath: string) => {
+    const check = checkDeliverable(filePath, roots);
+    if (!check.ok) return check.reason === 'missing' ? match : '';
     try {
-      const data = readFileSync(filePath.trim());
+      const data = readFileSync(check.path);
       const ext = filePath.split('.').pop()?.toLowerCase() ?? 'png';
-      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'image/png', filename: filePath.split('/').pop() ?? 'image.png' });
+      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'image/png', filename: filePath.trim().split('/').pop() ?? 'image.png' });
       return '';
     } catch { return match; }
   });
 
   cleanText = cleanText.replace(FILE_TOKEN_RE, (match, filePath: string) => {
+    const check = checkDeliverable(filePath, roots);
+    if (!check.ok) return check.reason === 'missing' ? match : '';
     try {
-      const data = readFileSync(filePath.trim());
+      const data = readFileSync(check.path);
       const ext = filePath.split('.').pop()?.toLowerCase() ?? 'bin';
-      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'application/octet-stream', filename: filePath.split('/').pop() ?? 'file' });
+      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'application/octet-stream', filename: filePath.trim().split('/').pop() ?? 'file' });
       return '';
     } catch { return match; }
   });
@@ -46,8 +79,10 @@ export function extractMediaAttachments(text: string): {
     const filePath = (m[2] || '').trim();
     const filename = filePath.split('/').pop() ?? 'file';
     if (seenPaths.has(filename)) continue;
+    const check = checkDeliverable(filePath, roots);
+    if (!check.ok) continue;
     try {
-      const data = readFileSync(filePath);
+      const data = readFileSync(check.path);
       const ext = filePath.split('.').pop()?.toLowerCase() ?? 'bin';
       attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'application/octet-stream', filename });
       seenPaths.add(filename);

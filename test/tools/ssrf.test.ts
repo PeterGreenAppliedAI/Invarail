@@ -118,3 +118,31 @@ describe('IP notation edge cases', () => {
     expect(isPrivateIpAddress('100.128.0.0')).toBe(false);
   });
 });
+
+describe('IPv6 with an embedded IPv4 — every spelling (review F11, 2026-09-27)', async () => {
+  const { ipv6EmbeddedIpv4, assertPublicUrl } = await import('../../src/tools/ssrf.js');
+  it('extracts the IPv4 from mapped and compatible forms', () => {
+    expect(ipv6EmbeddedIpv4('::ffff:127.0.0.1')).toBe('127.0.0.1');
+    expect(ipv6EmbeddedIpv4('::ffff:7f00:1')).toBe('127.0.0.1');          // WHATWG canonical form
+    expect(ipv6EmbeddedIpv4('0:0:0:0:0:ffff:7f00:1')).toBe('127.0.0.1');
+    expect(ipv6EmbeddedIpv4('0000:0000:0000:0000:0000:ffff:c0a8:0101')).toBe('192.168.1.1');
+    expect(ipv6EmbeddedIpv4('[::ffff:a00:1]')).toBe('10.0.0.1');
+    expect(ipv6EmbeddedIpv4('::7f00:1')).toBe('127.0.0.1');               // IPv4-compatible
+    expect(ipv6EmbeddedIpv4('::ffff:808:808')).toBe('8.8.8.8');
+  });
+  it('leaves ::, ::1 and ordinary IPv6 alone', () => {
+    expect(ipv6EmbeddedIpv4('::')).toBeNull();
+    expect(ipv6EmbeddedIpv4('::1')).toBeNull();
+    expect(ipv6EmbeddedIpv4('2001:db8::1')).toBeNull();
+    expect(ipv6EmbeddedIpv4('fe80::1')).toBeNull();
+  });
+  it('classifies the canonical mapped loopback as private and the mapped public address as public', () => {
+    expect(isPrivateIpAddress('::ffff:7f00:1')).toBe(true);
+    expect(isPrivateIpAddress('0:0:0:0:0:ffff:c0a8:1')).toBe(true);
+    expect(isPrivateIpAddress('::ffff:808:808')).toBe(false);
+  });
+  it('assertPublicUrl rejects the canonical mapped loopback that the dotted-only regex let through', async () => {
+    await expect(assertPublicUrl('http://[::ffff:7f00:1]/')).rejects.toThrow();
+    await expect(assertPublicUrl('http://[::ffff:127.0.0.1]/')).rejects.toThrow();
+  });
+});

@@ -478,3 +478,36 @@ describe('quick-greeting model is config, not a literal (2026-09-26)', () => {
     expect(chatFn.mock.calls[0][0].model).toBe('big-model');
   });
 });
+
+describe('scope is checked before confirmation (review F02, 2026-09-27)', () => {
+  it('a native call to a confirm-tier tool OUTSIDE the specialist\'s tool set gets the scope denial, not a preview', async () => {
+    const registry = new ToolRegistry();
+    const dangerous = vi.fn().mockResolvedValue('boom');
+    registry.register({
+      name: 'send_message', description: 'send', parameterDescription: 'text', category: 'message', requiresConfirm: true,
+      parameters: { type: 'object', properties: { text: { type: 'string', description: 't' } }, required: ['text'] },
+      execute: dangerous,
+    });
+    registry.register({
+      name: 'read_file', description: 'read', parameterDescription: 'path', category: 'exec',
+      parameters: { type: 'object', properties: { path: { type: 'string', description: 'p' } }, required: ['path'] },
+      execute: vi.fn().mockResolvedValue('contents'),
+    });
+    const chatFn = vi.fn()
+      .mockResolvedValueOnce({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'send_message', arguments: { text: 'pwned' } } }] } })
+      .mockResolvedValue({ message: { role: 'assistant', content: 'done', tool_calls: null } });
+    const client = {
+      generate: vi.fn().mockResolvedValue({ response: 'exec' }),
+      chat: chatFn, listModels: vi.fn().mockResolvedValue([]), isAvailable: vi.fn().mockResolvedValue(true),
+    } as unknown as OllamaClient;
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.exec = { model: 'm', maxTokens: 512, temperature: 0.1, maxIterations: 3, tools: ['read_file'], dispatchMode: 'arena' } as any;
+
+    await dispatchMessage({ client, registry, config, message: 'run the thing', sourceContext: { channel: 'discord', channelId: 'c', senderId: 'guest' } });
+
+    expect(dangerous).not.toHaveBeenCalled();
+    const observations = chatFn.mock.calls.flatMap((c: any[]) => c[0].messages).filter((m: any) => m.role === 'tool').map((m: any) => String(m.content));
+    expect(observations.some((o: string) => /not available/i.test(o))).toBe(true);
+    expect(observations.some((o: string) => /confirm/i.test(o))).toBe(false);
+  });
+});

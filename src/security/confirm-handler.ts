@@ -15,6 +15,7 @@ import {
   parseConfirmationId,
 } from './pending-actions.js';
 import { standingGrants, grantTargetFor, GrantStore } from './grants.js';
+import { checkToolPolicy } from './tool-policy.js';
 
 /**
  * THE confirm entry point — every channel path calls this one function.
@@ -110,6 +111,20 @@ export async function handleConfirmation(ctx: ConfirmContext): Promise<ConfirmOu
   }
 
   store.consume(pending.id);
+
+  // Re-authorize the STORED action against the policy that applies now. The scope that
+  // recorded it is gone; the executor below is scoped to exactly this tool, so this is
+  // the only place a policy-stripped tool would be caught (outside review F02).
+  const verdict = checkToolPolicy(ctx.config, ctx.toolRegistry, {
+    tool: pending.tool, category: pending.category, channel: pending.channel,
+    senderId: principal, rawSenderId: ctx.senderId,
+  });
+  if (!verdict.allowed) {
+    console.warn(`[Confirm] Denied by policy: ${verdict.reason}`);
+    logAutonomousAction({ action: `confirm_denied_policy:${pending.tool}`, tier: 'propose_confirm', source: 'user_confirm', reversible: false, outcome: 'failure', detail: verdict.reason, approval: 'rejected' });
+    return { handled: true, reply: `❌ Not executed: ${verdict.reason}. A confirmation approves an action inside your permissions; it cannot widen them.` };
+  }
+
   let reply: string;
   let executed: ConfirmOutcome['executed'];
   try {
