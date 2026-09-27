@@ -74,9 +74,20 @@ channels. The model question is **ranked by the evals above and by what fits
 your GPU or RAM**: every installed model shows its measured score, the thinking
 mode that scored best, its size and whether it fits; measured models that fit
 come first, unmeasured after, and models that cannot native-tool-call say so.
-The generated config carries that thinking mode. `npm run doctor` re-checks the
-same list any time, against what your config enables, and prints the fix beside
-each miss.
+The generated config carries that thinking mode, and a **prompt profile** for the
+model's tier: a ≤14B foreground gets `promptProfile: "small"` (chat carries the
+minimal workspace set, files are capped, one 16K context for router, extraction and
+session) — measured in [evals/2026-09-e2e](evals/2026-09-e2e/). `npm run doctor`
+re-checks the same list any time, against what your config enables, warns when the
+profile no longer matches the model line, and prints the fix beside each miss.
+
+It also asks **how Invarail should remember**, with the default chosen from what it
+found: `graph` (FalkorDB + an embedding model — the reference setup), `flat` (JSONL
+facts, keyword recall, nothing to install), `vault` (flat facts plus your markdown folder,
+Obsidian-edited, exact-word search, no embedder), or `vault + OKF` (the folder as an
+Open Knowledge Format bundle: facts mirrored as notes with provenance, an `index.md`
+per folder the model navigates, a `log.md` history). Details and the trade-offs:
+[MEMORY-SYSTEM.md](MEMORY-SYSTEM.md#memory-tiers-the-same-memory-on-a-machine-that-is-not-this-one).
 
 ## Tier 1 — the daily driver
 

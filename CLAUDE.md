@@ -84,6 +84,8 @@ Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primar
 3. **Heartbeat (autonomous)** — Every 2 hours, `reviewTranscripts()` scans sessions, extracts facts with existing facts shown to prevent re-extraction. Writes to both flat FactStore and GraphMemory. Owns reconciliation (consolidation, contradictions, review).
 4. **`memory_forget`** — Removes from both graph and flat store. Records removal to prevent re-extraction.
 
+**Memory tiers (2026-09-27):** `memory.backend` = `markdown` (legacy: graph if FalkorDB answers, else flat) | `graph` (required — doctor FAILs without FalkorDB or with `embeddingModel: "none"`) | `flat` (never connects a graph) | `vault` (flat facts + the markdown vault as the knowledge side, lexical FTS5 without an embedder; `vault.okf: true` mirrors facts as Open Knowledge Format concept notes with provenance front matter, keeps `index.md`/`log.md`, and registers `docs_read`). `src/memory/policy.ts` is the only reader of these fields; `src/knowledge/okf.ts` is the format. The flat tier primes bare chat with identity facts (≤5) plus keyword-relevant facts (≤3) — it was identity-only before. See MEMORY-SYSTEM.md "Memory Tiers".
+
 **Memory priming query (2026-09-21):** `primingQueryFrom(message)` strips `[PAGE_CONTENT]` and attached-PDF bodies (the PDF prefix is end-delimited for this) and caps at 800 chars before ALL four priming embeds (facts, multi-hop, lessons, experiences) — an attached 9K-char PDF embedded on the Mini blew the 8s cap.
 
 **Entity extraction:** NER prompt in `graph-store.ts` requests typed entities `[{name, type}]` with closed taxonomy (person, organization, technology, hardware, software, place, event, concept). Entity names are normalized to canonical form (lowercase, collapsed whitespace, singular) before MERGE to prevent duplicates. Entity type upgrades from `unknown` to real type on subsequent encounters via `ON MATCH SET`. NER prompt is **bootstrapped** from the graph — existing typed entities are queried and injected as reference context so the model classifies consistently with prior decisions (self-improving loop).
@@ -251,6 +253,7 @@ src/
     search-quota.ts         #   Daily outbound search ceiling (tools.web.search.dailyQueryCeiling) — volume gate beside the rate throttle; SEARXNG.md
     document.ts             #   LibreOffice headless document creation/conversion (markdown in → code-owned styling; models never write HTML/CSS)
     document-templates.ts   #   HTML templates (report/memo/invoice/letter/simple) for document tool
+    docs.ts                 #   Vault tools: docs_search (hybrid, or lexical-only without an embedder), docs_store, docs_read (index.md navigation on an OKF vault)
     gmail-read.ts           #   Gmail search + read (OAuth2, read-only)
     calendar-read.ts        #   Google Calendar list + search (OAuth2, read-only)
     memory-forget.ts        #   Remove facts by text match
@@ -321,6 +324,7 @@ src/
     tokens.ts               #   estimateTokens() — word-aware heuristic
 
   memory/                   # Memory system
+    policy.ts               #   Memory TIERS (memory.backend graph|flat|vault, embeddingModel "none"): what the process may assume — read here, nowhere else
     extraction-window.ts    #   fitLinesToTokenBudget — bound the extraction transcript, newest-first, loudly
     fact-store.ts           #   FactStore (JSONL index, dedup, TTL, consolidation, removeFact, setProvenanceByText) — fallback
     graph-store.ts          #   GraphMemoryStore (FalkorDB, vector search, entity linking, SUPERSEDES)
@@ -454,7 +458,7 @@ Plan pipeline sub-dispatches used structured briefings (not raw result dumps):
 All pipeline dispatches get fresh context — no parent session history. Prevents prior conversation topics from biasing pipeline execution.
 
 ### Context priority layers (`src/agents/workspace.ts`)
-Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + LEARNINGS.md) to preserve token budget. Chat gets the `chat` set (+ TOOLS.md / USER.md / AGENTS.md); voice turns get `minimal` under their own cache key.
+Tool-using specialists get `minimal` workspace context (SOUL.md + IDENTITY.md + LEARNINGS.md) to preserve token budget. Chat gets the `chat` set (+ TOOLS.md / USER.md / AGENTS.md); voice turns get `minimal` under their own cache key. **`promptProfile: "small"`** (top-level config; the wizard writes it for a ≤14B foreground, the doctor warns when it disagrees with the model's tier — never inferred from the model name at runtime): bare chat gets `minimal` too and every injected file is capped at 4K chars (`profileMaxChars` in dispatch.ts). A lived-in workspace had grown to 3.2K tokens per turn (2026-09-27); a specialist's explicit `contextLevel: 'full'` still wins.
 
 ### Tool-loop guardrails (`src/tool-loop/engine.ts`)
 - **One calling convention per model** — `toolStyle: 'native' | 'text'` (specialist config, default native). Native passes tools via the API field only; text describes them in the prompt with `Action:` format. Never both — mixing taught small models two contradictory formats. Fallback parsers (DSML/`<invoke>`/`Action:`/JSON5) stay active in both modes.
@@ -520,7 +524,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + build + console build on every push/PR to main
-- **Current:** 1093 tests across 122 files
+- **Current:** 1120 tests across 128 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel), `scripts/model-eval.ts` (the ENGINE on mock tools — evals/), **`scripts/e2e-eval.ts`** (the FRONT DOOR: a wizard-generated config for the model under test through `dispatchMessage` in a scratch install, real registry/stores/pipelines, web stubbed over a fixed corpus, code oracles + `--selftest`; found the one-model-install reload + thinking-router bugs 2026-09-27). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

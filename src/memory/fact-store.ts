@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, appendFileSync, unlinkSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FactEntrySchema, FactInputSchema } from '../config/schema.js';
 import type { FactEntry, FactInput, FactCategory } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
+import { conceptForFact, factConceptPath, appendLog, FACT_DOMAIN } from '../knowledge/okf.js';
 
 /** Category display labels for facts.md */
 const CATEGORY_LABELS: Record<FactCategory, string> = {
@@ -55,9 +56,35 @@ export class FactStore {
   private static readonly EMBEDDING_DEDUP_THRESHOLD = 0.85;
   private migrating = false;
 
-  constructor(workspacePath: string, client?: OllamaClient) {
+  /** OKF mirror: when set, every fact is also a concept document at <vaultPath>/memory/<id>.md. */
+  private okf?: { vaultPath: string; owner?: string };
+
+  constructor(workspacePath: string, client?: OllamaClient, options?: { okf?: { vaultPath: string; owner?: string } }) {
     this.basePath = join(workspacePath, 'memory');
     this.client = client;
+    this.okf = options?.okf;
+  }
+
+  private mirrorConcept(entry: FactEntry): void {
+    if (!this.okf) return;
+    try {
+      const path = factConceptPath(this.okf.vaultPath, entry.id);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, conceptForFact(entry, { owner: this.okf.owner, agent: 'invarail' }));
+      appendLog(this.okf.vaultPath, [{ kind: 'Creation', text: `Fact [${entry.text.slice(0, 60)}](/${FACT_DOMAIN}/${entry.id}.md)` }]);
+    } catch (err) {
+      console.warn('[FactStore] OKF mirror failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  private unmirrorConcept(id: string, text: string): void {
+    if (!this.okf) return;
+    try {
+      const path = factConceptPath(this.okf.vaultPath, id);
+      if (existsSync(path)) { unlinkSync(path); appendLog(this.okf.vaultPath, [{ kind: 'Removal', text: `Fact "${text.slice(0, 60)}" forgotten` }]); }
+    } catch (err) {
+      console.warn('[FactStore] OKF unmirror failed:', err instanceof Error ? err.message : err);
+    }
   }
 
   /**
@@ -136,6 +163,7 @@ export class FactStore {
 
     // Append to index
     this.appendToIndex(memDir, dateStr, entry);
+    this.mirrorConcept(entry);
 
     // Invalidate cache
     this.invalidateCache(senderId);
@@ -183,6 +211,7 @@ export class FactStore {
           const entry = JSON.parse(line);
           if (entry.text?.toLowerCase().includes(queryLower)) {
             removed++;
+            if (entry.id) this.unmirrorConcept(entry.id, entry.text);
             continue; // skip this fact
           }
         } catch { /* keep malformed lines to avoid data loss */ }

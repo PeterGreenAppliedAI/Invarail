@@ -132,6 +132,25 @@ export function pickUtility(available: OllamaModel[]): string | undefined {
   return [...available].sort((a, b) => a.size - b.size)[0]?.name;
 }
 
+/**
+ * Which prompt profile a foreground model should run under. `small` = the September
+ * small-tier board (≤ 14.7B) or an unmeasured model under 15GB on disk; everything else
+ * is `full`. The wizard WRITES this into config (promptProfile + a matching contextSize);
+ * runtime never sniffs the model name, and the doctor warns when the two disagree.
+ */
+export type ForegroundTier = 'small' | 'full';
+export const SMALL_TIER_MAX_GB = 15;
+export function foregroundTier(model: string, sizeGb?: number): ForegroundTier {
+  const m = findMeasured(model);
+  if (m) return m.source === '2026-09' ? 'small' : 'full';
+  if (sizeGb !== undefined && sizeGb < SMALL_TIER_MAX_GB) return 'small';
+  return 'full';
+}
+/** The session/router/extraction num_ctx the wizard writes for a tier. */
+export function contextSizeForTier(tier: ForegroundTier): number {
+  return tier === 'small' ? 16384 : 32768;
+}
+
 /** The `think:` value a specialist block should carry for a measured pick. */
 export function thinkFor(measured: MeasuredModel | undefined): boolean | undefined {
   if (!measured || measured.think === 'none') return undefined;

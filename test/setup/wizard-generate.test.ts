@@ -21,7 +21,7 @@ const state: WizardState = {
     webSearch: { enabled: true, provider: 'searxng', baseUrl: 'http://localhost:8080', dailyQueryCeiling: 250 },
     tts: { enabled: true, url: 'http://127.0.0.1:8000' }, stt: { enabled: false },
     vision: { enabled: false }, browser: { enabled: false, headless: true },
-    exec: { security: 'docker' }, graphMemory: { enabled: true }, heartbeat: { enabled: false },
+    exec: { security: 'docker' }, graphMemory: { enabled: true }, memory: { backend: 'graph', embeddingModel: 'qwen3-embedding:8b' }, heartbeat: { enabled: false },
     reasoning: { enabled: false }, imageGen: { enabled: false }, pi: { enabled: false },
   },
 };
@@ -39,6 +39,31 @@ describe('wizard-generated config', () => {
     const shared: WizardState = { ...state, models: { ...state.models, routerModel: 'qwen3:8b' } };
     expect(buildConfig(shared)).toMatch(/router: \{[^}]*contextSize: 32768/);
     expect(buildConfig(shared)).toMatch(/extractionContextSize: 32768/);
+  });
+
+  it('memory tiers: graph, flat/no embedder, vault + OKF each land in the config the loader accepts', () => {
+    const graph = buildConfig(state);
+    expect(graph).toMatch(/backend: "graph"/); expect(graph).toMatch(/embeddingModel: "qwen3-embedding:8b"/);
+    const flat = buildConfig({ ...state, services: { ...state.services, memory: { backend: 'flat', embeddingModel: 'none' } } });
+    expect(flat).toMatch(/backend: "flat"/); expect(flat).toMatch(/embeddingModel: "none"/); expect(flat).toMatch(/consolidation: \{\s*enabled: false/);
+    const okf = buildConfig({ ...state, services: { ...state.services, memory: { backend: 'vault', embeddingModel: 'none', vaultPath: '/Users/me/Obsidian', okf: true } } });
+    expect(okf).toMatch(/backend: "vault"/); expect(okf).toMatch(/path: "\/Users\/me\/Obsidian"/); expect(okf).toMatch(/okf: true/);
+    const dir = mkdtempSync(join(tmpdir(), 'wizard-'));
+    const p = join(dir, 'invarail.config.json5'); writeFileSync(p, okf);
+    process.env.WEB_TOKEN = state.channels.web.token!;
+    const c = loadConfig(p);
+    expect(c.memory.backend).toBe('vault'); expect(c.memory.embeddingModel).toBe('none'); expect(c.vault.okf).toBe(true); expect(c.vault.path).toBe('/Users/me/Obsidian');
+  });
+
+  it('a small-tier foreground gets promptProfile small and a 16K context everywhere the model is called', () => {
+    const small: WizardState = { ...state, models: { ...state.models, routerModel: 'qwen3.5:9b', specialistModel: 'qwen3.5:9b', foregroundTier: 'small' } };
+    const text = buildConfig(small);
+    expect(text).toMatch(/promptProfile: "small"/);
+    expect(text).toMatch(/router: \{[^}]*contextSize: 16384/);
+    expect(text).toMatch(/extractionContextSize: 16384/);
+    expect(text).toMatch(/session: \{[^}]*contextSize: 16384/);
+    expect(text).toMatch(/defaultContextSize: 16384/);   // calls without a num_ctx must not load the model at a second size
+    expect(buildConfig(state)).toMatch(/promptProfile: "full"/);   // no tier given → full
   });
 
   it('parses through the real loader with defaultModel, an exposed console + token, searxng + ceiling, voice on the foreground model', () => {

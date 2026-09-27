@@ -40,18 +40,25 @@ const pendingCompactions = new Set<string>(); // prevent overlapping compactions
 const workspaceCache = new Map<string, { context: string; loadedAt: number }>();
 const WORKSPACE_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+/** Per-file cap on injected workspace files: the small profile bounds a lived-in workspace. */
+const SMALL_PROFILE_MAX_CHARS_PER_FILE = 4000;
+function profileMaxChars(config: InvarailConfig): number | undefined {
+  return config.promptProfile === 'small' ? SMALL_PROFILE_MAX_CHARS_PER_FILE : undefined;
+}
+
 function getCachedWorkspaceContext(
   sessionKey: string,
   workspacePath: string,
   category: WorkspaceCategory,
   channel?: string,
+  maxCharsPerFile?: number,
 ): string {
   const cached = workspaceCache.get(sessionKey);
   if (cached && Date.now() - cached.loadedAt < WORKSPACE_CACHE_TTL_MS) {
     return cached.context;
   }
 
-  const context = buildWorkspaceContext(workspacePath, { category, channel });
+  const context = buildWorkspaceContext(workspacePath, { category, channel, maxCharsPerFile });
   workspaceCache.set(sessionKey, { context, loadedAt: Date.now() });
   return context;
 }
@@ -364,6 +371,11 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
         .filter(f => (f.importance ?? 2) >= 4 && f.confidence >= 0.7)
         .sort((a, b) => (b.importance ?? 2) - (a.importance ?? 2))
         .slice(0, 5);
+      // The flat tier's answer to the graph's KNN: keyword-scored facts for THIS message,
+      // capped like the graph path caps contextual facts (2026-09-27, memory tiers).
+      const stableTexts = new Set(stableFacts.map(f => f.text));
+      contextFacts = params.factStore.searchFacts(primingQueryFrom(message), senderId, 3)
+        .filter(f => !stableTexts.has(f.text) && f.confidence >= 0.6);
     }
 
     let modelSummary: string | null = null;
@@ -1117,7 +1129,7 @@ async function runSpecialist(
       ? 'chat' as const
       : 'minimal' as const;
   const workspaceContext = getCachedWorkspaceContext(
-    params.sessionKey ?? 'default', workspacePath, wsCategory, params.sourceContext?.channel,
+    params.sessionKey ?? 'default', workspacePath, wsCategory, params.sourceContext?.channel, profileMaxChars(params.config),
   );
 
   // Channel context for delivery targets (cron scheduling, send_message, etc.)
@@ -1423,8 +1435,8 @@ async function runPipelineDispatch(
         : 'minimal' as const;
   // Plan pipeline gets fresh context (progressive, no caching). Others use frozen snapshot.
   const workspaceContext = isolateContext
-    ? buildWorkspaceContext(workspacePath, { category: wsCategory, channel: params.sourceContext?.channel })
-    : getCachedWorkspaceContext(params.sessionKey ?? 'default', workspacePath, wsCategory, params.sourceContext?.channel);
+    ? buildWorkspaceContext(workspacePath, { category: wsCategory, channel: params.sourceContext?.channel, maxCharsPerFile: profileMaxChars(params.config) })
+    : getCachedWorkspaceContext(params.sessionKey ?? 'default', workspacePath, wsCategory, params.sourceContext?.channel, profileMaxChars(params.config));
 
   // Resolve anaphoric references: if the message is short and the session has a topic,
   // prepend the topic so the pipeline knows what "it", "one", "that" refers to.
@@ -1725,9 +1737,12 @@ async function runAsBareChat(
   // full chat set: every voice turn prefills the whole prompt before a word is spoken,
   // and TOOLS.md/USER.md/AGENTS.md are ~7K chars a spoken reply never needs. Separate
   // cache key — the cache is keyed by session, not by context level.
+  // The small profile (config, wizard-written for a ≤14B foreground) gives bare chat the
+  // same minimal set voice gets; a specialist that says contextLevel: 'full' still wins.
+  const chatSet: WorkspaceCategory = config.promptProfile === 'small' && specialist?.contextLevel !== 'full' ? 'minimal' : 'chat';
   const workspaceContext = isVoice
-    ? getCachedWorkspaceContext(`${agentId}:voice`, workspacePath, 'minimal', sourceContext?.channel)
-    : getCachedWorkspaceContext(agentId, workspacePath, 'chat', sourceContext?.channel);
+    ? getCachedWorkspaceContext(`${agentId}:voice`, workspacePath, 'minimal', sourceContext?.channel, profileMaxChars(config))
+    : getCachedWorkspaceContext(`${agentId}:${chatSet}`, workspacePath, chatSet, sourceContext?.channel, profileMaxChars(config));
   let systemContent = specialist?.systemPrompt ?? 'You are a helpful AI assistant. Respond naturally and concisely.';
   if (workspaceContext) {
     systemContent += '\n\n' + workspaceContext;

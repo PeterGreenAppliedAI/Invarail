@@ -15,6 +15,8 @@ describe('starter preset', () => {
     // The measured floor for tool use, thinking off (evals/2026-09-small-tier)
     expect(config.specialists.chat?.model).toBe('qwen3.5:9b');
     expect(config.specialists.chat?.think).toBe(false);
+    // a 9B carries the minimal workspace set (evals/2026-09-e2e)
+    expect(config.promptProfile).toBe('small');
   });
 
   it('requires nothing external: no tokens, no backends, no tool providers', () => {
@@ -34,5 +36,9 @@ describe('starter preset', () => {
     // A num_ctx change is a reload on Ollama: router at 8K + chat at 16K on one model
     // reloaded it every turn and the router timed out on every message (e2e eval 2026-09-27).
     expect(config.router.contextSize).toBe(config.session.contextSize);
+    expect(config.ollama.defaultContextSize).toBe(config.session.contextSize);
+    // zero sidecars, nothing to pull beside the 9B: flat facts, no embedder
+    expect(config.memory.backend).toBe('flat');
+    expect(config.memory.embeddingModel).toBe('none');
   });
 });

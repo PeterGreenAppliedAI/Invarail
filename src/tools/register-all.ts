@@ -15,7 +15,8 @@ import { createMemoryGetTool } from './memory-get.js';
 import { createMemorySaveTool } from './memory-save.js';
 import { createMemoryForgetTool } from './memory-forget.js';
 import { createKnowledgeImportTool } from './knowledge-import.js';
-import { createDocsSearchTool, createDocsStoreTool } from './docs.js';
+import { createDocsSearchTool, createDocsStoreTool, createDocsReadTool } from './docs.js';
+import { embeddingsEnabled, okfEnabled } from '../memory/policy.js';
 import { createExecTool } from './exec.js';
 import { createCodeSessionTool } from './code-session.js';
 import { SessionManager } from '../exec/session-manager.js';
@@ -118,13 +119,14 @@ export async function registerAllTools(
     config.memory?.consolidation?.model,
   ));
 
-  // Knowledge import tool (requires Ollama for embeddings)
+  // Knowledge import needs an embedder; the vault tools do not (lexical-only without one).
+  const embed = embeddingsEnabled(config.memory);
   if (options?.ollamaClient) {
-    registry.register(createKnowledgeImportTool(workspace, options.ollamaClient, embeddingStore, config.tools?.knowledge));
-  if (options?.ollamaClient) {
-    registry.register(createDocsSearchTool(config.vault.path, embeddingStore, options.ollamaClient));
-    registry.register(createDocsStoreTool(config.vault.path, embeddingStore, options.ollamaClient));
-  }
+    if (embed) registry.register(createKnowledgeImportTool(workspace, options.ollamaClient, embeddingStore, config.tools?.knowledge));
+    const okf = okfEnabled(config);
+    registry.register(createDocsSearchTool(config.vault.path, embeddingStore, options.ollamaClient, { embed, okf }));
+    registry.register(createDocsStoreTool(config.vault.path, embeddingStore, options.ollamaClient, { embed, okf }));
+    if (okf) registry.register(createDocsReadTool(config.vault.path));
   }
 
   // Docker backend (if configured)

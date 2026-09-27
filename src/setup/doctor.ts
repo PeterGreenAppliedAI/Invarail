@@ -9,6 +9,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import type { InvarailConfig } from '../config/types.js';
 import { detect, type DetectReport } from './detect.js';
+import { foregroundTier } from './measured-models.js';
+import { memoryBackend, embeddingsEnabled, okfEnabled } from '../memory/policy.js';
+import { checkBundle } from '../knowledge/okf.js';
 
 export type DoctorStatus = 'PASS' | 'WARN' | 'FAIL';
 
@@ -83,6 +86,49 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
       const where = report.memory.gpuVramGb ? `${report.memory.gpuName} ${report.memory.gpuVramGb}GB VRAM` : `${report.memory.totalGb}GB RAM, no NVIDIA GPU`;
       if (gb <= budget) push('Foreground model fits', 'PASS', `${fg} is ${gb.toFixed(1)}GB; ${where}`);
       else push('Foreground model fits', 'WARN', `${fg} is ${gb.toFixed(1)}GB — ${where} leaves ~${budget.toFixed(0)}GB usable; expect CPU offload and slow replies`, 'pick a smaller foreground model (evals/2026-09-small-tier: qwen3.5:9b at 6.6GB, gemma4:12b at 7.6GB, qwen2.5:7b at 4.7GB) or serve it from a bigger box via inference.ollamaBackends');
+    }
+  }
+
+  // Prompt profile vs the foreground model's tier — config says it, this keeps it honest.
+  if (config) {
+    const fg = (config as { defaultModel?: string }).defaultModel ?? config.specialists.chat?.model;
+    const profile = (config as { promptProfile?: string }).promptProfile ?? 'full';
+    const size = fg ? report.ollama.modelSizes[fg] ?? report.ollama.modelSizes[`${fg}:latest`]
+      ?? report.ollamaBackends.map(b => b.modelSizes[fg]).find(Boolean) : undefined;
+    if (fg) {
+      const tier = foregroundTier(fg, size ? size / 1e9 : undefined);
+      if (tier === profile) push('Prompt profile', 'PASS', `${profile} — matches ${fg}${size ? ` (${(size / 1e9).toFixed(1)}GB)` : ''}`);
+      else if (tier === 'small') push('Prompt profile', 'WARN', `${fg} is small-tier but promptProfile is "${profile}": chat carries the full workspace set and a 32K history budget it cannot afford`, 'set promptProfile: "small" and session.contextSize / router.contextSize / memory.extractionContextSize to 16384 (evals/2026-09-e2e)');
+      else push('Prompt profile', 'WARN', `${fg} is a full-tier model but promptProfile is "small": chat is missing TOOLS.md/USER.md/AGENTS.md it could carry`, 'set promptProfile: "full"');
+    }
+  }
+
+  // Memory tier requirements (src/memory/policy.ts)
+  if (config) {
+    const backend = memoryBackend(config);
+    const embedder = config.memory?.embeddingModel;
+    const embed = embeddingsEnabled(config.memory);
+    if (backend === 'graph' && !report.falkordb.reachable) push('Memory tier', 'FAIL', `memory.backend is "graph" but FalkorDB is not reachable at ${report.falkordb.host}:${report.falkordb.port}`, `${report.falkordb.start}   (or set memory.backend: "flat")`);
+    else if (backend === 'graph' && !embed) push('Memory tier', 'FAIL', 'memory.backend is "graph" but memory.embeddingModel is "none" — the graph needs vectors', 'set memory.embeddingModel (ollama pull qwen3-embedding:4b) or memory.backend: "flat"');
+    else if (backend === 'vault' || backend === 'flat') push('Memory tier', 'PASS', `${backend}${okfEnabled(config) ? ' + OKF' : ''}${embed ? '' : ', no embedder'}`);
+    else push('Memory tier', 'PASS', `${backend === 'auto' ? 'graph if FalkorDB answers, else flat' : backend}`);
+    if (embed && embedder && report.ollama.reachable) {
+      const size = report.ollama.modelSizes[embedder] ?? report.ollama.modelSizes[`${embedder}:latest`]
+        ?? report.ollamaBackends.map(b => b.modelSizes[embedder]).find(Boolean);
+      const fg = (config as { defaultModel?: string }).defaultModel ?? config.specialists.chat?.model;
+      const fgSize = fg ? report.ollama.modelSizes[fg] ?? report.ollama.modelSizes[`${fg}:latest`] : undefined;
+      const budget = report.memory.gpuVramGb ? report.memory.gpuVramGb * 0.85 : report.memory.totalGb * 0.6;
+      if (size && fgSize && (size + fgSize) / 1e9 > budget) push('Embedding model fits beside the foreground', 'WARN', `${embedder} (${(size / 1e9).toFixed(1)}GB) + ${fg} (${(fgSize / 1e9).toFixed(1)}GB) > ~${budget.toFixed(0)}GB usable — Ollama will evict one for the other on every memory touch`, 'use a smaller embedder (ollama pull qwen3-embedding:0.6b) or memory.embeddingModel: "none"');
+      else if (size) push('Embedding model fits beside the foreground', 'PASS', `${embedder} (${(size / 1e9).toFixed(1)}GB)`);
+    }
+    if (backend === 'vault') {
+      const vp = config.vault.path;
+      if (!existsSync(vp)) push('Vault folder', 'WARN', `${vp} does not exist yet`, `mkdir -p ${vp}   (point vault.path at your Obsidian vault to use it)`);
+      else if (okfEnabled(config)) {
+        const issues = checkBundle(vp);
+        if (issues.length === 0) push('OKF bundle', 'PASS', `${vp} conforms (every note has a type)`);
+        else push('OKF bundle', 'WARN', `${issues.length} note(s) without OKF front matter: ${issues.slice(0, 3).map(i => i.file).join(', ')}${issues.length > 3 ? '…' : ''}`, 'the next heartbeat leaves them alone (§11: consumers tolerate) — add `type:` front matter, or let docs_store write new notes');
+      } else push('Vault folder', 'PASS', vp);
     }
   }
 

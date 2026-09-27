@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { askYesNo, printStep, printSuccess, printWarning, printInfo } from '../prompts.js';
 import { SPECIALIST_TEMPLATES, ROUTER_CATEGORIES } from '../defaults.js';
+import { contextSizeForTier } from '../measured-models.js';
 import type { OllamaStepResult } from './ollama.js';
 import type { ModelsStepResult } from './models.js';
 import type { ChannelsStepResult } from './channels.js';
@@ -116,7 +117,8 @@ export function buildConfig(state: WizardState): string {
   // num_ctx change as a reload: with the router at 8K, extraction at 8K and chat at 32K on
   // the same model, a one-model install reloaded it on every hop and the router timed out
   // on every message (e2e eval 2026-09-27 — 100% keyword fallback).
-  const contextSize = 32768;
+  const tier = state.models.foregroundTier ?? 'full';
+  const contextSize = contextSizeForTier(tier);
   const enabledCategories = getEnabledCategories(state);
 
   // Owner ID
@@ -346,15 +348,23 @@ ${state.models.inferenceBackends.map(b => `      { url: "${b.url}", models: [${b
   }
 
   // Memory block
+  const mem = state.services.memory ?? { backend: 'flat' as const, embeddingModel: 'none' };
   const memoryBlock = `  memory: {
-    backend: "markdown",
+    // Memory tier (src/memory/policy.ts): graph = FalkorDB + embeddings; flat = JSONL facts,
+    // keyword recall; vault = flat facts + your markdown folder, exact-word search.
+    backend: "${mem.backend}",
+    embeddingModel: "${mem.embeddingModel}",${mem.embeddingModel === 'none' ? '   // no embedder: nothing dense, nothing to fit beside the chat model' : ''}
     extractionModel: "${defaultModel}",
     extractionContextSize: ${contextSize},   // same num_ctx as the specialists — one load, no reload per capture
     consolidation: {
-      enabled: true,
+      enabled: ${mem.embeddingModel !== 'none'},
       model: "${state.models.routerModel}",
       similarityThreshold: 0.85,
     },
+  },
+  vault: {
+    path: "${mem.vaultPath ?? 'vault'}",${mem.okf ? `
+    okf: true,   // Open Knowledge Format: front matter, facts as notes, index.md / log.md the model navigates` : ''}
   },`;
 
   return `{
@@ -364,12 +374,19 @@ ${state.models.inferenceBackends.map(b => `      { url: "${b.url}", models: [${b
   // THE foreground model — filled into every specialist/briefing/heartbeat/vision slot
   // that does not set its own. A model change is this one line.
   defaultModel: "${defaultModel}",
+  // Prompt profile for that model's tier (evals/2026-09-e2e): small = minimal workspace set
+  // for chat + 4K-char file cap + 16K context. Change the model, re-run \`npm run doctor\`.
+  promptProfile: "${tier}",
 ${ownerIdLine}
   timezone: "${tz}",
 
   ollama: {
     url: "\${OLLAMA_URL}",
     keepAlive: "30m",
+    // Every call that does not name a num_ctx (quality judge, summaries) gets THIS one, so
+    // nothing loads the model at a second context size (A/B run 2026-09-27: a 16K install
+    // ping-ponged against the server's 32K default — 6 router timeouts, 5s reloads).
+    defaultContextSize: ${contextSize},
   },
 
 ${inferenceBlock}${briefingBlock}

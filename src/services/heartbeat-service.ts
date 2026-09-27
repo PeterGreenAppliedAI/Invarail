@@ -3,6 +3,7 @@
  * Extracted from orchestrator.ts for single-responsibility and testability.
  */
 import { writeFileSync, readFileSync, existsSync, readdirSync, statSync, unlinkSync, mkdirSync } from 'node:fs';
+import { embeddingsEnabled, okfEnabled } from '../memory/policy.js';
 import { join, dirname } from 'node:path';
 import type { InvarailConfig, FactInput, FactEntry } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
@@ -258,7 +259,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
     // denials, corrections). Advisory-injection only: the authority boundary
     // (DECISIONS 2026-08-10).
     let experienceSummary = '';
-    if (config.memory?.experiences?.enabled !== false) {
+    if (config.memory?.experiences?.enabled !== false && embeddingsEnabled(config.memory)) {
       try {
         const { synthesizeExperiences } = await import('../learnings/experience-synthesis.js');
         const { sharedExperienceStore, experienceStoreConfigFrom } = await import('../memory/experience-store.js');
@@ -287,7 +288,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
     if (deps.embeddingStore) {
       try {
         const { reindexVault } = await import('../knowledge/vault.js');
-        const report = await reindexVault(config.vault.path, deps.embeddingStore, client);
+        const report = await reindexVault(config.vault.path, deps.embeddingStore, client, { embed: embeddingsEnabled(config.memory), okf: okfEnabled(config) });
         if (report.indexed.length > 0 || report.removed.length > 0) {
           console.log(`[Heartbeat] Vault: ${report.indexed.length} indexed, ${report.removed.length} removed, ${report.unchanged} unchanged`);
         }

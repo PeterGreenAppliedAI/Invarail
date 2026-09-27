@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { MEASURED, rankForeground, pickUtility, thinkFor, findMeasured, memoryBudgetGb } from '../../src/setup/measured-models.js';
+import { MEASURED, rankForeground, pickUtility, thinkFor, findMeasured, memoryBudgetGb, foregroundTier, contextSizeForTier } from '../../src/setup/measured-models.js';
 import type { OllamaModel } from '../../src/ollama/types.js';
 
 const m = (name: string, gb: number): OllamaModel => ({ name, size: gb * 1e9 } as OllamaModel);
@@ -42,6 +42,20 @@ describe('rankForeground', () => {
   it('no budget known → everything "fits", ordering by score only', () => {
     expect(rankForeground(box)[0].name).toBe('qwen3.5:9b');
     expect(rankForeground(box).every(x => x.fits)).toBe(true);
+  });
+});
+
+describe('foreground tier → prompt profile', () => {
+  it('small = the September board or an unmeasured model under 15GB; everything else full', () => {
+    expect(foregroundTier('qwen3.5:9b')).toBe('small');
+    expect(foregroundTier('gemma4:12b')).toBe('small');
+    expect(foregroundTier('qwen2.5:7b')).toBe('small');
+    expect(foregroundTier('qwen3.8:27B')).toBe('full');
+    expect(foregroundTier('mystery:7b', 4.5)).toBe('small');
+    expect(foregroundTier('mystery:70b', 40)).toBe('full');
+    expect(foregroundTier('mystery:latest')).toBe('full');   // unknown size: do not assume small
+    expect(contextSizeForTier('small')).toBe(16384);
+    expect(contextSizeForTier('full')).toBe(32768);
   });
 });
 

@@ -48,17 +48,20 @@ import { bootstrapWorkspace } from '../src/agents/workspace.js';
 import { resolveWorkspacePath } from '../src/agents/scope.js';
 import { dispatchMessage, type DispatchResult } from '../src/dispatch.js';
 import { buildConfig, type WizardState } from '../src/setup/steps/generate.js';
-import { findMeasured, thinkFor } from '../src/setup/measured-models.js';
+import { findMeasured, thinkFor, foregroundTier, contextSizeForTier } from '../src/setup/measured-models.js';
 import { stripThinkingTags } from '../src/utils/text.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DATE = new Date().toISOString().slice(0, 10);
-const RUN_DIR = join(REPO, 'data', 'model-eval', `e2e-${DATE}`);
 const argv = process.argv.slice(2);
 const flag = (name: string): string | undefined => argv.find(a => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
 const REPS = Number(flag('reps') ?? 1);
 const TASK_FILTER = flag('task');
-const PROFILE = flag('profile') ?? 'full';
+/** `full` | `small` | `wizard` (whatever the wizard would write for this model's tier). */
+const PROFILE = (flag('profile') ?? 'wizard') as 'full' | 'small' | 'wizard';
+/** `fresh` (bootstrap files only) | `lived` (a workspace that has grown: USER/TOOLS/AGENTS/LEARNINGS filled in). */
+const WORKSPACE = (flag('workspace') ?? 'fresh') as 'fresh' | 'lived';
+const RUN_DIR = join(REPO, 'data', 'model-eval', `e2e-${DATE}-${PROFILE}-${WORKSPACE}`);
 const SELFTEST = argv.includes('--selftest');
 const MODELS = argv.filter(a => !a.startsWith('--'));
 const OWNER = 'eval-owner';
@@ -142,6 +145,19 @@ function makeWebStubs(log: string[]): InvarailTool[] {
   return [search, fetch];
 }
 
+// ---------------------------------------------------------------- a lived-in workspace
+
+/** What a workspace looks like after a few weeks: the files the bootstrap leaves as stubs,
+ *  filled the way the heartbeat and the owner fill them. Sized like the reference box
+ *  (~3K tokens across the four) — the number the small profile exists to bound. */
+function seedLivedWorkspace(ws: string): void {
+  const para = (n: number, seed: string) => Array.from({ length: n }, (_, i) => `${seed} ${i + 1}: ` + 'the owner prefers short answers, hates being asked to confirm twice, runs a home lab with three GPU boxes and a Mac mini, tracks work on the task board, and wants a heads-up before anything touches the network. '.repeat(2)).join('\n\n');
+  writeFileSync(join(ws, 'USER.md'), `# USER.md\n\n## Preferences\n${para(6, 'Preference')}\n\n## Projects\n${para(4, 'Project')}\n`);
+  writeFileSync(join(ws, 'TOOLS.md'), `# TOOLS.md\n\n## Conventions\n${para(8, 'Convention')}\n\n## Hosts\n${para(6, 'Host')}\n`);
+  writeFileSync(join(ws, 'AGENTS.md'), `# AGENTS.md\n\n## Operating rules\n${para(6, 'Rule')}\n`);
+  writeFileSync(join(ws, 'LEARNINGS.md'), `# LEARNINGS.md\n\n${para(5, 'Learning')}\n`);
+}
+
 // ---------------------------------------------------------------- the install
 
 interface Env {
@@ -165,6 +181,7 @@ function wizardState(model: string, ollamaUrl: string): WizardState {
       routerModel: model, specialistModel: model, backgroundModel: model,
       categoryModels: {}, inferenceBackends: [],
       specialistThink: thinkFor(findMeasured(model)),
+      foregroundTier: PROFILE === 'wizard' ? foregroundTier(model) : PROFILE,
     },
     channels: {
       discord: { enabled: false }, telegram: { enabled: false },
@@ -178,7 +195,7 @@ function wizardState(model: string, ollamaUrl: string): WizardState {
       tts: { enabled: false }, stt: { enabled: false }, vision: { enabled: false },
       browser: { enabled: false, headless: true },
       exec: { security: 'allowlist' },
-      graphMemory: { enabled: false }, heartbeat: { enabled: false },
+      graphMemory: { enabled: false }, memory: { backend: 'flat', embeddingModel: 'none' }, heartbeat: { enabled: false },
       reasoning: { enabled: false }, imageGen: { enabled: false }, pi: { enabled: false },
     },
   } as WizardState;
@@ -187,7 +204,7 @@ function wizardState(model: string, ollamaUrl: string): WizardState {
 /** A fresh install in a scratch directory: wizard config for THIS model, bootstrapped
  *  workspace, real registry + pipelines + stores. The process chdir's into it so every
  *  relative `data/…` path in the runtime lands there. */
-async function makeEnv(model: string, client: OllamaClient, ollamaUrl: string): Promise<Env> {
+async function makeEnv(model: string, ollamaUrl: string): Promise<Env> {
   const root = mkdtempSync(join(tmpdir(), 'invarail-e2e-'));
   const configPath = join(root, 'invarail.config.json5');
   writeFileSync(configPath, buildConfig(wizardState(model, ollamaUrl)));
@@ -195,9 +212,16 @@ async function makeEnv(model: string, client: OllamaClient, ollamaUrl: string): 
   process.env.BRAVE_API_KEY = 'stub';
   process.chdir(root);
   const config = loadConfig(configPath);
+  // The client the way the orchestrator builds it — from THIS config, so calls that name
+  // no num_ctx (quality judge, summaries) get the generated defaultContextSize. A shared
+  // client built without it sent those calls to the server's default and reloaded the
+  // model between them (second A/B pass, 2026-09-27).
+  const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, [], [], config.ollama.defaultContextSize);
+  instrument(client);
 
   const ws = resolveWorkspacePath(config.agents.default, config);
   bootstrapWorkspace(ws, 'Invarail');
+  if (WORKSPACE === 'lived') seedLivedWorkspace(ws);
   const sessions = new SessionStore(config.session.transcriptDir);
   const facts = new FactStore(ws, client);
   const tasks = new TaskStore(join(ws, 'tasks.json'), join(ws, 'TASKS.md'));
@@ -445,6 +469,8 @@ const TASKS: E2ETask[] = [
 
 interface TaskRecord {
   id: string; expected: string[]; routed?: string; routedBy?: string;
+  /** A provider outage that survived one retry: excluded from means, reported separately. */
+  unscored?: boolean;
   checks: CheckResult[]; score: number; durationMs: number;
   promptTokens: number; completionTokens: number; modelCalls: number;
   iterations?: number; hitMaxIterations?: boolean; error?: string; bucket?: string;
@@ -474,7 +500,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 function bucketOf(msg: string): string {
   if (/^TIMEOUT after/.test(msg)) return 'TIMEOUT';
-  if (/503|ECONNREFUSED|EHOSTUNREACH|fetch failed|socket hang up/i.test(msg)) return 'PROVIDER_OUTAGE';
+  if (/503|500 Internal Server Error|prediction aborted|ECONNREFUSED|EHOSTUNREACH|fetch failed|socket hang up/i.test(msg)) return 'PROVIDER_OUTAGE';
   if (/400 Bad Request/.test(msg)) return 'SERVING_INCOMPATIBLE';
   return 'MODEL_FAILURE';
 }
@@ -494,8 +520,8 @@ async function send(env: Env, sessionKey: string, message: string, timeoutMs: nu
   return result;
 }
 
-async function runTask(model: string, client: OllamaClient, ollamaUrl: string, task: E2ETask, rep: number, runDir: string): Promise<TaskRecord> {
-  const env = await makeEnv(model, client, ollamaUrl);
+async function runTask(model: string, ollamaUrl: string, task: E2ETask, rep: number, runDir: string, attempt = 0): Promise<TaskRecord> {
+  const env = await makeEnv(model, ollamaUrl);
   task.fixtures?.(env);
   const sessionKey = `e2e-${task.id}-${rep}`;
   const m0 = { ...meter };
@@ -514,6 +540,13 @@ async function runTask(model: string, client: OllamaClient, ollamaUrl: string, t
     error = err instanceof Error ? err.message : String(err);
   }
   const ctx: TaskCtx = { ...env, answer, result, researchDir: join(env.ws, 'research') };
+  if (error && bucketOf(error) === 'PROVIDER_OUTAGE' && attempt === 0) {
+    // the serving stack, not the model — one retry after a pause, then unscored
+    console.log(`    provider outage on ${task.id} (${error.slice(0, 60)}) — retrying once in 20s`);
+    process.chdir(REPO); rmSync(env.root, { recursive: true, force: true });
+    await new Promise(r => setTimeout(r, 20_000));
+    return runTask(model, ollamaUrl, task, rep, runDir, 1);
+  }
   const checks: CheckResult[] = error
     ? [has('completed without error', false, error.slice(0, 160))]
     : [
@@ -535,17 +568,17 @@ async function runTask(model: string, client: OllamaClient, ollamaUrl: string, t
     checks, score, durationMs: Date.now() - start,
     promptTokens: meter.prompt - m0.prompt, completionTokens: meter.completion - m0.completion, modelCalls: meter.calls - m0.calls,
     iterations: result?.iterations, hitMaxIterations: result?.hitMaxIterations,
-    error, bucket: error ? bucketOf(error) : undefined, answer: answer.slice(0, 1500), webCalls: env.webLog,
+    error, bucket: error ? bucketOf(error) : undefined, unscored: !!error && bucketOf(error) === 'PROVIDER_OUTAGE',
+    answer: answer.slice(0, 1500), webCalls: env.webLog,
   };
 }
 
 async function selftest(): Promise<void> {
   console.log('SELFTEST — scripted perfect performer through every oracle, no model');
-  const client = createInferenceClient('http://127.0.0.1:1', undefined, [], [], undefined);
   let failures = 0;
   for (const task of TASKS) {
     if (TASK_FILTER && task.id !== TASK_FILTER) continue;
-    const env = await makeEnv('selftest-model', client, 'http://127.0.0.1:1');
+    const env = await makeEnv('selftest-model', 'http://127.0.0.1:1');
     task.fixtures?.(env);
     const answer = await task.reference(env);
     const checks = task.check({ ...env, answer, researchDir: join(env.ws, 'research') });
@@ -562,7 +595,7 @@ async function selftest(): Promise<void> {
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
 
 function report(results: ModelRecord[], prov: Record<string, unknown>): string {
-  let md = `# End-to-end eval — ${DATE}\n\nEvery task through \`dispatchMessage\` with a wizard-generated config for the model under test (router = specialists = the model), a bootstrapped workspace, the real registry, stores and pipelines; web stubbed over a fixed corpus. Profile: **${PROFILE}**. Reps: ${REPS}.\n\n`;
+  let md = `# End-to-end eval — ${DATE} · profile=${PROFILE} · workspace=${WORKSPACE}\n\nEvery task through \`dispatchMessage\` with a wizard-generated config for the model under test (router = specialists = the model), a bootstrapped workspace, the real registry, stores and pipelines; web stubbed over a fixed corpus. Prompt profile: **${PROFILE}** (\`wizard\` = what the wizard writes for the model's tier). Workspace: **${WORKSPACE}**. Reps: ${REPS}.\n\n`;
   md += `| # | Model | Overall | ${TASKS.map(t => t.id).join(' | ')} | prompt tok/battery | wall |\n|---|---|---|${TASKS.map(() => '---').join('|')}|---|---|\n`;
   const sorted = [...results].sort((a, b) => b.overall - a.overall);
   for (const [i, r] of sorted.entries()) {
@@ -591,34 +624,36 @@ async function main(): Promise<void> {
   mkdirSync(RUN_DIR, { recursive: true });
   // Never the live config: this is a fresh install's view. OLLAMA_URL picks the host.
   const ollamaUrl = process.env.OLLAMA_URL ?? 'http://localhost:11434';
-  const client = createInferenceClient(ollamaUrl, undefined, [], [], undefined);
-  instrument(client);
+  const warm = createInferenceClient(ollamaUrl, undefined, [], [], undefined);   // warmup only; every task builds its own from its config
   let gitCommit = 'unknown';
   try { gitCommit = execSync('git rev-parse --short HEAD', { cwd: REPO }).toString().trim(); } catch { /* not fatal */ }
-  const prov = { date: new Date().toISOString(), gitCommit, ollamaUrl, reps: REPS, profile: PROFILE, tasks: TASKS.map(t => t.id) };
+  const prov = { date: new Date().toISOString(), gitCommit, ollamaUrl, reps: REPS, profile: PROFILE, workspace: WORKSPACE, tasks: TASKS.map(t => t.id) };
   const tasks = TASK_FILTER ? TASKS.filter(t => t.id === TASK_FILTER) : TASKS;
-  console.log(`E2E eval — ${MODELS.length} model(s) × ${tasks.length} task(s) × ${REPS} rep(s) → ${RUN_DIR}`);
+  console.log(`E2E eval — ${MODELS.length} model(s) × ${tasks.length} task(s) × ${REPS} rep(s) · profile=${PROFILE} workspace=${WORKSPACE} → ${RUN_DIR}`);
 
   const results: ModelRecord[] = [];
   for (const model of MODELS) {
     const modelStart = Date.now();
     console.log(`\n================ ${model} ================`);
     try {
-      await withTimeout(client.chat({ model, messages: [{ role: 'user', content: 'hi' }], options: { num_predict: 4 } }), 300_000, `${model} warmup`);
+      await withTimeout(warm.chat({ model, messages: [{ role: 'user', content: 'hi' }], options: { num_predict: 4, num_ctx: contextSizeForTier(PROFILE === 'wizard' ? foregroundTier(model) : PROFILE) } }), 300_000, `${model} warmup`);
     } catch (err) { console.log(`  warmup FAILED: ${err instanceof Error ? err.message : err}`); }
     const reps: TaskRecord[][] = [];
     for (let rep = 0; rep < REPS; rep++) {
       const recs: TaskRecord[] = [];
       for (const task of tasks) {
-        const rec = await runTask(model, client, ollamaUrl, task, rep, RUN_DIR);
+        const rec = await runTask(model, ollamaUrl, task, rep, RUN_DIR);
         recs.push(rec);
         const bad = rec.checks.filter(c => !c.pass).map(c => c.name).join(', ');
-        console.log(`  ${rec.id}: ${pct(rec.score)} routed=${rec.routed ?? '—'} calls=${rec.modelCalls} ptok=${rec.promptTokens} ${(rec.durationMs / 1000).toFixed(0)}s${bad ? ` — ✗ ${bad}` : ''}${rec.error ? ` [${rec.bucket}] ${rec.error.slice(0, 80)}` : ''}`);
+        console.log(`  ${rec.id}: ${rec.unscored ? 'UNSCORED' : pct(rec.score)} routed=${rec.routed ?? '—'} calls=${rec.modelCalls} ptok=${rec.promptTokens} ${(rec.durationMs / 1000).toFixed(0)}s${bad ? ` — ✗ ${bad}` : ''}${rec.error ? ` [${rec.bucket}] ${rec.error.slice(0, 80)}` : ''}`);
       }
       reps.push(recs);
     }
     const taskScores: Record<string, number> = {};
-    for (const t of tasks) { const rs = reps.map(r => r.find(x => x.id === t.id)?.score ?? 0); taskScores[t.id] = rs.reduce((a, b) => a + b, 0) / rs.length; }
+    for (const t of tasks) {
+      const rs = reps.map(r => r.find(x => x.id === t.id)).filter((x): x is TaskRecord => !!x && !x.unscored).map(x => x.score);
+      if (rs.length) taskScores[t.id] = rs.reduce((a, b) => a + b, 0) / rs.length;   // an outage-only task is absent from the mean, not a zero
+    }
     const categoryScores: Record<string, number> = {};
     for (const cat of [...new Set(tasks.map(t => t.expect[0]))]) {
       const ids = tasks.filter(t => t.expect[0] === cat).map(t => t.id);
@@ -626,7 +661,7 @@ async function main(): Promise<void> {
     }
     const overall = Object.values(taskScores).reduce((a, b) => a + b, 0) / Math.max(1, Object.keys(taskScores).length);
     const think = thinkFor(findMeasured(model));
-    results.push({ model, profile: PROFILE, think, configTokens: { specialists: 0 }, reps, taskScores, categoryScores, overall, totalMs: Date.now() - modelStart });
+    results.push({ model, profile: PROFILE === 'wizard' ? `wizard→${foregroundTier(model)}` : PROFILE, think, configTokens: { specialists: 0 }, reps, taskScores, categoryScores, overall, totalMs: Date.now() - modelStart });
     console.log(`  OVERALL: ${pct(overall)} · ${Object.entries(categoryScores).map(([k, v]) => `${k} ${pct(v)}`).join(' · ')} · ${((Date.now() - modelStart) / 60000).toFixed(1)}m`);
     writeFileSync(join(RUN_DIR, 'results.json'), JSON.stringify({ provenance: prov, results }, null, 2));
     writeFileSync(join(RUN_DIR, 'report.md'), report(results, prov));

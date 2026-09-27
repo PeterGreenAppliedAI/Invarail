@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { join, relative, extname } from 'node:path';
 import { readDocument } from './chunker.js';
 import { normalizeAndChunk } from './vault-chunker.js';
+import { isReservedName, writeIndexes, appendLog } from './okf.js';
 import type { EmbeddingStore, MemorySearchResult } from '../memory/embeddings.js';
 import type { OllamaClient } from '../ollama/client.js';
 
@@ -48,11 +49,20 @@ export interface ReindexReport {
   unchanged: number;
 }
 
+export interface ReindexOptions {
+  /** false = lexical-only rows (no embedder configured); FTS5 still indexes every chunk. */
+  embed?: boolean;
+  /** OKF conventions: skip reserved files, (re)write index.md per directory, append log.md. */
+  okf?: boolean;
+}
+
 export async function reindexVault(
   vaultPath: string,
   store: EmbeddingStore,
   client: OllamaClient,
+  options: ReindexOptions = {},
 ): Promise<ReindexReport> {
+  const embed = options.embed ?? true;
   const report: ReindexReport = { indexed: [], removed: [], unchanged: 0 };
   if (!existsSync(vaultPath)) return report;
 
@@ -62,6 +72,7 @@ export async function reindexVault(
     for (const name of readdirSync(dir)) {
       const full = join(dir, name);
       if (!statSync(full).isFile() || !SUPPORTED.has(extname(name).toLowerCase())) continue;
+      if (isReservedName(name)) continue;   // index.md / log.md are navigation, not concepts
       const rel = relative(vaultPath, full);
       seen.add(rel);
 
@@ -87,12 +98,13 @@ export async function reindexVault(
         continue;
       }
 
-      const { tier, chunks } = await normalizeAndChunk(text, rel, {
-        embedParagraphs: async (paragraphs) => client.embed(paragraphs),
-      });
+      const { tier, chunks } = await normalizeAndChunk(text, rel, embed
+        ? { embedParagraphs: async (paragraphs) => client.embed(paragraphs) }
+        : {});
       if (chunks.length === 0) continue;
 
-      const embeddings = await client.embed(chunks.map(c => c.text));
+      // No embedder: an empty vector per row — the FTS5 side carries retrieval alone.
+      const embeddings = embed ? await client.embed(chunks.map(c => c.text)) : chunks.map(() => []);
       store.deleteByFile(rel);
       const now = new Date().toISOString();
       chunks.forEach((c, i) => store.addVaultChunk({
@@ -118,6 +130,14 @@ export async function reindexVault(
       console.log(`[Vault] Removed ${f.path} (file deleted)`);
     }
   }
+
+  if (options.okf && (report.indexed.length > 0 || report.removed.length > 0)) {
+    writeIndexes(vaultPath);
+    appendLog(vaultPath, [
+      ...report.indexed.map(i => ({ kind: 'Update' as const, text: `Indexed [${i.path}](/${i.path}) (${i.chunks} chunk(s))` })),
+      ...report.removed.map(p => ({ kind: 'Removal' as const, text: `Removed ${p}` })),
+    ]);
+  }
   return report;
 }
 
@@ -129,12 +149,17 @@ export async function searchVault(opts: {
   store: EmbeddingStore;
   client: OllamaClient;
   budgetChars?: number;
+  /** false = lexical only (no embedder). */
+  embed?: boolean;
 }): Promise<VaultPassage[]> {
   const { query, domain, store, client } = opts;
   const budget = opts.budgetChars ?? 7000;
 
-  const [queryEmbedding] = await client.embed(query);
-  const dense = store.searchVault(queryEmbedding, domain, CANDIDATES);
+  let dense: MemorySearchResult[] = [];
+  if (opts.embed ?? true) {
+    const [queryEmbedding] = await client.embed(query);
+    dense = store.searchVault(queryEmbedding, domain, CANDIDATES);
+  }
   const lexical = store.searchVaultLexical(query, domain, CANDIDATES);
 
   // Reciprocal rank fusion — dense finds concepts, lexical finds names

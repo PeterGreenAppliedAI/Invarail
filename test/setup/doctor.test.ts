@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { doctorChecks, ollamaModelsReferenced, formatDoctor } from '../../src/setup/doctor.js';
 import type { DetectReport } from '../../src/setup/detect.js';
 import type { InvarailConfig } from '../../src/config/types.js';
@@ -73,6 +76,35 @@ describe('doctor', () => {
     expect(out).not.toMatch(/\[PASS\]/);
     expect(out).toMatch(/\[WARN\] LibreOffice/);
     expect(out).toMatch(/fix: brew install --cask libreoffice/);
+  });
+
+  it('memory tier: graph without FalkorDB FAILs, flat/no embedder PASSes, an embedder that cannot sit beside the foreground WARNs', () => {
+    const graphDown = doctorChecks(base, cfg({ memory: { backend: 'graph', embeddingModel: 'qwen3-embedding:8b' } })).find(c => c.name === 'Memory tier')!;
+    expect(graphDown.status).toBe('FAIL'); expect(graphDown.fix).toMatch(/falkordb/);
+    const flat = doctorChecks(base, cfg({ memory: { backend: 'flat', embeddingModel: 'none' } })).find(c => c.name === 'Memory tier')!;
+    expect(flat.status).toBe('PASS'); expect(flat.detail).toMatch(/no embedder/);
+    const big = { ...base, ollama: { ...base.ollama, models: ['qwen3:8b', 'qwen3-embedding:8b'], modelSizes: { 'qwen3:8b': 5.2e9, 'qwen3-embedding:8b': 10.9e9 } }, memory: { totalGb: 16, gpuVramGb: 8, gpuName: 'RTX 3070' } };
+    const fit = doctorChecks(big, cfg({ memory: { backend: 'flat', embeddingModel: 'qwen3-embedding:8b' } })).find(c => c.name === 'Embedding model fits beside the foreground')!;
+    expect(fit.status).toBe('WARN'); expect(fit.fix).toMatch(/0\.6b|"none"/);
+  });
+
+  it('vault tier: a missing folder WARNs; an OKF bundle is checked for conformance', () => {
+    const missing = doctorChecks(base, cfg({ memory: { backend: 'vault', embeddingModel: 'none' }, vault: { path: '/nonexistent/vault', okf: false } })).find(c => c.name === 'Vault folder')!;
+    expect(missing.status).toBe('WARN');
+    const dir = mkdtempSync(join(tmpdir(), 'vault-doc-'));
+    mkdirSync(join(dir, 'notes')); writeFileSync(join(dir, 'notes', 'a.md'), '# no type\n');
+    const okf = doctorChecks(base, cfg({ memory: { backend: 'vault', embeddingModel: 'none' }, vault: { path: dir, okf: true } })).find(c => c.name === 'OKF bundle')!;
+    expect(okf.status).toBe('WARN'); expect(okf.detail).toMatch(/notes\/a\.md/);
+  });
+
+  it('prompt profile: warns when the profile disagrees with the foreground tier, either way', () => {
+    // qwen3:8b is unmeasured and 5.2GB → small tier; the fixture config has no promptProfile → full
+    const w = doctorChecks(base, cfg()).find(c => c.name === 'Prompt profile')!;
+    expect(w.status).toBe('WARN'); expect(w.fix).toMatch(/promptProfile: "small"/);
+    expect(doctorChecks(base, cfg({ promptProfile: 'small' })).find(c => c.name === 'Prompt profile')!.status).toBe('PASS');
+    const big = { ...base, ollama: { ...base.ollama, models: ['big:70b'], modelSizes: { 'big:70b': 40e9 } } };
+    const r = doctorChecks(big, cfg({ promptProfile: 'small', specialists: { chat: { model: 'big:70b', tools: [] } } })).find(c => c.name === 'Prompt profile')!;
+    expect(r.status).toBe('WARN'); expect(r.fix).toMatch(/promptProfile: "full"/);
   });
 
   it('foreground fit: passes within budget, warns with a smaller-model fix when it does not', () => {

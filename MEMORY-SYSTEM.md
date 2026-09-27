@@ -41,6 +41,39 @@ A **FalkorDB graph database** (Docker, native HNSW vector search) is the institu
 
 ---
 
+## Memory Tiers: the Same Memory on a Machine That Is Not This One
+
+Everything below describes the reference setup: FalkorDB beside the process and an
+8B embedding model resident on a GPU. That is one of **four tiers** a config can name
+(`memory.backend`, `src/memory/policy.ts`), because an 8GB card cannot hold a 10.9GB
+embedder beside its chat model and most people do not run a graph database at home:
+
+| Tier | `memory.backend` | Needs | Facts | Knowledge | Retrieval |
+|---|---|---|---|---|---|
+| **graph** | `graph` | FalkorDB + an embedding model | graph nodes + JSONL | vault, hybrid | vector KNN + entity hops + FTS5 |
+| **flat** | `flat` | nothing | JSONL | workspace files | keyword (identity facts + 3 query-relevant) |
+| **vault** | `vault` | a markdown folder — your Obsidian vault | JSONL | the vault, lexical (FTS5) | exact words and names; `docs_search` |
+| **vault + OKF** | `vault` + `vault.okf: true` | the same folder | JSONL **mirrored as OKF concept notes** under `memory/` | the vault as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) bundle | the model reads `index.md` and opens the one file it needs (`docs_read`) |
+
+`markdown` (the historical default) means *graph if FalkorDB answers, else flat*, so an
+existing config changes nothing. `memory.embeddingModel: "none"` turns every embedding
+call off; the graph then cannot run (the doctor FAILs a `graph` config without one), the
+vault indexes lexically, fact dedup falls back to hash + substring, and `knowledge_import`
+is not registered. The wizard asks one question ("How should Invarail remember?") with the
+detected default, and `npm run doctor` checks the tier's requirements: FalkorDB reachable
+for `graph`, the embedder fitting *beside* the foreground model, the vault folder present,
+and OKF conformance.
+
+**OKF, what we use of it (v0.2):** every note carries YAML front matter with a `type`;
+`index.md` per folder is a bulleted list of links with one-line descriptions, regenerated
+by the heartbeat — the progressive-disclosure map a small model reads *instead of* the
+files; `log.md` is the newest-first history. A fact becomes a concept note whose front
+matter is our provenance model: a **stated** fact is `verified: [{by: human:<owner>}]`,
+observed and inferred facts are `generated: {by: invarail/<source>}`, `inferred` is
+`status: draft`, and the importance TTL is `stale_after`. Consumers must tolerate missing
+fields, unknown types and broken links (§11), which is why an Obsidian vault that was never
+OKF can be pointed at as-is. `src/knowledge/okf.ts`; conformance in the doctor.
+
 ## Architecture: Dual-Backend with Write-Through
 
 Invarail's memory has two backends:

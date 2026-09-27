@@ -64,6 +64,15 @@ export interface GraphMemoryResult {
   enabled: boolean;
 }
 
+/** The memory tier the generated config carries (src/memory/policy.ts). */
+export interface MemoryTierResult {
+  backend: 'graph' | 'flat' | 'vault';
+  /** Embedding model tag, or 'none' — an 8GB card cannot hold an 8B embedder beside its chat model. */
+  embeddingModel: string;
+  vaultPath?: string;
+  okf?: boolean;
+}
+
 export interface HeartbeatResult {
   enabled: boolean;
   channel?: string;
@@ -94,6 +103,7 @@ export interface ServicesStepResult {
   browser: BrowserResult;
   exec: ExecResult;
   graphMemory: GraphMemoryResult;
+  memory: MemoryTierResult;
   heartbeat: HeartbeatResult;
   reasoning: ReasoningResult;
   imageGen: ImageGenResult;
@@ -112,6 +122,7 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     browser: { enabled: false, headless: true },
     exec: { security: 'allowlist' },
     graphMemory: { enabled: false },
+    memory: { backend: 'flat', embeddingModel: 'none' },
     heartbeat: { enabled: false },
     reasoning: { enabled: false },
     imageGen: { enabled: false },
@@ -217,22 +228,51 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
   }
   printSuccess(`Exec security: ${result.exec.security}`);
 
-  // Graph Memory (FalkorDB) — detected, not asked, when it is already running.
-  if (report?.falkordb.reachable) {
+  // Memory tier — four ways to remember, for machines that are not the reference box.
+  // Detect first: FalkorDB running, Docker present, an embedding model pulled, memory budget.
+  const embedders = (report?.ollama.models ?? []).filter(m => /embed/i.test(m));
+  const smallBox = (report?.memory.gpuVramGb ?? report?.memory.totalGb ?? 0) > 0
+    && (report!.memory.gpuVramGb ? report!.memory.gpuVramGb < 16 : report!.memory.totalGb < 16);
+  const graphPossible = !!report?.falkordb.reachable || dockerFound;
+  const tiers = [
+    `graph — FalkorDB entity graph + vector search${report?.falkordb.reachable ? ' (FalkorDB is running)' : dockerFound ? ' (starts FalkorDB in Docker)' : ' (needs Docker — not available)'}; needs an embedding model`,
+    'flat — facts in JSONL files, keyword recall; no sidecar, no embedder (works on anything)',
+    'vault — flat facts + your markdown folder (edit it in Obsidian), exact-word search over your notes; no embedder',
+    'vault + OKF — the vault as an Open Knowledge Format bundle: facts mirrored as notes with provenance, index.md per folder the model navigates, log.md history',
+  ];
+  const defaultTier = report?.falkordb.reachable && embedders.length ? 0 : smallBox ? 1 : graphPossible && !smallBox ? 0 : 1;
+  printInfo(`Memory: ${report?.falkordb.reachable ? 'FalkorDB running' : 'no FalkorDB'}; ${embedders.length ? `embedding models pulled: ${embedders.join(', ')}` : 'no embedding model pulled'}${smallBox ? '; this box is under 16GB — the 8B embedder would not fit beside the chat model' : ''}`);
+  const ordered = [tiers[defaultTier], ...tiers.filter((_, i) => i !== defaultTier)];
+  const chosen = await askChoice('How should Invarail remember?', ordered);
+  const tierIndex = tiers.indexOf(chosen);
+  if (tierIndex === 0) {
+    result.memory.backend = 'graph';
+    if (!report?.falkordb.reachable) {
+      if (dockerFound) {
+        printInfo('docker compose up -d falkordb ...');
+        if (installFalkorDB()) printSuccess('FalkorDB running on port 6379');
+        else printError('docker compose failed — start it yourself: docker compose up -d falkordb');
+      } else {
+        printWarning('FalkorDB needs Docker — the config will say graph; `npm run doctor` will FAIL until it is up.');
+      }
+    }
     result.graphMemory.enabled = true;
-    printSuccess(`Graph memory: FalkorDB is running on ${report.falkordb.host}:${report.falkordb.port}`);
-  } else if (!dockerFound) {
-    printInfo('Graph memory (FalkorDB) needs Docker — memory uses flat files until then; it upgrades in place later.');
-  } else if (await askYesNo('Start graph memory (FalkorDB in Docker — entity graph + vector search; flat files otherwise)?', true)) {
-    printInfo('docker compose up -d falkordb ...');
-    if (installFalkorDB()) {
-      result.graphMemory.enabled = true;
-      printSuccess('FalkorDB running on port 6379');
-    } else {
-      printError('docker compose failed — start it yourself: docker compose up -d falkordb');
-      result.graphMemory.enabled = true; // config is right; the container just needs to come up
+  } else {
+    result.memory.backend = tierIndex === 1 ? 'flat' : 'vault';
+    if (tierIndex >= 2) {
+      result.memory.vaultPath = await askText('Vault folder (your Obsidian vault, or a new folder)', 'vault');
+      result.memory.okf = tierIndex === 3;
     }
   }
+  // The embedder is a separate decision: graph requires one; the others are better with one and fine without.
+  if (result.memory.backend === 'graph') {
+    result.memory.embeddingModel = embedders[0] ?? await askText('Embedding model (pull it: ollama pull qwen3-embedding:4b)', smallBox ? 'qwen3-embedding:0.6b' : 'qwen3-embedding:8b');
+  } else if (embedders.length && await askYesNo(`Use ${embedders[0]} for semantic search too (it takes GPU memory beside the chat model)?`, !smallBox)) {
+    result.memory.embeddingModel = embedders[0];
+  } else {
+    result.memory.embeddingModel = 'none';
+  }
+  printSuccess(`Memory: ${result.memory.backend}${result.memory.okf ? ' + OKF' : ''}${result.memory.vaultPath ? ` at ${result.memory.vaultPath}` : ''}, embeddings: ${result.memory.embeddingModel}`);
 
   // Detected-only capabilities: nothing to ask, just say what will and won't work.
   if (report) {

@@ -5,6 +5,7 @@ import type { InvarailConfig } from './config/types.js';
 import type { ChannelAdapterConfig, InboundMessage } from './channels/types.js';
 import { OllamaClient } from './ollama/client.js';
 import { createInferenceClient } from './ollama/multi-backend.js';
+import { embeddingsEnabled, wantsGraph, okfEnabled, memoryBackend } from './memory/policy.js';
 import { abortAllInference } from './ollama/abort.js';
 import { ToolRegistry } from './tools/registry.js';
 import { ChannelRegistry } from './channels/registry.js';
@@ -121,23 +122,32 @@ export class Orchestrator {
 
     // Initialize FactStore (legacy) + GraphMemoryStore
     const defaultWorkspacePath = resolveWorkspacePath(this.config.agents.default, this.config);
-    this.factStore = new FactStore(defaultWorkspacePath, this.client);
+    // Memory tier (src/memory/policy.ts): the flat store never embeds without an embedder,
+    // mirrors facts into the vault as OKF concepts on the vault tier, and the graph is only
+    // attempted when the tier asks for it.
+    this.factStore = new FactStore(defaultWorkspacePath, embeddingsEnabled(this.config.memory) ? this.client : undefined, {
+      okf: okfEnabled(this.config) ? { vaultPath: this.config.vault.path, owner: this.config.ownerId } : undefined,
+    });
 
-    // Initialize graph memory (FalkorDB) — non-blocking, falls back to FactStore if unavailable
-    // Embedding model + dims come from config (were hardcoded in the store, 2026-09-19).
-    this.graphMemory = new GraphMemoryStore(this.client, {
-      nerModel: this.config.memory?.nerModel,
-      embeddingModel: this.config.memory?.embeddingModel,
-      embeddingDims: this.config.memory?.embeddingDims,
-      ownerNames: ownerNames(this.config),
-      ...this.config.memory.falkordb,
-    });
-    this.graphMemory.connect().then(() => {
-      console.log('[Orchestrator] Graph memory connected');
-    }).catch(err => {
-      console.warn('[Orchestrator] Graph memory unavailable, using flat FactStore:', err instanceof Error ? err.message : err);
-      this.graphMemory = undefined;
-    });
+    if (wantsGraph(this.config)) {
+      // Initialize graph memory (FalkorDB) — non-blocking, falls back to FactStore if unavailable
+      // Embedding model + dims come from config (were hardcoded in the store, 2026-09-19).
+      this.graphMemory = new GraphMemoryStore(this.client, {
+        nerModel: this.config.memory?.nerModel,
+        embeddingModel: this.config.memory?.embeddingModel,
+        embeddingDims: this.config.memory?.embeddingDims,
+        ownerNames: ownerNames(this.config),
+        ...this.config.memory.falkordb,
+      });
+      this.graphMemory.connect().then(() => {
+        console.log('[Orchestrator] Graph memory connected');
+      }).catch(err => {
+        console.warn(`[Orchestrator] Graph memory unavailable, using flat FactStore${memoryBackend(this.config) === 'graph' ? ' (memory.backend is "graph" — run npm run doctor)' : ''}:`, err instanceof Error ? err.message : err);
+        this.graphMemory = undefined;
+      });
+    } else {
+      console.log(`[Orchestrator] Memory tier: ${memoryBackend(this.config)}${embeddingsEnabled(this.config.memory) ? '' : ', no embedder'}${okfEnabled(this.config) ? `, OKF vault at ${this.config.vault.path}` : ''}`);
+    }
 
     // Incremental capture — closes the 2h hole between "said" and "in the graph".
     // Stores are passed as thunks: graphMemory becomes undefined if connect fails.

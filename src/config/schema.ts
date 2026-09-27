@@ -217,7 +217,11 @@ export const MemoryConsolidationSchema = z.object({
 });
 
 export const MemoryConfigSchema = z.object({
-  backend: z.enum(['markdown']).default('markdown'),
+  /** Memory tier (src/memory/policy.ts). `markdown` = the historical default: graph when
+   *  FalkorDB answers, flat files otherwise. `graph` requires FalkorDB (doctor FAIL when
+   *  down). `flat` never connects a graph. `vault` = flat facts + the markdown vault as the
+   *  knowledge side, lexical search, no embedder needed (see vault.okf). */
+  backend: z.enum(['markdown', 'graph', 'flat', 'vault']).default('markdown'),
   consolidation: MemoryConsolidationSchema.optional(),
   /** Model for fact extraction from transcripts. Defaults to router model. */
   extractionModel: z.string().optional(),
@@ -232,6 +236,8 @@ export const MemoryConfigSchema = z.object({
   /** Embedding model for ALL vector work — graph facts, experiences, knowledge import,
    *  lessons. Was hardcoded in four files (graph-store, experience-store, register-all,
    *  client default), so swapping embedders meant editing source (2026-09-19). */
+  /** `"none"` turns every embedding call off: no graph, no dense vault search, no
+   *  knowledge_import — an 8GB card cannot hold an 8B embedder beside its chat model. */
   embeddingModel: z.string().default('qwen3-embedding:8b'),
   /** Vector width of embeddingModel — MUST match it or the FalkorDB index is built wrong.
    *  qwen3-embedding: 8b=4096, 4b=2560, 0.6b=1024. Changing either requires re-embedding
@@ -688,6 +694,12 @@ export const InvarailConfigSchema = z.object({
    *  slot that doesn't override it (pre-parse, in the loader). A model cutover is
    *  this ONE line plus the backend entry; per-slot `model:` remains an override. */
   defaultModel: z.string().optional(),
+  /** How much prompt the foreground model is asked to carry. `small` (the wizard writes it
+   *  for a ≤14B foreground): bare chat gets the minimal workspace set (SOUL+IDENTITY+
+   *  LEARNINGS, not TOOLS/USER/AGENTS) and every workspace file is capped at 4K chars —
+   *  a lived-in workspace had grown to 3.2K tokens injected per turn (2026-09-27). Never
+   *  inferred from the model name at runtime: config says it, the doctor checks it. */
+  promptProfile: z.enum(['full', 'small']).default('full'),
   /** Owner user ID — the single person who can access owner-only tools (gmail, calendar, etc.). Checked in code, not by the model. */
   ownerId: z.string().optional(),
   /** Principals: person → channel sender aliases. See PrincipalSchema. */
@@ -697,6 +709,10 @@ export const InvarailConfigSchema = z.object({
    *  editor (Obsidian works — it's just files); heartbeat reindexes changes. */
   vault: z.object({
     path: z.string().default('vault'),
+    /** Open Knowledge Format conventions on the vault (src/knowledge/okf.ts): front matter
+     *  with `type`, facts mirrored as concept documents under memory/, index.md per
+     *  directory (what a small model reads instead of the files) and log.md. */
+    okf: z.boolean().default(false),
   }).default({}),
   timezone: z.string().default('America/New_York'),
   ollama: OllamaConfigSchema.default({}),

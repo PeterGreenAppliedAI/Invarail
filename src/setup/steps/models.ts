@@ -1,6 +1,6 @@
 import { askText, askYesNo, printStep, printSuccess, printInfo } from '../prompts.js';
 import { pickRouterModel, SPECIALIST_TEMPLATES } from '../defaults.js';
-import { rankForeground, memoryBudgetGb, findMeasured, thinkFor } from '../measured-models.js';
+import { rankForeground, memoryBudgetGb, findMeasured, thinkFor, foregroundTier, type ForegroundTier } from '../measured-models.js';
 import type { OllamaModel } from '../../ollama/types.js';
 import type { DetectReport } from '../detect.js';
 
@@ -15,6 +15,8 @@ export interface ModelsStepResult {
   backgroundModel: string;
   /** `think:` for the foreground specialists when the pick is a measured model (undefined = leave the engine default). */
   specialistThink?: boolean;
+  /** Prompt profile + context size the generated config carries for this foreground model. */
+  foregroundTier?: ForegroundTier;
 }
 
 export async function runModelsStep(models: OllamaModel[], report?: DetectReport): Promise<ModelsStepResult> {
@@ -39,6 +41,9 @@ export async function runModelsStep(models: OllamaModel[], report?: DetectReport
   const specialistModel = await askText('Foreground model (chat + every specialist)', suggestedSpecialist);
   const measured = findMeasured(specialistModel);
   const specialistThink = thinkFor(measured);
+  const pickedSize = models.find(m => m.name === specialistModel)?.size;
+  const tier = foregroundTier(specialistModel, pickedSize ? pickedSize / 1e9 : undefined);
+  printInfo(`Prompt profile: ${tier}${tier === 'small' ? ' — a ≤14B foreground gets the minimal workspace set and a 16K context' : ''}`);
   printSuccess(`Foreground model: ${specialistModel}${measured ? ` (measured ${Math.round(measured.overall * 100)}%, thinking ${measured.think})` : ' (unmeasured — run scripts/model-eval.ts on it)'}`);
 
   // OpenAI-compatible backends (vLLM) — for large models like MiniMax served outside Ollama.
@@ -87,5 +92,5 @@ export async function runModelsStep(models: OllamaModel[], report?: DetectReport
   const backgroundModel = await askText('Model for background jobs (briefing + heartbeat)', specialistModel);
   printSuccess(`Background jobs model: ${backgroundModel}`);
 
-  return { routerModel, specialistModel, categoryModels, inferenceBackends, backgroundModel, specialistThink };
+  return { routerModel, specialistModel, categoryModels, inferenceBackends, backgroundModel, specialistThink, foregroundTier: tier };
 }

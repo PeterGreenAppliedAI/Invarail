@@ -79,6 +79,34 @@ Run 1 (the wizard's output as of the morning) and run 2 are kept as evidence:
 None of these is visible to the engine eval. All five are visible to the first message a
 new user sends.
 
+## The prompt profile A/B (`profile-ab/`)
+
+Same eleven tasks, same two models, on a **lived-in workspace** (USER/TOOLS/AGENTS/LEARNINGS
+filled to ~3K tokens, the size of the reference box's), under the `full` profile and the
+`small` profile the wizard now writes for a ≤14B foreground (minimal workspace set for
+chat, 4K-char file cap, one 16K context everywhere).
+
+| Model | Profile | Overall | Bare-chat prompt | Battery prompt tokens | Wall |
+|---|---|---|---|---|---|
+| qwen3.5:9b | full | 100% | 2,631 | 79,725 | 133s |
+| qwen3.5:9b | **small** | **100%** | **474** | 77,441 | 141s |
+| gemma4:12b | full | 91%* | 2,717 | 76,433 | 207s |
+| gemma4:12b | **small** | **100%** | **487** | 82,695 | 231s |
+
+\* one Ollama 500 ("prediction aborted") mid-call, scored as a miss before the harness
+learned to bucket serving-stack errors as outages; every other task passed.
+
+**What it says.** The small profile cuts a chat turn's prompt **5.5×** with no task lost.
+The battery total barely moves because tool specialists already ran on the minimal set;
+the profile's lever is the chat and voice turns, which are most of real traffic — and on a
+3060 a 2.6K-token prefill is the difference between a reply that starts now and one that
+starts in two seconds. The three-run detour to get here found two more one-model-install
+bugs: the small profile's 16K context was ping-ponging against the server's 32K default
+for every call that named no `num_ctx` (the quality judge, summaries) — six router
+timeouts and 5-second reloads per battery — until the generated config also wrote
+`ollama.defaultContextSize`; and the harness itself had to build its client from the
+generated config to see it.
+
 ## Reading the numbers
 
 - **Prompt tokens per battery are ~77K for 11 tasks** on the 9B/12B — the system prompt is

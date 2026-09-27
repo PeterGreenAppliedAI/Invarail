@@ -8,9 +8,11 @@
 // do it) and replace the model with one you have pulled in Ollama.
 {
   timezone: "America/New_York",
+  promptProfile: "small",   // a 9B carries the minimal workspace set, not TOOLS/USER/AGENTS (evals/2026-09-e2e)
 
   ollama: {
     url: "http://localhost:11434",
+    defaultContextSize: 16384,   // = session.contextSize: one context size for every call, or Ollama reloads the model between them
   },
 
   router: {
@@ -64,6 +66,11 @@
   //     { url: "https://news.ycombinator.com/rss", kind: "rss", tags: ["aggregator"], followLinks: true },
   //   ],
   // },
+
+  memory: {
+    backend: "flat",          // JSONL facts, keyword recall — no sidecar. Upgrade: "graph" (FalkorDB) or "vault" (your Obsidian folder)
+    embeddingModel: "none",   // nothing to pull, nothing to fit beside the 9B
+  },
 
   session: {
     contextSize: 16384,
