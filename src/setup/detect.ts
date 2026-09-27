@@ -29,7 +29,7 @@ export interface DetectReport {
   /** RAM in GB; GPU VRAM in GB when nvidia-smi answers (NVIDIA only — Apple silicon is unified memory, counted as RAM). */
   memory: { totalGb: number; gpuVramGb?: number; gpuName?: string };
   /** Extra Ollama-native hosts from inference.ollamaBackends[] — probed individually. */
-  ollamaBackends: Array<{ url: string; reachable: boolean; models: string[] }>;
+  ollamaBackends: Array<{ url: string; reachable: boolean; models: string[]; modelSizes: Record<string, number> }>;
   docker: Probe;
   falkordb: { host: string; port: number; reachable: boolean; start: string };
   searxng: { baseUrl: string; state: 'ok' | 'json-disabled' | 'unreachable'; start: string };
