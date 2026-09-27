@@ -971,6 +971,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
       content: message,
       timestamp: now,
       category: effectiveCategory,
+      routedBy: classification.confidence,
     });
     sessionStore.appendTurn(agentId, sessionKey, {
       role: 'assistant',

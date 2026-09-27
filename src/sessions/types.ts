@@ -3,6 +3,9 @@ export interface ConversationTurn {
   content: string;
   timestamp: string;
   category?: string;
+  /** Which routing layer decided `category` for a user turn: override | sticky | model | keyword | fallback.
+   *  Recorded so training data can tell a decision from a carry-over (sticky). */
+  routedBy?: string;
   model?: string;
   iterations?: number;
   toolCalls?: Array<{ tool: string; params: Record<string, unknown>; observation: string }>;

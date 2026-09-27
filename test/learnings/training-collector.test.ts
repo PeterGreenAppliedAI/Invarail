@@ -22,3 +22,18 @@ describe('isSyntheticTurn', () => {
     ]) expect(isSyntheticTurn(s), s).toBe(false);
   });
 });
+
+describe('isTrainingPair — sticky decisions are not labels (2026-09-26)', () => {
+  const { isTrainingPair } = await import('../../src/learnings/training-collector.js');
+  it('skips a user turn whose category was a sticky carry-over', () => {
+    expect(isTrainingPair({ role: 'user', content: 'Eh it’s fine. I have a multi node proxmox cluster.', category: 'memory', routedBy: 'sticky' })).toBe(false);
+  });
+  it('keeps model, keyword and override decisions', () => {
+    for (const routedBy of ['model', 'keyword', 'override']) {
+      expect(isTrainingPair({ role: 'user', content: 'what did we discuss yesterday', category: 'memory', routedBy })).toBe(true);
+    }
+  });
+  it('keeps turns recorded before routedBy existed', () => {
+    expect(isTrainingPair({ role: 'user', content: 'remind me at 5pm', category: 'cron' })).toBe(true);
+  });
+});

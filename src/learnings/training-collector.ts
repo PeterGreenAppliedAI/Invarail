@@ -17,23 +17,34 @@ export function isSyntheticTurn(content: string): boolean {
   return SYNTHETIC_TURN.test(content);
 }
 
-export function extractTrainingPairs(transcript: Array<{ role: string; content: string; category?: string }>): void {
+export interface TrainingTurn { role: string; content: string; category?: string; routedBy?: string }
+
+/** Whether a transcript turn is a usable (message, category) router pair. */
+export function isTrainingPair(entry: TrainingTurn): boolean {
+  if (entry.role !== 'user' || !entry.category || !entry.content?.trim()) return false;
+  const content = entry.content.trim();
+  // Skip synthetic/system messages
+  if (content.startsWith('[RESEARCH PIPELINE]')) return false;
+  if (content.startsWith('[DEVMESH')) return false;
+  if (content.startsWith('!')) return false;
+  if (content.length < 5) return false;
+  // Never the user's words: plan-pipeline foreman handoffs, system notices, and
+  // attachment stubs were 85 of 1,540 collected pairs and carried the category of
+  // whatever pipeline emitted them (2026-09-25 router-dataset cleaning).
+  if (isSyntheticTurn(content)) return false;
+  // A sticky decision is a carry-over, not a judgment about THIS message: 20 turns of
+  // small talk labeled `memory` went into the set on 2026-09-26 because the session
+  // was stuck there. Turns older than the `routedBy` field (undefined) still harvest.
+  if (entry.routedBy === 'sticky') return false;
+  return true;
+}
+
+export function extractTrainingPairs(transcript: TrainingTurn[]): void {
   const pairs: string[] = [];
 
   for (const entry of transcript) {
-    if (entry.role !== 'user' || !entry.category || !entry.content?.trim()) continue;
-    const content = entry.content.trim();
-    // Skip synthetic/system messages
-    if (content.startsWith('[RESEARCH PIPELINE]')) continue;
-    if (content.startsWith('[DEVMESH')) continue;
-    if (content.startsWith('!')) continue;
-    if (content.length < 5) continue;
-    // Never the user's words: plan-pipeline foreman handoffs, system notices, and
-    // attachment stubs were 85 of 1,540 collected pairs and carried the category of
-    // whatever pipeline emitted them (2026-09-25 router-dataset cleaning).
-    if (isSyntheticTurn(content)) continue;
-
-    pairs.push(JSON.stringify({ message: content, category: entry.category }));
+    if (!isTrainingPair(entry)) continue;
+    pairs.push(JSON.stringify({ message: entry.content.trim(), category: entry.category }));
   }
 
   if (pairs.length > 0) {
