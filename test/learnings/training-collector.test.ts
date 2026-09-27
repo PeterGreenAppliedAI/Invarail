@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSyntheticTurn } from '../../src/learnings/training-collector.js';
+import { isSyntheticTurn, isTrainingPair } from '../../src/learnings/training-collector.js';
 
 describe('isSyntheticTurn', () => {
   // The shapes actually found in data/training/router-pairs.jsonl on 2026-09-25.
@@ -24,7 +24,6 @@ describe('isSyntheticTurn', () => {
 });
 
 describe('isTrainingPair — sticky decisions are not labels (2026-09-26)', () => {
-  const { isTrainingPair } = await import('../../src/learnings/training-collector.js');
   it('skips a user turn whose category was a sticky carry-over', () => {
     expect(isTrainingPair({ role: 'user', content: 'Eh it’s fine. I have a multi node proxmox cluster.', category: 'memory', routedBy: 'sticky' })).toBe(false);
   });

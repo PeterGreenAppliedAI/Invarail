@@ -235,6 +235,6 @@ describe('confirmation cannot widen scope (review F02, 2026-09-27)', () => {
     expect(out.reply).toMatch(/Not executed/);
     expect(out.reply).toMatch(/owner-only/);
     expect(executor).not.toHaveBeenCalled();
-    expect(store.findById(id, 'guest')).toBeUndefined();
+    expect(store.findById(id, 'guest')).toBeFalsy();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isPrivateIpAddress, isBlockedHostname } from '../../src/tools/ssrf.js';
+import { isPrivateIpAddress, isBlockedHostname, ipv6EmbeddedIpv4, assertPublicUrl } from '../../src/tools/ssrf.js';
 
 describe('isPrivateIpAddress', () => {
   it('blocks 127.0.0.1 (loopback)', () => {
@@ -119,8 +119,7 @@ describe('IP notation edge cases', () => {
   });
 });
 
-describe('IPv6 with an embedded IPv4 — every spelling (review F11, 2026-09-27)', async () => {
-  const { ipv6EmbeddedIpv4, assertPublicUrl } = await import('../../src/tools/ssrf.js');
+describe('IPv6 with an embedded IPv4 — every spelling (review F11, 2026-09-27)', () => {
   it('extracts the IPv4 from mapped and compatible forms', () => {
     expect(ipv6EmbeddedIpv4('::ffff:127.0.0.1')).toBe('127.0.0.1');
     expect(ipv6EmbeddedIpv4('::ffff:7f00:1')).toBe('127.0.0.1');          // WHATWG canonical form
