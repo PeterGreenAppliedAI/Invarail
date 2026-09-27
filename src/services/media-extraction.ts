@@ -3,7 +3,7 @@
  * Extracted from orchestrator for testability and reuse.
  */
 import { readFileSync, realpathSync, readdirSync, existsSync } from 'node:fs';
-import { resolve, relative, isAbsolute } from 'node:path';
+import { resolve, relative, isAbsolute, basename } from 'node:path';
 
 const IMAGE_TOKEN_RE = /\[IMAGE:([^\]]+)\]/g;
 const FILE_TOKEN_RE = /\[FILE:([^\]]+)\]/g;
@@ -74,7 +74,7 @@ export function extractMediaAttachments(text: string, opts?: MediaExtractOptions
     try {
       const data = readFileSync(check.path);
       const ext = filePath.split('.').pop()?.toLowerCase() ?? 'png';
-      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'image/png', filename: filePath.trim().split('/').pop() ?? 'image.png' });
+      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'image/png', filename: basename(filePath.trim()) || 'image.png' });
       return '';
     } catch { return match; }
   });
@@ -85,7 +85,7 @@ export function extractMediaAttachments(text: string, opts?: MediaExtractOptions
     try {
       const data = readFileSync(check.path);
       const ext = filePath.split('.').pop()?.toLowerCase() ?? 'bin';
-      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'application/octet-stream', filename: filePath.trim().split('/').pop() ?? 'file' });
+      attachments.push({ data, mimeType: MIME_MAP[ext] ?? 'application/octet-stream', filename: basename(filePath.trim()) || 'file' });
       return '';
     } catch { return match; }
   });
@@ -95,7 +95,7 @@ export function extractMediaAttachments(text: string, opts?: MediaExtractOptions
   const seenPaths = new Set(attachments.map(a => a.filename));
   for (const m of cleanText.matchAll(docPathRe)) {
     const filePath = (m[2] || '').trim();
-    const filename = filePath.split('/').pop() ?? 'file';
+    const filename = basename(filePath) || 'file';
     if (seenPaths.has(filename)) continue;
     const check = checkDeliverable(filePath, roots);
     if (!check.ok) continue;

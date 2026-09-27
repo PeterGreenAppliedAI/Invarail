@@ -26,8 +26,8 @@ npm run setup        # choose "Starter" at the first question
 # …or copy the preset by hand:
 cp invarail.config.starter.json5 invarail.config.json5
 
-# 4. Start, then open http://localhost:3100
-npm run dev
+# 4. Start (builds the console the first time), then open http://localhost:3100
+npm start
 ```
 
 That's the whole thing: one model routes and chats, memory persists to flat
@@ -47,6 +47,13 @@ Then in your config:
   (`http://localhost:8080`) and a `web_search` router category + specialist.
 - A chat channel: `channels.discord: { enabled: true, token: "${DISCORD_TOKEN}" }`
   (token in `.env`). Telegram follows the same shape; Gmail is read-only and uses OAuth (see FEATURES.md).
+- **Reaching the console from another device** (phone, the Chrome extension on
+  a laptop): the starter binds `127.0.0.1`. To open it to your LAN, set
+  `host: "0.0.0.0"` AND `token: "${WEB_TOKEN}"` on `channels.web`, put a
+  long random `WEB_TOKEN` in `.env` (`openssl rand -hex 32`), and paste it into
+  the console's Login page and the extension's settings. Invarail refuses to
+  start network-open without a token — every web page on your network could
+  otherwise act as you.
 
 ## Tier 2 — power user
 

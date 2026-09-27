@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "setup": "tsx src/setup/index.ts",
-    "cli": "tsx src/cli/index.ts"
+    "cli": "tsx src/cli/index.ts",
+    "build:console": "cd console && npm ci && npm run build",
+    "start": "node -e \"require('fs').existsSync('console/dist')||require('child_process').execSync('npm run build:console',{stdio:'inherit'})\" && tsx src/index.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.2",
