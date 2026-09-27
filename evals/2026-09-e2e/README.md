@@ -144,6 +144,20 @@ three on a request that is defensibly either category.
 - One rep. Flips exist (task-board on qwen3.5). Treat single-task differences under ~10
   points as noise; the category pattern is the signal.
 
+## Since the board: the confirm ledger, and the selftest in CI
+
+A twelfth task, `confirm-ledger`, exercises the security path the board never touched: the
+web channel gates `task_add` behind a confirm, the request must produce a preview and
+**no** task, a stranger holding the pending id must be refused (sender-bound), the owner's
+confirm must execute the STORED call, and a second confirm of the same id must do nothing
+(single-use). It is the one thing the harness adds to the wizard's config, and it is the
+only task that talks to `handleConfirmation` the way the console path does.
+
+The `--selftest` now runs in CI on every push: it boots the real registry, stores and
+pipelines in a scratch install and pushes a scripted perfect performer through every
+oracle — no model, no Ollama. On a box without LibreOffice (CI) the research PDF check is
+skipped with that reason rather than failed; the pipeline cannot render one there either.
+
 ## Reproduce
 
 ```bash

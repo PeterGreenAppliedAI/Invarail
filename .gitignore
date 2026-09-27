@@ -29,3 +29,6 @@ localclaw.log
 # SearXNG runtime files written by the container (settings.yml is tracked)
 searxng/*
 !searxng/settings.yml
+
+# wizard side-files written when you decline to overwrite
+*.setup

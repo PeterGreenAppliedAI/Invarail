@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { askChoice, askYesNo, printHeader, printInfo, printSuccess, printWarning } from '../prompts.js';
 import { rankForeground, memoryBudgetGb, findMeasured } from './../measured-models.js';
 import type { OllamaModel } from '../../ollama/types.js';
@@ -33,7 +35,9 @@ export async function runStarterGenerate(models: OllamaModel[], report?: DetectR
     printWarning('No models found in Ollama — defaulting to qwen3.5:9b (the measured floor for tool use). Pull it with: ollama pull qwen3.5:9b');
   }
 
-  let template = readFileSync('invarail.config.starter.json5', 'utf-8');
+  // Module-relative: `npm run setup` runs at the repo root, but the wizard must not depend on cwd
+  // (headless smoke from a scratch dir failed with ENOENT, 2026-09-27).
+  let template = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'invarail.config.starter.json5'), 'utf-8');
   template = template.replaceAll('qwen3.5:9b', model);
   // The preset says think: false (right for the measured floor). A measured model whose
   // best mode was thinking ON keeps it; an unmeasured model keeps the engine default.

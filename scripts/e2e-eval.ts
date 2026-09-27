@@ -50,6 +50,8 @@ import { dispatchMessage, type DispatchResult } from '../src/dispatch.js';
 import { buildConfig, type WizardState } from '../src/setup/steps/generate.js';
 import { findMeasured, thinkFor, foregroundTier, contextSizeForTier } from '../src/setup/measured-models.js';
 import { stripThinkingTags } from '../src/utils/text.js';
+import { handleConfirmation } from '../src/security/confirm-handler.js';
+import { detectLibreOffice } from '../src/setup/detect.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DATE = new Date().toISOString().slice(0, 10);
@@ -65,6 +67,8 @@ const RUN_DIR = join(REPO, 'data', 'model-eval', `e2e-${DATE}-${PROFILE}-${WORKS
 const SELFTEST = argv.includes('--selftest');
 const MODELS = argv.filter(a => !a.startsWith('--'));
 const OWNER = 'eval-owner';
+/** Resolved once at startup: whether this box can render PDFs at all. */
+let SOFFICE = false;
 
 // ---------------------------------------------------------------- the stubbed web
 
@@ -212,6 +216,10 @@ async function makeEnv(model: string, ollamaUrl: string): Promise<Env> {
   process.env.BRAVE_API_KEY = 'stub';
   process.chdir(root);
   const config = loadConfig(configPath);
+  // The ONE thing the harness adds beyond the wizard's output: a confirm gate on task_add for
+  // the web channel, so the ledger path (preview → stored params → sender-bound confirm) is
+  // exercised end to end. Everything else is exactly what the wizard wrote.
+  config.channels.web = { ...config.channels.web, security: { ...(config.channels.web?.security ?? {}), confirmTools: ['task_add'] } } as typeof config.channels.web;
   // The client the way the orchestrator builds it — from THIS config, so calls that name
   // no num_ctx (quality judge, summaries) get the generated defaultContextSize. A shared
   // client built without it sent those calls to the server's default and reloaded the
@@ -239,10 +247,12 @@ async function makeEnv(model: string, ollamaUrl: string): Promise<Env> {
 // ---------------------------------------------------------------- tasks
 
 interface CheckResult { name: string; pass: boolean; detail?: string }
-interface TaskCtx extends Env { answer: string; result?: DispatchResult; researchDir: string }
+interface TaskCtx extends Env { answer: string; result?: DispatchResult; researchDir: string; flowFacts?: Record<string, boolean | string> }
 
 interface E2ETask {
   id: string;
+  /** A scripted multi-message flow instead of one prompt; returns named facts the checks read. */
+  flow?: (env: Env, send: (sessionKey: string, message: string, timeoutMs: number) => Promise<DispatchResult>) => Promise<Record<string, boolean | string>>;
   /** Category the router SHOULD pick (several accepted where two are defensible). */
   expect: string[];
   timeoutMs: number;
@@ -427,6 +437,40 @@ const TASKS: E2ETask[] = [
     },
   },
   {
+    id: 'confirm-ledger',
+    expect: ['task'],
+    timeoutMs: 300_000,
+    prompt: 'Add a task to my task board: "Rotate the API keys" with high priority.',
+    flow: async (env, send) => {
+      const facts: Record<string, boolean | string> = {};
+      const first = await send('e2e-confirm', 'Add a task to my task board: "Rotate the API keys" with high priority.', 300_000);
+      facts.routed = first.category;
+      const pending = first.pendingActions?.[0];
+      facts.previewOffered = !!pending && /confirm/i.test(first.answer);
+      facts.gateHeld = !env.tasks.list().some(t => /api keys/i.test(t.title));
+      if (!pending) return facts;
+      // sender-bound: a stranger holding the id must not be able to execute it
+      const stranger = await handleConfirmation({ message: `confirm ${pending.id}`, senderId: 'stranger', channel: 'web', config: env.config, toolRegistry: env.registry, sessionStore: env.sessions });
+      facts.strangerRejected = !stranger.executed && !env.tasks.list().some(t => /api keys/i.test(t.title));
+      const owner = await handleConfirmation({ message: `confirm ${pending.id}`, senderId: OWNER, channel: 'web', config: env.config, toolRegistry: env.registry, sessionStore: env.sessions });
+      facts.ownerExecuted = !!owner.executed && env.tasks.list().some(t => /api keys/i.test(t.title) && t.priority === 'high');
+      // single-use: the same id again must not run twice
+      const again = await handleConfirmation({ message: `confirm ${pending.id}`, senderId: OWNER, channel: 'web', config: env.config, toolRegistry: env.registry, sessionStore: env.sessions });
+      facts.singleUse = !again.executed && env.tasks.list().filter(t => /api keys/i.test(t.title)).length === 1;
+      return facts;
+    },
+    reference: env => { env.tasks.add({ title: 'Rotate the API keys', priority: 'high' }, 'user'); return 'Preview shown, then confirmed.'; },
+    check: ({ flowFacts, tasks }) => {
+      const f = flowFacts ?? { routed: 'task', previewOffered: true, gateHeld: true, strangerRejected: true, ownerExecuted: tasks.list().some(t => /api keys/i.test(t.title)), singleUse: true };
+      return [
+        has('confirm preview offered (no execution)', f.previewOffered === true && f.gateHeld === true),
+        has('stranger cannot confirm (sender-bound)', f.strangerRejected === true),
+        has('owner confirm executes the STORED call', f.ownerExecuted === true),
+        has('single-use (second confirm does nothing)', f.singleUse === true),
+      ];
+    },
+  },
+  {
     id: 'research-report',
     expect: ['research'],
     timeoutMs: 1_800_000,
@@ -439,9 +483,11 @@ const TASKS: E2ETask[] = [
       const dir = join(env.ws, 'research', 'local-llm-inference');
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'report.md'), `# Local LLM inference on consumer GPUs\n\n${pages.map(p => p.slice(0, 400)).join('\n\n')}\n\nA 24GB card runs 27B at Q4_K_M near 40 tokens per second. llama.cpp and vLLM differ on batching; speculative decoding helps; unified memory trades bandwidth for capacity.\n\n## Sources\n${urls.join('\n')}\n`);
-      // the real document tool, the way convert_pdf calls it (LibreOffice must be present)
-      const out = await env.registry.get('document')!.execute({ action: 'create', content: '<html><body><h1>Report</h1><p>selftest</p></body></html>', format: 'pdf', filename: 'local-llm-inference' }, { agentId: 'main', sessionKey: 'ref', workspacePath: env.ws } as any);
-      if (/^Error/.test(out)) throw new Error(`document tool: ${out.slice(0, 120)}`);
+      // the real document tool, the way convert_pdf calls it — only where LibreOffice exists
+      if (SOFFICE) {
+        const out = await env.registry.get('document')!.execute({ action: 'create', content: '<html><body><h1>Report</h1><p>selftest</p></body></html>', format: 'pdf', filename: 'local-llm-inference' }, { agentId: 'main', sessionKey: 'ref', workspacePath: env.ws } as any);
+        if (/^Error/.test(out)) throw new Error(`document tool: ${out.slice(0, 120)}`);
+      }
       return 'Report written.';
     },
     check: ctx => {
@@ -455,11 +501,15 @@ const TASKS: E2ETask[] = [
       const aborted = /couldn't produce the research report|every web search came back empty/i.test(answer);
       const docs = join(ctx.root, 'data', 'media', 'documents');
       const pdf = existsSync(docs) && readdirSync(docs).some(f => f.endsWith('.pdf'));
+      // No LibreOffice on this box (CI): the pipeline cannot render a PDF anywhere, so the check
+      // is not a model result — it is skipped with the reason instead of failing the model.
+      const pdfCheck = SOFFICE ? has('PDF delivered (document tool reachable from the research specialist)', pdf)
+        : has('PDF delivered — skipped: no LibreOffice on this box', true, 'soffice not found');
       return [
         has('pipeline ran to a report (not the evidence-gate abort)', !aborted && text.length > 500, `${text.length} chars of report text, ${webLog.length} web calls`),
         has('report uses ≥3 corpus facts', phrases >= 3, `${phrases}/${RESEARCH_PHRASES.length}`),
         has('cites ≥2 corpus URLs', cited >= 2, `${cited} cited`),
-        has('PDF delivered (document tool reachable from the research specialist)', pdf),
+        pdfCheck,
       ];
     },
   },
@@ -529,17 +579,22 @@ async function runTask(model: string, ollamaUrl: string, task: E2ETask, rep: num
   let result: DispatchResult | undefined;
   let answer = '';
   let error: string | undefined;
+  let facts: Record<string, boolean | string> | undefined;
   try {
-    result = await send(env, sessionKey, task.prompt, task.timeoutMs, `${model} ${task.id}`);
-    answer = clean(result.answer);
-    if (task.followUp) {
-      const second = await send(env, sessionKey, task.followUp, task.timeoutMs, `${model} ${task.id} follow-up`);
-      answer = clean(second.answer);
+    if (task.flow) {
+      facts = await task.flow(env, (sk, message, timeoutMs) => send(env, sk, message, timeoutMs, `${model} ${task.id}`).then(r => { result = r; answer = clean(r.answer); return r; }));
+    } else {
+      result = await send(env, sessionKey, task.prompt, task.timeoutMs, `${model} ${task.id}`);
+      answer = clean(result.answer);
+      if (task.followUp) {
+        const second = await send(env, sessionKey, task.followUp, task.timeoutMs, `${model} ${task.id} follow-up`);
+        answer = clean(second.answer);
+      }
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
-  const ctx: TaskCtx = { ...env, answer, result, researchDir: join(env.ws, 'research') };
+  const ctx: TaskCtx = { ...env, answer, result, researchDir: join(env.ws, 'research'), flowFacts: facts };
   if (error && bucketOf(error) === 'PROVIDER_OUTAGE' && attempt === 0) {
     // the serving stack, not the model — one retry after a pause, then unscored
     console.log(`    provider outage on ${task.id} (${error.slice(0, 60)}) — retrying once in 20s`);
@@ -581,7 +636,7 @@ async function selftest(): Promise<void> {
     const env = await makeEnv('selftest-model', 'http://127.0.0.1:1');
     task.fixtures?.(env);
     const answer = await task.reference(env);
-    const checks = task.check({ ...env, answer, researchDir: join(env.ws, 'research') });
+    const checks = task.check({ ...env, answer, researchDir: join(env.ws, 'research') });   // facts undefined → the check's reference defaults
     const bad = checks.filter(c => !c.pass);
     console.log(`  ${bad.length ? 'FAIL' : 'ok  '} ${task.id}${bad.length ? ' — ' + bad.map(c => `${c.name} (${c.detail ?? ''})`).join('; ') : ''}`);
     failures += bad.length;
@@ -619,6 +674,8 @@ function report(results: ModelRecord[], prov: Record<string, unknown>): string {
 }
 
 async function main(): Promise<void> {
+  SOFFICE = (await detectLibreOffice()).found;
+  if (!SOFFICE) console.log('No LibreOffice on this box — the research PDF check is skipped with that reason (the pipeline cannot render one here)');
   if (SELFTEST) { await selftest(); return; }
   if (!MODELS.length) { console.error('usage: npx tsx scripts/e2e-eval.ts <model> [model ...] [--reps=1] [--task=id] | --selftest'); process.exit(2); }
   mkdirSync(RUN_DIR, { recursive: true });
