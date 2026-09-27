@@ -73,36 +73,22 @@ Each of these has a full section in the docs; the README keeps the one-paragraph
 
 ## Quick Start
 
-> **Fifteen minutes to a working agent:** [INSTALL.md](INSTALL.md) has the tier ladder — Tier 0 is Node + Ollama + one model + the web console (`npm run setup`, choose **Starter**). Everything else is optional and degrades gracefully when absent.
-
 ```bash
 git clone https://github.com/PeterGreenAppliedAI/Invarail.git
 cd Invarail
 npm install
-cd console && npm install && npm run build && cd ..
-npm run setup        # interactive wizard: tier, Ollama + models, channels, services (memory/search/voice), workspace, preflight
-npx tsx src/index.ts
+npm run setup      # looks at your machine first, then asks only what is yours
+npm run doctor     # every dependency your config enables — found or missing, with the fix
+npm start          # runs the doctor quietly, builds the console once, boots
 ```
 
-**Check the machine first:** `npm run doctor` lists every dependency your config enables, found or missing, with the install command beside each miss; `npm start` runs it quietly before booting. The wizard detects before it asks.
+**The wizard detects before it asks.** It probes Node, Ollama and the models on it, Docker, FalkorDB, SearXNG, LibreOffice, and Python with matplotlib and pandas, and prints what it found. Then the questions that are actually yours: which model (an empty Ollama gets an offer to pull one), which channels, and whether the console should be reachable from other devices. Say yes to that and it generates the bearer token into `.env` and binds the network; say no and it binds loopback. Sidecars it can run for you (graph memory, search) are offered with a default of yes; system software (Docker, LibreOffice, Python) is named with the install command for your OS and never installed behind your back.
 
-**Prerequisites:** Node 22+, [Ollama](https://ollama.ai) reachable, and models for the roles you enable (the wizard detects what you have). Python 3 + matplotlib/pandas for research charts. Docker for the exec sandbox and FalkorDB graph memory (the wizard offers auto-install). LibreOffice for document/PDF generation.
+**Tier 0 is fifteen minutes:** Node 22+, Ollama with one model, the web console. Everything above it is one config block and degrades gracefully when absent — [INSTALL.md](INSTALL.md) has the ladder. `npm run doctor` re-checks the machine against your config any time; `npm start` refuses only when boot would be pointless (no config, no Ollama).
 
-**Search:** the reference deployment uses self-hosted **SearXNG** (`tools.web.search: { provider: "searxng", baseUrl: "..." }`, JSON format enabled in its settings); the schema default is `brave`, and Perplexity/Grok/Tavily are a `provider` switch away. Note from experience: a metasearch host spends its IP reputation with every upstream engine — Invarail ships per-provider politeness throttles because agents are out-of-distribution callers for human-paced infrastructure.
+**Search has a reputation cost.** Hosted providers (Brave, Perplexity, Grok, Tavily) spend *their* reputation and rate-limit you honestly. Self-hosted **SearXNG** spends *yours*: every query fans out to the engines from your IP, and agents search in bursts. The wizard offers it behind an explicit warning, ships a suggested `searxng/settings.yml`, paces outbound calls, and writes a daily query ceiling — read [SEARXNG.md](SEARXNG.md) before choosing it.
 
-**Security minimums** before exposing anything:
-
-```json5
-web: { host: "127.0.0.1" },   // or set `token` if binding 0.0.0.0
-// per channel:
-security: {
-  trustedUsers: ["user-id"],
-  ownerOnlyTools: ["exec", "write_file", "gmail_search", "calendar_list"],
-  confirmTools: ["send_message"],
-},
-```
-
-Set `ownerId`. `ownerOnlyTools` is a code gate — the tools don't exist in the model's world for anyone else.
+**Before exposing anything beyond this machine:** the wizard's generated token is the wall for the console (the adapter refuses a network bind without one). For chat channels, set `ownerId` and per-channel `trustedUsers`, `ownerOnlyTools`, and `confirmTools` — `ownerOnlyTools` is a code gate; those tools do not exist in the model's world for anyone else.
 
 ## Documentation
 
