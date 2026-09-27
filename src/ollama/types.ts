@@ -79,6 +79,9 @@ export interface OllamaGenerateParams {
   model: string;
   prompt: string;
   system?: string;
+  /** Thinking toggle. On a thinking model a grammar-constrained one-word answer lands in
+   *  `thinking` and `response` comes back EMPTY unless this is false (router, 2026-09-27). */
+  think?: boolean;
   /** Structured output: 'json' or a JSON schema object (see OllamaChatParams.format) */
   format?: 'json' | Record<string, unknown>;
   options?: {
@@ -96,6 +99,8 @@ export interface OllamaGenerateParams {
 
 export interface OllamaGenerateResponse {
   model: string;
+  /** Reasoning text on thinking models (present when `think` was not disabled). */
+  thinking?: string;
   response: string;
   done: boolean;
   total_duration?: number;

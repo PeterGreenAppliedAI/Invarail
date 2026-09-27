@@ -18,6 +18,7 @@
     // capabilities (see invarail.config.example.json5 for the full set).
     model: "qwen3.5:9b",
     timeout: 4000,
+    contextSize: 16384,   // same num_ctx as session.contextSize — the router IS the chat model here; a different value reloads it every turn
     defaultCategory: "chat",
     categories: {
       chat: { description: "General conversation, questions, and assistance" },

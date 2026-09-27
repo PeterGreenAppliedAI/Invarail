@@ -27,6 +27,20 @@ const state: WizardState = {
 };
 
 describe('wizard-generated config', () => {
+  it('runs the arena fleet-wide and never the retired plan pipeline; a shared router model gets the session context', () => {
+    const text = buildConfig(state);
+    expect(text).not.toMatch(/pipeline: "plan"/);
+    for (const cat of ['web_search', 'memory', 'exec', 'cron', 'task', 'multi']) {
+      expect(text, cat).toMatch(new RegExp(`${cat}: \\{[^}]*dispatchMode: "arena"`));
+    }
+    expect(text).toMatch(/research: \{[^}]*pipeline: "research"/);
+    expect(text).toMatch(/research: \{[^}]*"document"/);   // convert_pdf runs through the scoped executor
+    expect(text).not.toMatch(/router: \{[^}]*contextSize/);   // dedicated phi4 router: engine default
+    const shared: WizardState = { ...state, models: { ...state.models, routerModel: 'qwen3:8b' } };
+    expect(buildConfig(shared)).toMatch(/router: \{[^}]*contextSize: 32768/);
+    expect(buildConfig(shared)).toMatch(/extractionContextSize: 32768/);
+  });
+
   it('parses through the real loader with defaultModel, an exposed console + token, searxng + ceiling, voice on the foreground model', () => {
     const dir = mkdtempSync(join(tmpdir(), 'wizard-'));
     const path = join(dir, 'invarail.config.json5');

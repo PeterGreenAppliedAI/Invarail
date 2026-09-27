@@ -27,9 +27,12 @@ describe('starter preset', () => {
     }
   });
 
-  it('uses one model for router and every specialist', () => {
+  it('uses one model for router and every specialist — at ONE context size', () => {
     const config = loadConfig('invarail.config.starter.json5');
     const models = new Set([config.router.model, ...Object.values(config.specialists).map(s => s.model)]);
     expect(models.size).toBe(1);
+    // A num_ctx change is a reload on Ollama: router at 8K + chat at 16K on one model
+    // reloaded it every turn and the router timed out on every message (e2e eval 2026-09-27).
+    expect(config.router.contextSize).toBe(config.session.contextSize);
   });
 });

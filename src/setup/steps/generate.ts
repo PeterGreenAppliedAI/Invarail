@@ -112,6 +112,11 @@ function getEnabledCategories(state: WizardState): Set<string> {
 export function buildConfig(state: WizardState): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const defaultModel = state.models.specialistModel;
+  // ONE context size for every call that lands on the foreground model. Ollama treats a
+  // num_ctx change as a reload: with the router at 8K, extraction at 8K and chat at 32K on
+  // the same model, a one-model install reloaded it on every hop and the router timed out
+  // on every message (e2e eval 2026-09-27 — 100% keyword fallback).
+  const contextSize = 32768;
   const enabledCategories = getEnabledCategories(state);
 
   // Owner ID
@@ -136,13 +141,16 @@ export function buildConfig(state: WizardState): string {
     const pipelineLine = template.pipeline
       ? `\n      pipeline: "${template.pipeline}",`
       : '';
+    const modeLine = template.dispatchMode
+      ? `\n      dispatchMode: "${template.dispatchMode}",`
+      : '';
 
     specialistLines.push(`    ${category}: {
       model: "${model}",${thinkLine}${sp}
       maxTokens: ${template.maxTokens},
       temperature: ${template.temperature},
       maxIterations: ${template.maxIterations},
-      tools: ${toolsStr},${pipelineLine}
+      tools: ${toolsStr},${pipelineLine}${modeLine}
     },`);
   }
 
@@ -341,6 +349,7 @@ ${state.models.inferenceBackends.map(b => `      { url: "${b.url}", models: [${b
   const memoryBlock = `  memory: {
     backend: "markdown",
     extractionModel: "${defaultModel}",
+    extractionContextSize: ${contextSize},   // same num_ctx as the specialists — one load, no reload per capture
     consolidation: {
       enabled: true,
       model: "${state.models.routerModel}",
@@ -367,7 +376,9 @@ ${inferenceBlock}${briefingBlock}
 
   router: {
     model: "${state.models.routerModel}",
-    timeout: 2000,
+    timeout: 2000,${state.models.routerModel === defaultModel
+      ? `\n    contextSize: ${contextSize},   // the router IS the foreground model: a different num_ctx would reload it on every turn (e2e eval 2026-09-27)`
+      : ''}
     defaultCategory: "chat",
     categories: {
 ${categoryLines.join('\n')}
@@ -397,7 +408,7 @@ ${memoryBlock}
   session: {
     transcriptDir: "data/sessions",
     maxHistoryTurns: 100,
-    contextSize: 32768,
+    contextSize: ${contextSize},
     recentTurnsToKeep: 6,
     summarizeToolObservations: true,
   },

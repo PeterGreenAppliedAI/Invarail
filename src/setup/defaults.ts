@@ -8,6 +8,11 @@ export interface SpecialistTemplate {
   maxIterations: number;
   tools: string[];
   pipeline?: string;
+  /** Arena fleet-wide (DECISIONS 2026-08-21): the open loop is the default; a pipeline
+   *  survives only where its stages are an oracle (research, code_gen). The wizard emitted
+   *  the retired scripted pipelines — plan for multi included — until the e2e eval
+   *  (2026-09-27) ran a generated config through the real dispatch. */
+  dispatchMode?: 'arena' | 'pipeline';
 }
 
 export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
@@ -25,6 +30,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxIterations: 8,
     tools: ['web_search', 'web_fetch', 'browser'],
     pipeline: 'web_search',
+    dispatchMode: 'arena',
   },
   memory: {
     systemPrompt: 'You are a memory management specialist. When the user asks you to remember something, ALWAYS use memory_save to store it. When the user asks about past conversations or stored info, ALWAYS use memory_search first. Confirm what you saved or found.',
@@ -33,14 +39,16 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxIterations: 5,
     tools: ['memory_search', 'memory_get', 'memory_save', 'knowledge_import'],
     pipeline: 'memory',
+    dispatchMode: 'arena',
   },
   exec: {
     systemPrompt: 'You are a command execution specialist. When the user asks you to run a command, ALWAYS use the exec tool. Show the command output in your response. For file operations, use read_file and write_file.',
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 8,
-    tools: ['exec', 'read_file', 'write_file', 'code_session'],
+    tools: ['exec', 'read_file', 'write_file', 'code_session', 'document'],
     pipeline: 'exec',
+    dispatchMode: 'arena',
   },
   cron: {
     systemPrompt: 'You are a scheduling specialist. You manage two types of scheduled tasks:\n\n1. **Cron jobs** — individual recurring tasks with their own schedule, category, and delivery. Use cron_add/cron_list/cron_remove.\n2. **Heartbeat tasks** — autonomous periodic tasks that all run together on a shared schedule. Use heartbeat_add/heartbeat_list/heartbeat_remove.\n\nFor cron schedules, use standard 5-field cron expressions (minute hour day month weekday).',
@@ -49,6 +57,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxIterations: 3,
     tools: ['cron_add', 'cron_list', 'cron_remove', 'heartbeat_add', 'heartbeat_list', 'heartbeat_remove'],
     pipeline: 'cron',
+    dispatchMode: 'arena',
   },
   message: {
     systemPrompt: '',
@@ -57,6 +66,7 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxIterations: 3,
     tools: ['send_message'],
     pipeline: 'message',
+    dispatchMode: 'arena',
   },
   website: {
     systemPrompt: 'You are a URL fetching specialist. When given a URL, first try web_fetch. If the result is empty or blocked, use browser to open the page and read its content. Summarize what you find. Be concise.',
@@ -70,8 +80,8 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 15,
-    tools: ['web_search', 'web_fetch', 'browser', 'memory_search', 'exec', 'read_file', 'write_file', 'send_message', 'task_add', 'task_list', 'task_done'],
-    pipeline: 'plan',
+    tools: ['web_search', 'web_fetch', 'browser', 'memory_search', 'memory_save', 'exec', 'read_file', 'write_file', 'document', 'send_message', 'task_add', 'task_list', 'task_done'],
+    dispatchMode: 'arena',   // the plan pipeline is RETIRED for dispatch (the arena duel)
   },
   task: {
     systemPrompt: 'You are a task management specialist. Use task_add to create tasks, task_list to show them, task_update to modify, task_done to complete, task_remove to delete. Default to showing todo + in_progress. Always confirm changes.',
@@ -80,13 +90,17 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
     maxIterations: 5,
     tools: ['task_add', 'task_list', 'task_update', 'task_done', 'task_remove'],
     pipeline: 'task',
+    dispatchMode: 'arena',
   },
   research: {
     systemPrompt: 'You are a deep research specialist. Produce comprehensive research with parallel searches, source analysis, charts, and polished output (reveal.js deck or styled PDF report).',
     maxTokens: 4096,
     temperature: 0.3,
     maxIterations: 20,
-    tools: ['web_search', 'web_fetch', 'code_session'],
+    // `document` is what the pipeline's convert_pdf stage calls through the SCOPED executor —
+    // without it every wizard install rendered the report and then had the PDF blocked
+    // ("Blocked unauthorized tool call: document", e2e eval 2026-09-27).
+    tools: ['web_search', 'web_fetch', 'code_session', 'read_file', 'write_file', 'document'],
     pipeline: 'research',
   },
   image: {

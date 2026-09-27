@@ -275,6 +275,11 @@ async function classifyMessageInner(
     const generateParams = {
       model: config.model,
       prompt,
+      // One word, grammar-constrained: thinking is pure cost here — and on a thinking model
+      // the constrained answer lands in `thinking` with an EMPTY `response`, which read as
+      // garbage and sent every message to the keyword fallback on a one-model install
+      // (e2e eval 2026-09-27: qwen3.5:9b routed 0/11 by model until this was false).
+      think: false,
       options: {
         temperature: 0.1,
         num_predict: 20,
@@ -302,7 +307,9 @@ async function classifyMessageInner(
       return { category: raw, confidence: 'model' };
     }
 
-    // Model returned garbage — fall through to keyword heuristics
+    // Model returned garbage — fall through to keyword heuristics. Say so: this path was
+    // silent, and a router that never decides looks exactly like a router that always agrees.
+    console.warn(`[Router] Model returned no category (response=${JSON.stringify(response.response.slice(0, 40))}${response.thinking ? `, thinking=${JSON.stringify(response.thinking.slice(0, 40))}` : ''}) — keyword fallback`);
   } catch (err) {
     // Timeout or inference error — fall through
     console.warn('[Router] OLLAMA_INFERENCE_ERROR: Classification failed —', err instanceof Error ? err.message : err);

@@ -13,6 +13,21 @@ describe('utility-model context sizes', () => {
     expect((seen?.options as Record<string, unknown>)?.num_ctx).toBe(8192);
   });
 
+  it('router disables thinking on the generate call, and logs (not silently falls) when the model returns no category', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const warns: string[] = [];
+    const orig = console.warn; console.warn = (...a: unknown[]) => { warns.push(a.join(' ')); };
+    try {
+      // a thinking model with think omitted: answer in `thinking`, empty `response`
+      const client = { generate: async (p: Record<string, unknown>) => { seen = p; return { response: '', thinking: '"research"' }; } } as unknown as OllamaClient;
+      const config = RouterConfigSchema.parse({ model: 'qwen3.5:9b', categories: { chat: { description: 'talk' }, research: { description: 'deep research report' } } });
+      const r = await classifyMessage(client, config, 'please do a research report on EV batteries');
+      expect(seen?.think).toBe(false);
+      expect(r.confidence).not.toBe('model');
+      expect(warns.some(w => /returned no category/.test(w) && /thinking=/.test(w))).toBe(true);
+    } finally { console.warn = orig; }
+  });
+
   it('voice contextSize is optional and, when set, must be positive', () => {
     expect(VoiceConfigSchema.parse({}).contextSize).toBeUndefined();
     expect(VoiceConfigSchema.parse({ model: 'phi4-mini:latest', contextSize: 8192 }).contextSize).toBe(8192);

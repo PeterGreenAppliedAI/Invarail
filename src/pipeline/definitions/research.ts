@@ -920,6 +920,15 @@ export const researchPipeline: PipelineDefinition = {
         const meta = `<div class="report-meta">${new Date().toLocaleDateString('en-US', { dateStyle: 'long' })} · ${(ctx.params._allSources as string[]).length} sources</div>`;
         body = body.replace(/(<\/h1>)/, `$1${meta}`);
         ctx.params._reportHtml = REPORT_TEMPLATE(ctx.params.topic as string, body);
+        // Persist the markdown beside verification.json: the PDF is a rendering of THIS, and
+        // when the render fails (or someone wants to regenerate/append) the source is here.
+        try {
+          const dir = `data/workspaces/main/research/${slug}`;
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, 'report.md'), md);
+        } catch (err) {
+          console.warn('[Research] Could not persist report.md:', err instanceof Error ? err.message : err);
+        }
       },
     },
 
