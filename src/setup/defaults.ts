@@ -1,4 +1,5 @@
 import type { OllamaModel } from '../ollama/types.js';
+import { rankForeground, pickUtility } from './measured-models.js';
 
 export interface SpecialistTemplate {
   systemPrompt: string;
@@ -126,38 +127,19 @@ export const ROUTER_CATEGORIES: Record<string, { description: string }> = {
  */
 export function pickRouterModel(models: OllamaModel[]): string | undefined {
   if (!models.length) return undefined;
-
-  // Prefer phi4:14b (phi4-mini is unreliable for routing)
-  const phi4 = models.find(m => m.name.includes('phi4') && !m.name.includes('mini'));
-  if (phi4) return phi4.name;
-
-  // Fall back to phi4-mini if no full phi4
-  const phi4Mini = models.find(m => m.name.includes('phi4-mini'));
-  if (phi4Mini) return phi4Mini.name;
-
-  // Fall back to smallest model
-  const sorted = [...models].sort((a, b) => a.size - b.size);
-  return sorted[0].name;
+  // Measured utility models first (evals: extraction ≥ 92% at any size), else the smallest.
+  return pickUtility(models);
 }
 
 /**
  * Pick best specialist model from available models.
  * Prefers *-coder models, falls back to largest model.
  */
-export function pickSpecialistModel(models: OllamaModel[]): string | undefined {
+export function pickSpecialistModel(models: OllamaModel[], budgetGb?: number): string | undefined {
   if (!models.length) return undefined;
-
-  // Prefer coder models
-  const coders = models.filter(m => m.name.includes('coder'));
-  if (coders.length) {
-    // Pick the largest coder
-    const sorted = [...coders].sort((a, b) => b.size - a.size);
-    return sorted[0].name;
-  }
-
-  // Fall back to largest model
-  const sorted = [...models].sort((a, b) => b.size - a.size);
-  return sorted[0].name;
+  // Ranked by the two eval boards and by fit — never 'the largest model present'
+  // (a 32B coder is not a chat model; a 27B does not fit a 12GB card).
+  return rankForeground(models, budgetGb)[0]?.name;
 }
 
 /**

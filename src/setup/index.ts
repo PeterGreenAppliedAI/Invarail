@@ -40,12 +40,12 @@ async function main(): Promise<void> {
     const ollama = await runOllamaStep(report);
 
     if (tier === 'starter') {
-      await runStarterGenerate(ollama.models.map(m => m.name));
+      await runStarterGenerate(ollama.models, report);
       return;
     }
 
     // Step 2: Models
-    const models = await runModelsStep(ollama.models);
+    const models = await runModelsStep(ollama.models, report);
 
     // Step 3: Channels
     const channels = await runChannelsStep();

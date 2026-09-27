@@ -1,6 +1,8 @@
 import { askText, askYesNo, printStep, printSuccess, printInfo } from '../prompts.js';
-import { pickRouterModel, pickSpecialistModel, SPECIALIST_TEMPLATES } from '../defaults.js';
+import { pickRouterModel, SPECIALIST_TEMPLATES } from '../defaults.js';
+import { rankForeground, memoryBudgetGb, findMeasured, thinkFor } from '../measured-models.js';
 import type { OllamaModel } from '../../ollama/types.js';
+import type { DetectReport } from '../detect.js';
 
 export interface ModelsStepResult {
   routerModel: string;
@@ -11,12 +13,15 @@ export interface ModelsStepResult {
   inferenceBackends: Array<{ url: string; models: string[] }>;
   /** Model for background reasoning (briefing + heartbeat). Defaults to specialistModel. */
   backgroundModel: string;
+  /** `think:` for the foreground specialists when the pick is a measured model (undefined = leave the engine default). */
+  specialistThink?: boolean;
 }
 
-export async function runModelsStep(models: OllamaModel[]): Promise<ModelsStepResult> {
+export async function runModelsStep(models: OllamaModel[], report?: DetectReport): Promise<ModelsStepResult> {
   printStep(2, 7, 'Model Selection');
 
   const modelNames = models.map(m => m.name);
+  const budget = memoryBudgetGb(report?.memory);
 
   // Router model
   const suggestedRouter = pickRouterModel(models) ?? 'phi4-mini';
@@ -24,11 +29,17 @@ export async function runModelsStep(models: OllamaModel[]): Promise<ModelsStepRe
   const routerModel = await askText('Router model', suggestedRouter);
   printSuccess(`Router model: ${routerModel}`);
 
-  // Specialist model (global default)
-  const suggestedSpecialist = pickSpecialistModel(models) ?? 'qwen3-coder:30b';
-  printInfo(`Suggested specialist model: ${suggestedSpecialist}`);
-  const specialistModel = await askText('Default specialist model', suggestedSpecialist);
-  printSuccess(`Default specialist model: ${specialistModel}`);
+  // Foreground model — ranked by the eval boards and by what fits this machine.
+  const ranked = rankForeground(models, budget);
+  if (ranked.length) {
+    printInfo(`Models on this box, ranked by the evals${budget ? ` and fit (~${budget.toFixed(0)}GB usable)` : ''}:`);
+    for (const r of ranked.slice(0, 8)) printInfo(`  - ${r.label}`);
+  }
+  const suggestedSpecialist = ranked[0]?.name ?? 'qwen3.5:9b';
+  const specialistModel = await askText('Foreground model (chat + every specialist)', suggestedSpecialist);
+  const measured = findMeasured(specialistModel);
+  const specialistThink = thinkFor(measured);
+  printSuccess(`Foreground model: ${specialistModel}${measured ? ` (measured ${Math.round(measured.overall * 100)}%, thinking ${measured.think})` : ' (unmeasured — run scripts/model-eval.ts on it)'}`);
 
   // OpenAI-compatible backends (vLLM) — for large models like MiniMax served outside Ollama.
   // The specialist model can point at a backend model id; calls matching it route there.
@@ -76,5 +87,5 @@ export async function runModelsStep(models: OllamaModel[]): Promise<ModelsStepRe
   const backgroundModel = await askText('Model for background jobs (briefing + heartbeat)', specialistModel);
   printSuccess(`Background jobs model: ${backgroundModel}`);
 
-  return { routerModel, specialistModel, categoryModels, inferenceBackends, backgroundModel };
+  return { routerModel, specialistModel, categoryModels, inferenceBackends, backgroundModel, specialistThink };
 }

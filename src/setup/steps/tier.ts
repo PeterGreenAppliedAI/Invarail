@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { askChoice, askYesNo, printHeader, printInfo, printSuccess, printWarning } from '../prompts.js';
+import { rankForeground, memoryBudgetGb, findMeasured } from './../measured-models.js';
+import type { OllamaModel } from '../../ollama/types.js';
+import type { DetectReport } from '../detect.js';
 
 export type SetupTier = 'starter' | 'custom';
 
@@ -18,16 +21,25 @@ export async function runTierStep(): Promise<SetupTier> {
  * the preset. The preset file is the source of truth — this only swaps the
  * model name, so preset and wizard can never drift apart.
  */
-export async function runStarterGenerate(models: string[]): Promise<void> {
-  const model = models.length > 0
-    ? await askChoice('Which model should do everything?', models)
-    : 'qwen3.5:9b';
+export async function runStarterGenerate(models: OllamaModel[], report?: DetectReport): Promise<void> {
+  const ranked = rankForeground(models, memoryBudgetGb(report?.memory));
+  let model = 'qwen3.5:9b';
+  if (ranked.length > 0) {
+    const labels = ranked.map(r => r.label);
+    const chosen = await askChoice('Which model should do everything? (ranked by the evals and by fit)', labels);
+    model = ranked[Math.max(0, labels.indexOf(chosen))].name;
+  }
   if (models.length === 0) {
     printWarning('No models found in Ollama — defaulting to qwen3.5:9b (the measured floor for tool use). Pull it with: ollama pull qwen3.5:9b');
   }
 
   let template = readFileSync('invarail.config.starter.json5', 'utf-8');
   template = template.replaceAll('qwen3.5:9b', model);
+  // The preset says think: false (right for the measured floor). A measured model whose
+  // best mode was thinking ON keeps it; an unmeasured model keeps the engine default.
+  const m = findMeasured(model);
+  if (m && m.think !== 'off' && m.think !== 'none') template = template.replace(/^(\s*)think: false,.*$/m, '$1think: true,   // the mode that scored best for this model in the evals');
+  else if (!m) template = template.replace(/^\s*think: false,.*\n/m, '');
 
   // Exposure is a choice; the token comes with it (see channels step for why).
   if (await askYesNo('Reach the console from OTHER devices on your network (phone, the Chrome extension)?', false)) {

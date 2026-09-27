@@ -124,6 +124,9 @@ export function buildConfig(state: WizardState): string {
   for (const [category, template] of Object.entries(SPECIALIST_TEMPLATES)) {
     if (!enabledCategories.has(category)) continue;
     const model = state.models.categoryModels[category] ?? defaultModel;
+    const thinkLine = model === defaultModel && state.models.specialistThink !== undefined
+      ? `\n      think: ${state.models.specialistThink},   // the mode that scored best for this model in the evals`
+      : '';
     const sp = template.systemPrompt
       ? `\n      systemPrompt: ${JSON.stringify(template.systemPrompt)},`
       : '';
@@ -135,7 +138,7 @@ export function buildConfig(state: WizardState): string {
       : '';
 
     specialistLines.push(`    ${category}: {
-      model: "${model}",${sp}
+      model: "${model}",${thinkLine}${sp}
       maxTokens: ${template.maxTokens},
       temperature: ${template.temperature},
       maxIterations: ${template.maxIterations},

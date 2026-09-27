@@ -351,6 +351,7 @@ src/
     index.ts                #   Entry point — detect() first, then only the questions that are the owner's
     detect.ts               #   Environment probes (Ollama hosts+models, Docker, FalkorDB, SearXNG, LibreOffice, Python) with per-OS install hints
     doctor.ts               #   Checks against what the config ENABLES → PASS/WARN/FAIL + fix; `npm run doctor`, quiet pre-start, GET /console/api/doctor
+    measured-models.ts      #   The eval boards as one table by Ollama tag; rankForeground() orders installed models by score + fit (never "largest present")
     steps/                  #   Individual setup steps (generate.ts round-trips through the real schema — test/setup/wizard-generate.test.ts)
 
   utils/
@@ -519,7 +520,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + build + console build on every push/PR to main
-- **Current:** 1079 tests across 121 files
+- **Current:** 1088 tests across 122 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

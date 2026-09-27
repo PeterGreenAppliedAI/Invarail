@@ -16,6 +16,16 @@ Peter: *"We'd need to define what models are minimum for some of this."* The Aug
 
 ---
 
+## The Wizard Ranks by the Evals, Not by Size (September 27 2026)
+
+Peter, after the small-tier eval landed: *"So we have all of this built into the wizard now?"* It wasn't. Both wizard paths still picked models the August way — the Starter offered a flat list of whatever `ollama list` returned, and the Custom path's `pickSpecialistModel` preferred *any* `-coder` tag and otherwise the **largest model present**. On a 12GB card with `qwen2.5-coder:32b` pulled for Pi that suggests a 20GB coder (85%, tool 50%) as the chat model, and it never checked whether the thing fits. The evals answered exactly this question and nothing read them.
+
+**Shipped (Peter: "do it"):** `src/setup/measured-models.ts` — the two boards (August 20B–124B, September 1.5B–14.7B) as one table keyed by Ollama tag: best-scoring thinking mode, overall/tool/extraction scores. Rows *below* the 80% floor are kept on purpose so the picker can say *why* (`phi4 — NO native tool calling on Ollama, utility only`; `llama3.1:8b — 69%, below the 80% floor`) instead of showing them as "unmeasured". `rankForeground(models, budget)` orders what the machine actually has: measured-and-fits by score → measured-but-too-big → unmeasured that fit → measured-poor → the rest; ties on a score go to the smaller model (same result, more context headroom). Budget is the doctor's rule (85% of VRAM, else 60% of RAM). Both wizard paths take the detect report and show the ranked labels; the Starter picks by label, the Custom path defaults to the top row; the generated config carries the measured `think:` (the Starter template's `think: false` flips to `true` only for a model whose best row was thinking on, and is dropped for an unmeasured model so the engine default applies). `pickRouterModel` now prefers a **measured utility model** (phi4 → phi4-mini → qwen2.5:7b → llama3.1:8b, extraction ≥ 92%) over "the smallest thing here". A test reads the three `results.json` files and checks every table row against the best row for that model, so the table cannot drift from the published evals.
+
+**Not done:** the table is static — a new model needs a harness run and a row; the picker cannot score something it has never seen, and says so.
+
+---
+
 ## The Wizard Detects Before It Asks — and SearXNG Gets Its Warning (September 27 2026)
 
 Peter, after the review week: *"It still feels very big and weighty… not a ton of walking through and installing the stuff via CLI or making the setup clean and easy."* Then: *"any joe schmoe can use this and install… and the system can pull the information it needs to make those connections."* The security plane had engineering discipline; setup never did. Read first: a real 1,400-line wizard existed (tier question, Ollama probe, token validation, a FalkorDB installer, preflight) — its problems were specific. It **asked** what it could detect (~30 questions), offered four hosted search providers and not the one the compose file ships, never generated the web token the adapter now requires, and its hand-templated output had drifted from the schema (`ollama.host` — silently ignored, the schema only has `url`; no `defaultModel`; the router model as the voice model). And nothing after install told you what was missing.

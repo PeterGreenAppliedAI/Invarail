@@ -63,8 +63,13 @@ The wizard **detects before it asks**: it probes Ollama (and offers to pull a
 first model if there are none), Docker, FalkorDB, SearXNG, LibreOffice and
 Python, and only asks the questions that are yours — which model, whether the
 console should be reachable from other devices (it generates the token), which
-channels. `npm run doctor` re-checks the same list any time, against what your
-config enables, and prints the fix beside each miss.
+channels. The model question is **ranked by the evals above and by what fits
+your GPU or RAM**: every installed model shows its measured score, the thinking
+mode that scored best, its size and whether it fits; measured models that fit
+come first, unmeasured after, and models that cannot native-tool-call say so.
+The generated config carries that thinking mode. `npm run doctor` re-checks the
+same list any time, against what your config enables, and prints the fix beside
+each miss.
 
 ## Tier 1 — the daily driver
 
