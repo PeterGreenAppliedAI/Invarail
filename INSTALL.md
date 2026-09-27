@@ -38,8 +38,17 @@ foreground model fits this machine.
 | Machine | Fits |
 |---|---|
 | 8GB RAM, no GPU | qwen2.5:7b doing everything — chat, most tools, no code |
+| **8GB GPU** | **qwen3.5:9b at 16K context (6.0GB loaded)** — no embedder beside it (`memory.embeddingModel: "none"`, flat or vault tier) |
 | 16GB RAM or a 12GB GPU | qwen3.5:9b (or gemma4:12b) foreground + phi4-mini utility |
 | 24GB GPU or 32GB unified | a 27B foreground + the utility pair — everything |
+
+Loaded footprints, measured on Ollama (what the card actually holds, KV cache included):
+
+| Model | 8K context | 16K context |
+|---|---|---|
+| qwen3.5:9b | 5.7GB | 6.0GB — hybrid attention, the KV cache barely grows |
+| qwen2.5:7b | 5.1GB | 5.6GB |
+| gemma4:12b | 8.4GB | 8.4GB — not an 8GB-card model |
 
 ## Tier 0 — fifteen minutes to a working agent
 

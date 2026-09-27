@@ -32,7 +32,9 @@ export function isReservedName(name: string): boolean {
 
 /** Tolerant front-matter parse: `---\n…\n---\n` at the top, else no front matter. */
 export function parseFrontMatter(text: string): ParsedDoc {
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  // the closing fence and ONE blank line after it belong to the front matter, so a
+  // serialize → parse round trip returns the body byte-for-byte
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?(?:\r?\n)?/);
   if (!m) return { data: {}, body: text, hasFrontMatter: false };
   const data: FrontMatter = {};
   let currentKey: string | null = null;
@@ -228,15 +230,44 @@ export function checkBundle(vaultPath: string): ConformanceIssue[] {
   return issues;
 }
 
-/** Give a plain vault document the minimum OKF front matter (type + title) without touching its body. */
+/** First real paragraph of a note, first sentence, as the one-line `description` the index shows. */
+export function inferDescription(body: string): string | undefined {
+  const para = body.split(/\n\s*\n/).map(p => p.trim()).find(p => p && !/^#/.test(p) && !/^[-*]\s*\[/.test(p) && !/^!\[/.test(p) && !/^```/.test(p));
+  if (!para) return undefined;
+  const flat = para.replace(/\s+/g, ' ').replace(/[*_`>]/g, '');
+  const sentence = flat.match(/^.{20,}?[.!?](\s|$)/)?.[0] ?? flat;
+  return sentence.trim().slice(0, 160);
+}
+
+/** Give a plain vault document the minimum OKF front matter (type + title, and a description
+ *  when one can be read off the body) WITHOUT touching the body. Existing keys are kept. */
 export function ensureFrontMatter(path: string, defaults: { type: string; title?: string }): boolean {
   const text = readFileSync(path, 'utf-8');
   const { data, hasFrontMatter, body } = parseFrontMatter(text);
   if (hasFrontMatter && typeof data.type === 'string' && data.type) return false;
   const title = defaults.title ?? (body.match(/^#\s+(.+)$/m)?.[1] ?? basename(path, '.md'));
-  const merged: FrontMatter = { type: defaults.type, title, ...data };
+  const description = typeof data.description === 'string' ? undefined : inferDescription(body);
+  const merged: FrontMatter = { type: defaults.type, title, ...(description ? { description } : {}), ...data };
   writeFileSync(path, serializeFrontMatter(merged, body));
   return true;
+}
+
+export interface ConversionReport { candidates: string[]; converted: string[] }
+
+/**
+ * In-place OKF conversion of an existing vault: notes without a `type` get front matter
+ * (type: Note, title from the H1 or filename, description from the first paragraph);
+ * bodies are never touched, notes that already have a type are never touched, reserved
+ * files and dot-folders are skipped. `apply: false` only reports — the wizard and the CLI
+ * ask before writing into someone's Obsidian vault.
+ */
+export function convertVaultToOkf(vaultPath: string, opts: { apply: boolean; type?: string }): ConversionReport {
+  const report: ConversionReport = { candidates: checkBundle(vaultPath).map(i => i.file), converted: [] };
+  if (!opts.apply) return report;
+  for (const rel of report.candidates) {
+    if (ensureFrontMatter(join(vaultPath, rel), { type: opts.type ?? 'Note' })) report.converted.push(rel);
+  }
+  return report;
 }
 
 /** Size of the on-disk index a model would read instead of the files. */

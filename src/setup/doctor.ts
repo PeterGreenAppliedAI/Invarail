@@ -127,7 +127,7 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
       else if (okfEnabled(config)) {
         const issues = checkBundle(vp);
         if (issues.length === 0) push('OKF bundle', 'PASS', `${vp} conforms (every note has a type)`);
-        else push('OKF bundle', 'WARN', `${issues.length} note(s) without OKF front matter: ${issues.slice(0, 3).map(i => i.file).join(', ')}${issues.length > 3 ? '…' : ''}`, 'the next heartbeat leaves them alone (§11: consumers tolerate) — add `type:` front matter, or let docs_store write new notes');
+        else push('OKF bundle', 'WARN', `${issues.length} note(s) without OKF front matter: ${issues.slice(0, 3).map(i => i.file).join(', ')}${issues.length > 3 ? '…' : ''}`, 'they are indexed as they are (§11: consumers tolerate); to add front matter in place, bodies untouched: npm run vault:okf -- --apply');
       } else push('Vault folder', 'PASS', vp);
     }
   }

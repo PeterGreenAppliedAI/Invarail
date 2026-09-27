@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { convertVaultToOkf } from '../../knowledge/okf.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { askText, askYesNo, askChoice, printStep, printSuccess, printWarning, printInfo, printError } from '../prompts.js';
 import { testHttpEndpoint, testDocker, installFalkorDB, composeUp } from '../connectivity.js';
@@ -262,6 +263,18 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     if (tierIndex >= 2) {
       result.memory.vaultPath = await askText('Vault folder (your Obsidian vault, or a new folder)', 'vault');
       result.memory.okf = tierIndex === 3;
+      if (result.memory.okf && result.memory.vaultPath && existsSync(result.memory.vaultPath)) {
+        const pending = convertVaultToOkf(result.memory.vaultPath, { apply: false }).candidates;
+        if (pending.length > 0) {
+          printInfo(`${pending.length} existing note(s) in ${result.memory.vaultPath} have no OKF front matter. They are indexed and listed as they are either way.`);
+          if (await askYesNo(`Add front matter to them now (type: Note, title, a one-line description read off the first paragraph — bodies untouched)?`, false)) {
+            const done = convertVaultToOkf(result.memory.vaultPath, { apply: true }).converted;
+            printSuccess(`Front matter added to ${done.length} note(s)`);
+          } else {
+            printInfo('Later: npm run vault:okf -- --apply');
+          }
+        }
+      }
     }
   }
   // The embedder is a separate decision: graph requires one; the others are better with one and fine without.

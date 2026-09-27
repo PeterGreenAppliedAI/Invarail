@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseFrontMatter, serializeFrontMatter, conceptForFact, writeIndexes, writeIndexesReport, appendLog, checkBundle, ensureFrontMatter, isReservedName, factConceptPath, GENERATED_MARK } from '../../src/knowledge/okf.js';
+import { parseFrontMatter, serializeFrontMatter, conceptForFact, writeIndexes, writeIndexesReport, appendLog, checkBundle, ensureFrontMatter, isReservedName, factConceptPath, GENERATED_MARK, convertVaultToOkf } from '../../src/knowledge/okf.js';
 
 const vault = () => mkdtempSync(join(tmpdir(), 'okf-'));
 
@@ -119,10 +119,32 @@ describe('index.md / log.md / conformance', () => {
     expect(checkBundle(v)).toEqual([{ file: 'coding/rubric.md', issue: 'no front matter' }]);
     expect(ensureFrontMatter(join(v, 'coding', 'rubric.md'), { type: 'Note' })).toBe(true);
     const fixed = readFileSync(join(v, 'coding', 'rubric.md'), 'utf-8');
-    expect(fixed).toMatch(/^---\ntype: Note\ntitle: Rubric\n---\n/);
+    expect(fixed).toMatch(/^---\ntype: Note\ntitle: Rubric\ndescription: Nine gates\.\n---\n/);
     expect(fixed).toMatch(/Nine gates\./);
     expect(checkBundle(v)).toEqual([]);
     expect(ensureFrontMatter(join(v, 'coding', 'ok.md'), { type: 'Note' })).toBe(false);
+  });
+
+  it('in-place conversion: reports first, writes only with apply, infers a description, never touches bodies or typed notes', () => {
+    const v = vault();
+    mkdirSync(join(v, 'notes', 'deep'), { recursive: true });
+    const body = '# Renewal playbook\n\nEvery client renewal starts 90 days out with a **usage review**. Then pricing.\n\n- step one\n';
+    writeFileSync(join(v, 'notes', 'renewal.md'), body);
+    writeFileSync(join(v, 'notes', 'deep', 'typed.md'), '---\ntype: Playbook\n---\nkeep\n');
+    writeFileSync(join(v, 'notes', 'index.md'), '# mine\n');
+    const dry = convertVaultToOkf(v, { apply: false });
+    expect(dry.candidates).toEqual(['notes/renewal.md']);
+    expect(dry.converted).toEqual([]);
+    expect(readFileSync(join(v, 'notes', 'renewal.md'), 'utf-8')).toBe(body);   // nothing written
+    const wet = convertVaultToOkf(v, { apply: true });
+    expect(wet.converted).toEqual(['notes/renewal.md']);
+    const { data, body: after } = parseFrontMatter(readFileSync(join(v, 'notes', 'renewal.md'), 'utf-8'));
+    expect(data.type).toBe('Note');
+    expect(data.title).toBe('Renewal playbook');
+    expect(data.description).toBe('Every client renewal starts 90 days out with a usage review.');
+    expect(after).toBe(body);   // body byte-for-byte
+    expect(readFileSync(join(v, 'notes', 'deep', 'typed.md'), 'utf-8')).toBe('---\ntype: Playbook\n---\nkeep\n');
+    expect(convertVaultToOkf(v, { apply: true }).candidates).toEqual([]);   // idempotent
   });
 
   it('factConceptPath lives under the memory domain', () => {

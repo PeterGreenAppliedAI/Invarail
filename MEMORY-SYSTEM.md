@@ -72,7 +72,12 @@ matter is our provenance model: a **stated** fact is `verified: [{by: human:<own
 observed and inferred facts are `generated: {by: invarail/<source>}`, `inferred` is
 `status: draft`, and the importance TTL is `stale_after`. Consumers must tolerate missing
 fields, unknown types and broken links (§11), which is why an Obsidian vault that was never
-OKF can be pointed at as-is. `src/knowledge/okf.ts`; conformance in the doctor.
+OKF can be pointed at as-is: nested folders are indexed, every existing note is listed in the
+generated indexes as it is, nothing is moved or cleared, and an `index.md` or `log.md` you
+wrote yourself is never overwritten. To bring the notes themselves onto the format —
+`type`, title, a one-line description read off the first paragraph, bodies untouched —
+`npm run vault:okf` reports and `npm run vault:okf -- --apply` writes; the wizard offers the
+same, default no. `src/knowledge/okf.ts`; conformance in the doctor.
 
 ## Architecture: Dual-Backend with Write-Through
 
