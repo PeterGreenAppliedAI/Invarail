@@ -10,6 +10,8 @@ describe('starter preset', () => {
     expect(config.router.defaultCategory).toBe('chat');
     expect(config.specialists.chat?.model).toBeTruthy();
     expect(config.channels.web?.enabled).toBe(true);
+    // `ollama.host` was silently ignored by the schema (it only has `url`) — 2026-09-27
+    expect(config.ollama.url).toBe('http://localhost:11434');
   });
 
   it('requires nothing external: no tokens, no backends, no tool providers', () => {

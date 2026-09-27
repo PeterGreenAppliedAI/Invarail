@@ -1,0 +1,52 @@
+# Invarail's SUGGESTED SearXNG profile — a starting point, not a tested production
+# instance. Every key here is documented at https://docs.searxng.org/admin/settings/
+# (checked 2026-09-27). Mounted by docker-compose.yml at /etc/searxng/settings.yml.
+#
+# READ SEARXNG.md FIRST. A metasearch instance answers Invarail by fanning each query
+# out to the engines below FROM YOUR IP. Engines rate-limit and CAPTCHA-flag IPs that
+# search faster than a human. Invarail paces itself (1 query / 1.5s, daily ceiling in
+# tools.web.search.dailyQueryCeiling); nothing else should be pointed at this instance.
+
+use_default_settings:
+  engines:
+    # A modest general set. Fewer engines per query = fewer IPs' worth of reputation
+    # spent per search. Google is deliberately absent: it flags fastest. Names are the
+    # engine names from SearXNG's default settings.yml.
+    keep_only:
+      - duckduckgo
+      - brave
+      - bing
+      - startpage
+      - wikipedia
+
+server:
+  # The wizard replaces this; by hand: openssl rand -hex 32
+  secret_key: "REPLACE-ME"
+  # INBOUND limiter (blocks bots hitting THIS instance); needs a Valkey database. Off
+  # for a localhost-only instance. Turn it on — with a `valkey:` block — if you ever
+  # expose the port beyond this machine.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # Invarail calls /search?format=json. The default is html only → 403.
+  formats:
+    - html
+    - json
+  # Off: autocomplete sends an upstream request per keystroke. Not needed for an API client.
+  autocomplete: ""
+  safe_search: 0
+  # SearXNG's own reaction to engine errors — keep the defaults: an engine that returns a
+  # CAPTCHA is suspended for a day, so one flagged engine does not keep getting hit.
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+
+outgoing:
+  # Seconds an engine may take before its results are dropped from a query.
+  request_timeout: 3.0
+  max_request_timeout: 10.0
+  # Concurrent upstream connections. Lower than the default (100): Invarail's calls are
+  # serialized anyway, and a small pool keeps a burst from looking like a scraper.
+  pool_connections: 20
+  enable_http2: true

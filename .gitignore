@@ -25,3 +25,7 @@ invarail.config.json5
 scratchpad/
 .DS_Store
 localclaw.log
+
+# SearXNG runtime files written by the container (settings.yml is tracked)
+searxng/*
+!searxng/settings.yml

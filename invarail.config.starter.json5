@@ -7,7 +7,7 @@
   timezone: "America/New_York",
 
   ollama: {
-    host: "http://localhost:11434",
+    url: "http://localhost:11434",
   },
 
   router: {

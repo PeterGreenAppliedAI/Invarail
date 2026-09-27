@@ -84,6 +84,12 @@ export async function handleConsoleRequest(
       handleConfig(req, res, deps);
       return true;
     }
+    if (path === 'doctor' && method === 'GET') {
+      const { runDoctor } = await import('../setup/doctor.js');
+      const dr = await runDoctor({});
+      sendJson(res, { checks: dr.checks, passes: dr.passes, warns: dr.warns, fails: dr.fails, platform: dr.report.platform });
+      return true;
+    }
 
     // Channels
     if (path === 'channels' && method === 'GET') {

@@ -331,6 +331,11 @@ export const WebSearchConfigSchema = z.object({
   /** Base URL for self-hosted providers (searxng), e.g. "http://192.168.77.239:8080". No API key needed. */
   baseUrl: z.string().optional(),
   cacheTtlMs: z.number().default(15 * 60 * 1000),
+  /** Max outbound search queries per local day, all providers (0 = unlimited). Rate is
+   *  throttled per provider already; this bounds VOLUME — a self-hosted metasearch
+   *  spends the host IP's reputation with every engine it fans out to (SEARXNG.md).
+   *  The wizard writes 250; an existing config without it keeps unlimited. */
+  dailyQueryCeiling: z.number().int().nonnegative().default(0),
 });
 
 export const WebFetchConfigSchema = z.object({

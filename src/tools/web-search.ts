@@ -1,15 +1,17 @@
 import type { InvarailTool } from './types.js';
 import type { WebSearchConfig } from '../config/types.js';
 import { readCache, writeCache, normalizeCacheKey, type CacheEntry } from './web-shared.js';
+import { SearchQuota, quotaRefusal, SEARCH_QUOTA_PATH } from './search-quota.js';
 
 type SearchResult = { title: string; url: string; snippet: string };
 
 const searchCache = new Map<string, CacheEntry<SearchResult[]>>();
 
-export function createWebSearchTool(config?: WebSearchConfig): InvarailTool {
+export function createWebSearchTool(config?: WebSearchConfig, deps: { quota?: SearchQuota } = {}): InvarailTool {
   const provider = config?.provider ?? 'brave';
   const cacheTtl = config?.cacheTtlMs ?? 15 * 60 * 1000;
   const baseUrl = config?.baseUrl;
+  const quota = deps.quota ?? new SearchQuota(SEARCH_QUOTA_PATH, config?.dailyQueryCeiling ?? 0);
 
   return {
     name: 'web_search',
@@ -47,6 +49,13 @@ export function createWebSearchTool(config?: WebSearchConfig): InvarailTool {
       const apiKey = resolveApiKey(provider, config);
       if (!apiKey && provider !== 'searxng') {
         return `Error: No API key configured for ${provider}. Set the appropriate env var.`;
+      }
+
+      // Volume gate — after the cache (a hit costs nothing upstream), before the call.
+      const q = quota.tryConsume();
+      if (!q.ok) {
+        console.warn(`[Search] Daily ceiling reached (${q.used}/${q.ceiling}) — refusing "${query.slice(0, 60)}"`);
+        return quotaRefusal(q.used, q.ceiling);
       }
 
       let results: SearchResult[];

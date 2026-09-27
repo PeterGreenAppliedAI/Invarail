@@ -36,6 +36,27 @@ process.on('uncaughtException', (err) => {
 });
 
 async function main() {
+  // `npm start` runs the doctor first: a fresh clone gets a checklist with fixes, not a
+  // stack trace. Quiet mode prints only warnings/failures. Only the two checks that make
+  // boot pointless (no config, no Ollama) stop it; everything else degrades at runtime.
+  if (process.argv[2] === 'doctor') {
+    await import('./setup/doctor-cli.js');
+    return;
+  }
+  if (!process.argv.includes('--no-doctor')) {
+    const { runDoctor, formatDoctor } = await import('./setup/doctor.js');
+    const dr = await runDoctor({ quiet: true });
+    if (dr.warns + dr.fails > 0) {
+      console.log('[Invarail] doctor:');
+      console.log(formatDoctor(dr.checks, { quiet: true }));
+    }
+    const blocking = dr.checks.filter(c => c.status === 'FAIL' && (c.name === 'Config' || c.name === 'Ollama' || c.name === 'Node.js'));
+    if (blocking.length > 0) {
+      console.error(`[Invarail] Cannot start: ${blocking.map(b => b.name).join(', ')}. Run \`npm run doctor\` for the full report.`);
+      process.exit(1);
+    }
+  }
+
   const config = loadConfig();
 
   const hasChannels = Object.values(config.channels).some(c => c.enabled);
