@@ -583,6 +583,14 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   // 3. Resolve specialist config
   let specialistConfig = config.specialists[effectiveCategory] ?? getDefaultSpecialist(config, effectiveCategory);
 
+  // 3a. Expand `mcp:<server>` tokens to concrete tool names BEFORE the channel filters:
+  // a rule naming an actual MCP tool never matched the server token, so expansion later
+  // put the denied tool back into scope (outside review F09, 2026-09-27). Expansion is
+  // idempotent — runSpecialist expands again and concrete names pass through.
+  if (specialistConfig && specialistConfig.tools.some(t => t.startsWith('mcp:'))) {
+    specialistConfig = { ...specialistConfig, tools: params.registry.expandToolNames(specialistConfig.tools) };
+  }
+
   // 3b. Channel security — tool enforcement
   if (specialistConfig && channelSecurity?.blockedTools) {
     const filtered = specialistConfig.tools.filter(t => !channelSecurity.blockedTools!.includes(t));

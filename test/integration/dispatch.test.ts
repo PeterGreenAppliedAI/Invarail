@@ -511,3 +511,25 @@ describe('scope is checked before confirmation (review F02, 2026-09-27)', () => 
     expect(observations.some((o: string) => /confirm/i.test(o))).toBe(false);
   });
 });
+
+describe('channel filters apply to MCP-expanded tool names (review F09, 2026-09-27)', () => {
+  it('blockedTools naming a concrete MCP tool strips it even when the specialist lists the server token', async () => {
+    const registry = new ToolRegistry();
+    const demoRead = vi.fn().mockResolvedValue('secret contents');
+    registry.register({
+      name: 'demo_read', description: 'read', parameterDescription: 'path', category: 'mcp:demo',
+      parameters: { type: 'object', properties: { path: { type: 'string', description: 'p' } }, required: ['path'] },
+      execute: demoRead,
+    });
+    const chatFn = vi.fn()
+      .mockResolvedValueOnce({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'demo_read', arguments: { path: 'x' } } }] } })
+      .mockResolvedValue({ message: { role: 'assistant', content: 'done', tool_calls: null } });
+    const client = { generate: vi.fn().mockResolvedValue({ response: 'exec' }), chat: chatFn, listModels: vi.fn().mockResolvedValue([]), isAvailable: vi.fn().mockResolvedValue(true) } as unknown as OllamaClient;
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.specialists.exec = { model: 'm', maxTokens: 512, temperature: 0.1, maxIterations: 3, tools: ['mcp:demo'], dispatchMode: 'arena' } as any;
+    config.channels.discord = { enabled: true, security: { blockedTools: ['demo_read'] } } as any;
+
+    await dispatchMessage({ client, registry, config, message: 'read it', sourceContext: { channel: 'discord', channelId: 'c', senderId: 'guest' } });
+    expect(demoRead).not.toHaveBeenCalled();
+  });
+});
