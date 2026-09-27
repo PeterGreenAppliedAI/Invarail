@@ -100,7 +100,7 @@ describe('authority boundary (experience informs, never expands authority)', () 
       'src/dispatch.ts',                       // priming injection (plain text)
       'src/services/heartbeat-service.ts',     // synthesis step
       'src/learnings/experience-synthesis.ts', // writer
-      'src/orchestrator.ts',                   // !experiences command + selfMod wiring
+      'src/orchestrator.ts', 'src/commands/builtin.ts',                   // !experiences command + selfMod wiring
       'src/coding/self-mod-service.ts',        // WRITER of gate-verified outcomes (Phase C) —
                                                // records system-observed events; never reads
                                                // experience to alter permissions or routing

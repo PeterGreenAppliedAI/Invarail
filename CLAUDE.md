@@ -215,7 +215,7 @@ Additional security:
 ```
 src/
   index.ts                  # Entry point (REPL or Orchestrator mode)
-  orchestrator.ts           # Main class: lifecycle, heartbeat, briefing, commands
+  orchestrator.ts           # Main class: lifecycle, heartbeat, briefing; slash commands live in commands/builtin.ts
   dispatch.ts               # Router → Specialist/Pipeline + 6-layer security
   errors.ts                 # Error codes + factory functions (single choke point)
   metrics.ts                # Logging/telemetry
@@ -354,6 +354,7 @@ src/
     text.ts                   #   stripThinkingTags, splitFinalMessage (extracted from orchestrator)
 
   commands/
+    builtin.ts                #   runBuiltinCommand() — every `!…` command, carved out of the orchestrator 2026-09-27 (CommandHost interface)
     router.ts                 #   isCommand(), getCommandName() — command detection
     types.ts                  #   CommandContext interface
 
