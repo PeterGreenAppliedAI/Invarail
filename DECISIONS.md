@@ -4,6 +4,18 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## Two Outside Reviews Land — the Walls Have Seams (September 27 2026)
+
+Peter brought two independent reviews of the GitHub snapshot (`2fdfe8c`, ~140 commits behind local main): a 24-finding security review (17 P1, 7 P2, each with an isolated reproduction) and a broader architecture review ("A−; the security plane is authored to a standard I rarely see; one real SSRF hole"). Rule for the discussion: **don't fix, verify, then rank for THIS deployment.** Every P1 was checked against the running code — all seventeen still hold; only the stale-docs complaints were already closed locally.
+
+**What is live on this LAN, in order:** (1) the console binds `0.0.0.0` with no token, answers CORS preflight for any origin, and takes `senderId` from the request body — any web page open in any browser on the home network can act as the owner, and an IP allowlist would not help because the request comes from the owner's own device (F01+F07+F08 are one hole). (2) The `[FILE:]` extractor reads whatever path the model writes in its answer, no containment — prompt injection from a fetched page → attach `.env` (F04). (3) The browser tool never calls `assertPublicUrl`; only `web_fetch` does. And the guard it has misses WHATWG-canonical mapped IPv6 (`::ffff:7f00:1`) (F11). (4) Confirmation expands scope: the confirm set is resolved over the whole registry and checked BEFORE the scoped executor's allowed-set check, and the confirm handler executes with a scope of exactly the stored tool — a policy-stripped tool becomes a preview instead of a denial, and "confirm" authorizes it (F02). Lower exposure for a one-owner box but real: MCP expansion after channel filters (F09), cron jobs run as `ownerId` with no creator (F03), code sessions and Pi on the host regardless of Docker (F05/F06/F18), five tools each doing their own path containment badly (F10, F12–F16), password values in extension DOM snapshots (F17). Moot here: the built-adapter asset (F20 — this box runs from source). Platform/robustness: F21–F24.
+
+**Peter's push-back, and the answer:** "no one else will be using it, its my home internet." True, and beside the point — the threat is a browser, not a person. A page with a hidden script and a guess at `:3100` on a common local address is enough, and the request originates from his own laptop's IP. **Decision: the token is the wall**, not loopback (the phone console and the Chrome extension need the LAN address) and not an allowlist (none exists for web, and it would pass the browser vector). Done tonight, zero code: `WEB_TOKEN` in `.env`, `token: "${WEB_TOKEN}"` on `channels.web`; the API, the React console (Login page → localStorage) and the extension (settings) already carry a bearer. Known gap: the standalone hold-to-talk page at `/` sends no token and will 401 — unused; fix if it is ever used. What the token does NOT fix: caller-chosen `senderId` (F07) for anyone holding the token, and nothing in the prompt-injection chain.
+
+**Next, in Peter's order once he says so:** the `[FILE:]` extractor (structured artifacts from authorized tools, or at minimum canonical containment to workspace/media roots), `assertPublicUrl` in the browser tool + the IPv6 canonical-form fix, the confirm-scope reorder (allowed-set check first; confirm handler re-checks policy). Then a single canonical path-policy module the five tools call, and a design decision on a scheduled job's principal.
+
+---
+
 ## Memory Gets Its Intake Fixed — and a Synthesis Pass Is Measured Out (September 20 2026)
 
 ### The question that reordered the work
