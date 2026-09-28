@@ -14,6 +14,7 @@ import type {
 import { channelConnectError, channelSendError } from '../../errors.js';
 import type { ConsoleApiDeps } from '../../console/types.js';
 import { handleConsoleRequest } from '../../console/api.js';
+import { resolveWebIdentity } from '../../security/web-identity.js';
 
 const voiceHtml = readFileSync(new URL('./voice-ui.html', import.meta.url), 'utf-8');
 
@@ -217,9 +218,10 @@ export class WebApiAdapter implements ChannelAdapter {
     const mimeType = req.headers['content-type'] ?? 'audio/webm';
     const msgId = `web-voice-${Date.now()}`;
 
-    // Allow senderId override via query param (used by console frontend)
+    // A claimed senderId partitions the session; with a token the principal is the owner (F07/F08).
     const urlObj = new URL(req.url ?? '', `http://${req.headers.host}`);
-    const senderId = urlObj.searchParams.get('senderId') ?? 'web-user';
+    const identity = resolveWebIdentity({ config: this.consoleDeps?.config, claimed: urlObj.searchParams.get('senderId'), channelId: 'web', fallback: 'web-user' });
+    const senderId = identity.senderId;
     console.log(`[Web] Voice message from ${senderId} (${audioBuffer.length} bytes, ${mimeType})`);
 
     // SSE headers
@@ -315,12 +317,13 @@ export class WebApiAdapter implements ChannelAdapter {
       }, 300_000);
     });
 
+    const identity = resolveWebIdentity({ config: this.consoleDeps?.config, claimed: parsed.senderId, channelId: 'web', fallback: 'web-user' });
     const inbound: InboundMessage = {
       id: msgId,
       channel: 'web',
       content: parsed.message,
-      senderId: 'web-user',
-      channelId: 'web',
+      senderId: identity.senderId,
+      channelId: identity.channelId,
       timestamp: new Date(),
     };
 

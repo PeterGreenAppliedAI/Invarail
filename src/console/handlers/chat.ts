@@ -8,6 +8,7 @@ import { resolveWorkspacePath } from '../../agents/scope.js';
 import { saveAttachment, isImageMime } from '../../services/attachments.js';
 import { stripThinkingTags } from '../../utils/text.js';
 import { handleConfirmation } from '../../security/confirm-handler.js';
+import { resolveWebIdentity } from '../../security/web-identity.js';
 import { logAutonomousAction } from '../../metrics.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -111,12 +112,13 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse, deps
   }, 15_000);
 
   try {
-    const senderId = body.senderId
-      ?? deps.config.heartbeat?.delivery?.target
-      ?? 'console-user';
+    // Identity is decided in ONE place (src/security/web-identity.ts): with a token the
+    // bearer is the owner and a claimed senderId only partitions the session (F07/F08).
+    const identity = resolveWebIdentity({ config: deps.config, claimed: body.senderId, channelId: 'console', fallback: deps.config.heartbeat?.delivery?.target ?? 'console-user' });
+    const senderId = identity.senderId;
 
     const route = resolveRoute(
-      { channel: 'console', senderId, channelId: 'console' },
+      { channel: 'console', senderId, channelId: identity.channelId },
       deps.config,
     );
 
@@ -334,11 +336,9 @@ export async function handleChatReset(req: IncomingMessage, res: ServerResponse,
 
 /** Return the persisted console chat transcript so the UI survives navigation/reload. */
 export function handleChatHistory(req: IncomingMessage, res: ServerResponse, deps: ConsoleApiDeps): void {
-  // Mirror handleChat's senderId resolution so we load the SAME session the chat POST writes to.
-  const senderId = new URL(req.url ?? '', 'http://localhost').searchParams.get('senderId')
-    ?? deps.config.heartbeat?.delivery?.target
-    ?? 'console-user';
-  const route = resolveRoute({ channel: 'console', senderId, channelId: 'console' }, deps.config);
+  // Mirror handleChat's identity resolution so we load the SAME session the chat POST writes to.
+  const identity = resolveWebIdentity({ config: deps.config, claimed: new URL(req.url ?? '', 'http://localhost').searchParams.get('senderId'), channelId: 'console', fallback: deps.config.heartbeat?.delivery?.target ?? 'console-user' });
+  const route = resolveRoute({ channel: 'console', senderId: identity.senderId, channelId: identity.channelId }, deps.config);
 
   try {
     const turns = deps.sessionStore.loadTranscript(route.agentId, route.sessionKey);

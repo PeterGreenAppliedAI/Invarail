@@ -148,6 +148,8 @@ Channel security is enforced in `src/dispatch.ts` via 6 layered filters applied 
 
 **Target-bound standing grants** (`src/security/grants.ts`): the rung between propose_confirm and blanket autoApproveTools. Tools declaring `targetArgs` (the params naming their external target — `send_message` → `['channel','channelId']`) are grant-eligible; replying `always <id>` to a confirm preview executes AND mints a grant for that exact tool→target key, so future identical-target calls run silently (logged `grant_used`). Tools without targetArgs (exec) are structurally ineligible. Grants mint only on successful execution, are principal-bound, exact-match, revocable via `!grants revoke <id>`. Implicit reply-origin approval: a send to the exact conversation the request came from never asks.
 
+**Web/console identity (F07/F08, 2026-09-27):** `src/security/web-identity.ts` is the ONE place a web or console request becomes a principal. With `channels.web.token` set, a request that passed the Bearer check IS the owner (`config.ownerId`) — the token is the owner's credential — and any `senderId` the caller sends (the extension mints one per device) only partitions the session (`channelId: console:<claim>`), never decides ownership, trust or tool visibility. Without a token (loopback bind, or `insecureOpen` chosen deliberately) the claim stands as before. The console chat POST, the history GET, the web adapter's chat POST and voice path all go through it.
+
 **Owner-only tier:** `ownerId` in config is a single string (not a list). Tools in `ownerOnlyTools` are completely invisible to non-owners — the model never sees them in the tool list. This is a **code gate** checked before any model involvement.
 
 Additional security:
@@ -524,7 +526,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + the e2e harness `--selftest` (real registry/pipelines, no model) + build + console build on every push/PR to main
-- **Current:** 1127 tests across 129 files
+- **Current:** 1131 tests across 130 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel), `scripts/model-eval.ts` (the ENGINE on mock tools — evals/), **`scripts/e2e-eval.ts`** (the FRONT DOOR: a wizard-generated config for the model under test through `dispatchMessage` in a scratch install, real registry/stores/pipelines, web stubbed over a fixed corpus, code oracles + `--selftest`; found the one-model-install reload + thinking-router bugs 2026-09-27). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

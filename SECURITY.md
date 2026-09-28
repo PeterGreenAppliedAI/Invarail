@@ -23,6 +23,12 @@ is no bounty, but findings are credited in DECISIONS.md unless you ask otherwise
 
 ## Scope notes
 
+- **Who a web/console request is.** With `channels.web.token` set, the bearer is the
+  owner's credential and the request runs as `ownerId`; a `senderId` in the body or query
+  only partitions the session (one transcript per device) and cannot make a caller someone
+  else. Without a token — loopback, or `insecureOpen` chosen on purpose — the caller's claim
+  stands, which is why the doctor warns on `insecureOpen`.
+
 - The web console is safe to expose only with `channels.web.token` set; the adapter
   refuses to bind a non-loopback address without one.
 - `exec` runs in Docker when configured; `code_session` and Pi builds run on the
