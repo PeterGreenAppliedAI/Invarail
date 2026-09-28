@@ -38,13 +38,12 @@ jobs:
         working-directory: console
         run: npm ci && npm run build
 
-  # Windows: the suite is not green there yet (POSIX fixtures, chmod, python3 naming — the
-  # reviewers' count was 16). This job is the Windows box the project never had: it runs
-  # the same checks, reports, and cannot turn main red until the tail is fixed. Flip
-  # continue-on-error off when it is.
+  # Windows: the Windows box the project never had. Green since 35e0a17 (2026-09-28: fifteen
+  # fixture assumptions made platform-aware, plus four real runtime bugs — python3 naming,
+  # forward-slash path slugs, an unhandled MCP stdin EPIPE, and the harness holding SQLite
+  # open during cleanup). Blocking: main cannot go red on Windows unseen.
   windows:
     runs-on: windows-latest
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4
