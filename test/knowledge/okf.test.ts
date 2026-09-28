@@ -147,8 +147,8 @@ describe('index.md / log.md / conformance', () => {
     expect(convertVaultToOkf(v, { apply: true }).candidates).toEqual([]);   // idempotent
   });
 
-  it('factConceptPath lives under the memory domain', () => {
-    expect(factConceptPath('/v', 'fact_1')).toBe('/v/memory/fact_1.md');
+  it('factConceptPath lives under the memory domain (a filesystem path — OS-native, never an artifact)', () => {
+    expect(factConceptPath('/v', 'fact_1')).toBe(join('/v', 'memory', 'fact_1.md'));
     expect(existsSync('/v')).toBe(false);
   });
 });
