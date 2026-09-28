@@ -82,7 +82,11 @@ export interface VerificationResult {
   reason: string;
   recommended_action: ClaimAction;
   /** Independent cross-check result, when the claim was escalated to Tier-1. */
-  tier1?: { status: Tier1Status; source_url?: string; evidence?: string; reason?: string };
+  tier1?: Tier1Result;
+  /** Carried from the extracted claim so verification.json is auditable on its own —
+   *  reading the 2026-09-28 AI-news run meant reconstructing these by hand. */
+  claim_type?: string;
+  entities?: string[];
 }
 
 export interface Tier1Result {
@@ -90,6 +94,9 @@ export interface Tier1Result {
   source_url?: string;
   evidence?: string;
   reason?: string;
+  /** Set when the judge said CONTRADICTED but the evidence gate set it aside (off-subject
+   *  evidence). The verdict is recorded for audit; it never becomes a correction. */
+  set_aside?: string;
 }
 
 /** Patch-set sent to the corrector: only failed claims, each with an edit instruction. */
@@ -272,6 +279,8 @@ export function parseVerdict(raw: string, claim: Claim, fallbackSource?: string)
     evidence_sentence: typeof o.evidence_sentence === 'string' && o.evidence_sentence.trim() ? o.evidence_sentence.trim() : undefined,
     reason: typeof o.reason === 'string' ? o.reason : '',
     recommended_action: action,
+    claim_type: claim.claim_type,
+    entities: claim.entities,
   };
 }
 
@@ -342,6 +351,7 @@ export function tier1JudgePrompt(claim: Claim, sources: Array<{ url: string; tex
       '- SILENT: the sources do not address the specific detail.',
       'Be conservative: only CONTRADICTED when a source clearly states a conflicting fact. Judge ONLY from the sources.',
       'RANGES AND SETS: a claim about a range, set, or maximum ("labs released models from 754B to 2.78T") is NOT contradicted by a source describing one different instance inside or near that range (one model at 1.6T) — only by a source that directly disputes the bound itself. When in doubt between CONTRADICTED and SILENT for a range claim, choose SILENT.',
+      'SAME SUBJECT: a contradiction must be about the SAME thing the claim names. A source about a sibling product (the 230M model when the claim names the 3B), an earlier launch of the parent product (the platform when the claim names a feature added to it), or a different body (the vendor\'s lab when the claim names an outside certifier) is SILENT, not CONTRADICTED. Your quoted evidence must itself name the claim\'s subject.',
       'Return ONLY this JSON: {"status":"CONFIRMED|CONTRADICTED|SILENT","source_url":"<url or empty>","evidence":"<exact conflicting/confirming sentence or empty>","reason":"<one sentence>"}',
       'Return ONLY JSON. /no_think',
     ].join('\n'),
@@ -362,15 +372,76 @@ export function parseTier1(raw: string): Tier1Result {
   };
 }
 
+/** Entity tokens are proper nouns and model names — short by nature (AMD, x.ai, TÜV SÜD,
+ *  3B), so the floor is 3 chars (or any digit), and the alphabet is Unicode. */
+function entityTokens(entities: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const e of entities) {
+    for (const t of e.toLowerCase().match(/[\p{L}\p{N}$%.]+/gu) ?? []) {
+      if ((/\p{N}/u.test(t) || t.length >= 3) && !STOP.has(t)) out.add(t);
+    }
+  }
+  return out;
+}
+
+/**
+ * The evidence gate on a CONTRADICTED verdict. A real contradiction restates the claim with
+ * ONE detail changed, so its evidence names the claim's subject and shares most of its
+ * tokens. Off-subject evidence — a sibling product, the parent product's launch, a different
+ * certifying body — shares little. The 2026-09-28 AI-news run "corrected" three of four
+ * cross-checked claims on evidence about something else (LFM2.5 230M for the VL-3B claim,
+ * the Halos lab for a TÜV SÜD claim, the May managed-agents launch for a September hooks
+ * claim); this gate sets all three aside and keeps the one real correction (a GPT-6 date).
+ * Code decides; the judge only proposes.
+ */
+export const TIER1_EVIDENCE_OVERLAP_FLOOR = 0.5;
+
+export function tier1EvidenceGate(claim: Pick<Claim, 'claim' | 'entities'> & { claim_type?: string }, t: Tier1Result): { ok: boolean; reason?: string } {
+  const evidence = (t.evidence ?? '').trim();
+  if (!evidence) return { ok: false, reason: 'no quoted evidence' };
+  // The source's hostname counts toward naming the subject: "Today we are releasing Muse
+  // Glimmer" on ai.meta.com names Meta.
+  const evLower = `${evidence} ${t.source_url ?? ''}`.toLowerCase();
+  const evTokens = new Set([
+    ...(evLower.match(/[\p{L}\p{N}$%.]+/gu) ?? []),
+    ...claimTokens(evidence),
+  ]);
+  // The subject is what the claim ITSELF names: an entity the extractor listed for context
+  // ("OpenAI" on a claim that only names GPT-6 Sol and Luna) is not required of the evidence —
+  // "the company released GPT-6 Sol" is a fine restatement. Entities the claim text carries
+  // (Liquid AI, LFM2.5-VL-3B, TÜV SÜD) must all be there.
+  const claimLower = claim.claim.toLowerCase();
+  const namedInClaim = (claim.entities ?? []).filter(e => [...entityTokens([e])].every(t => claimLower.includes(t)));
+  const missing = [...entityTokens(namedInClaim)].filter(t => !evTokens.has(t) && !evLower.includes(t));
+  if (missing.length > 0) return { ok: false, reason: `evidence does not name the claim's subject (missing: ${missing.join(', ')})` };
+  // An absence claim ("no source mentions X") is refuted by presence — evidence that names X
+  // and says it shipped shares the subject, not the sentence. Subject coverage is the test.
+  if (claim.claim_type === 'existence') return { ok: true };
+  const target = claimTokens(claim.claim);
+  if (target.size === 0) return { ok: true };
+  let overlap = 0;
+  for (const tok of target) if (evTokens.has(tok)) overlap++;
+  const ratio = overlap / target.size;
+  if (ratio < TIER1_EVIDENCE_OVERLAP_FLOOR) return { ok: false, reason: `evidence restates too little of the claim (${Math.round(ratio * 100)}% token overlap; a contradiction changes one detail, not the subject)` };
+  return { ok: true };
+}
+
 /**
  * Fold a Tier-1 result into a claim's verification result.
  * CONTRADICTED → escalate to a correction with the independent evidence.
  * CONFIRMED → if the cited-source pass had only hedged it, we can keep it (un-hedge).
  * SILENT → leave the cited-source verdict untouched.
  */
-export function applyTier1(v: VerificationResult, t: Tier1Result): VerificationResult {
+export function applyTier1(v: VerificationResult, t: Tier1Result, claim?: Claim): VerificationResult {
   const next: VerificationResult = { ...v, tier1: t };
   if (t.status === 'CONTRADICTED') {
+    const gate = tier1EvidenceGate(claim ?? { claim: v.claim, entities: v.entities ?? [], claim_type: v.claim_type }, t);
+    if (!gate.ok) {
+      // Recorded, not applied: the judge's verdict stays in the audit file with the reason it
+      // was set aside, and the cited-source action stands (SILENT semantics).
+      next.tier1 = { ...t, set_aside: gate.reason };
+      return next;
+    }
     next.verdict = 'CONTRADICTED';
     next.recommended_action = 'correct';
   } else if (t.status === 'CONFIRMED' && (v.recommended_action === 'qualify' || v.recommended_action === 'attribute')) {
@@ -435,7 +506,26 @@ export function guardRewrite(rewritten: string, original: string): string | null
   if ((clean.match(/according to/gi) ?? []).length > 1) return null;
   // A splice must not orphan formatting markers
   if ((clean.match(/\*\*/g) ?? []).length % 2 !== 0) return null;
+  // Unbalanced parentheses/brackets = a clause fell out mid-rewrite ("than ONNX 1,396 ms)",
+  // the 2026-09-28 AI-news report). Skip beats a scar.
+  for (const [open, close] of [['(', ')'], ['[', ']']] as const) {
+    if ((clean.split(open).length) !== (clean.split(close).length)) return null;
+  }
+  // A citation marker repeated beyond what a hedge adds is the same wound ("[14].According
+  // to [14], … [14]"): one "According to [n]" may add one marker, never more.
+  const count = (s: string) => { const m = new Map<string, number>(); for (const c of s.match(/\[\d+\]/g) ?? []) m.set(c, (m.get(c) ?? 0) + 1); return m; };
+  const before = count(original);
+  for (const [marker, n] of count(clean)) if (n > (before.get(marker) ?? 0) + 1) return null;
   return clean;
+}
+
+/** Splice a rewritten sentence over the located one, keeping the whitespace the locator
+ *  captured around it — the rewrite is trimmed, and dropping the leading space glued
+ *  "[14].According to" together (2026-09-28). */
+export function spliceSentence(md: string, loc: { start: number; end: number; sentence: string }, rewritten: string): string {
+  const lead = loc.sentence.match(/^\s*/)?.[0] ?? '';
+  const trail = loc.sentence.match(/\s*$/)?.[0] ?? '';
+  return md.slice(0, loc.start) + lead + rewritten.trim() + trail + md.slice(loc.end);
 }
 
 /**
@@ -533,8 +623,10 @@ export function verificationSection(results: VerificationResult[]): string {
   if (results.length === 0) return '';
   const corrected = results.filter(needsCorrection);
   const crossChecked = results.filter(v => v.tier1).length;
+  const setAside = results.filter(v => v.tier1?.set_aside).length;
   const lines: string[] = ['', '## Verification', ''];
-  const checkedNote = crossChecked > 0 ? ` (${crossChecked} cross-checked against independent sources)` : '';
+  const asideNote = setAside > 0 ? `; ${setAside} off-subject contradiction${setAside === 1 ? '' : 's'} set aside` : '';
+  const checkedNote = crossChecked > 0 ? ` (${crossChecked} cross-checked against independent sources${asideNote})` : '';
   if (corrected.length === 0) {
     lines.push(`All ${results.length} checkable claims were verified against their cited sources${checkedNote}.`);
   } else {

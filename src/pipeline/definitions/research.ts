@@ -9,7 +9,7 @@ import {
   type Claim, type VerificationResult,
   extractClaimsPrompt, parseClaims, CLAIMS_JSON_SCHEMA, pickRelevantSources, entailmentPrompt, parseVerdict,
   shouldEscalate, escalationPriority, tier1Query, tier1JudgePrompt, parseTier1, applyTier1,
-  buildPatchSet, locateClaimSentence, sentenceCorrectionPrompt, verificationSection, needsCorrection, stripStrikethrough, guardRewrite,
+  buildPatchSet, locateClaimSentence, sentenceCorrectionPrompt, verificationSection, needsCorrection, stripStrikethrough, guardRewrite, spliceSentence,
 } from '../verification.js';
 
 /**
@@ -705,7 +705,7 @@ export const researchPipeline: PipelineDefinition = {
             } catch { /* leave empty */ }
           }
           if (candidates.length === 0) {
-            return { claim_id: claim.claim_id, claim: claim.claim, verdict: 'AMBIGUOUS', cited_source: citedUrl, supported_elements: [], unsupported_elements: [], reason: 'No cached source available to check against — left as drafted.', recommended_action: 'keep' };
+            return { claim_id: claim.claim_id, claim: claim.claim, verdict: 'AMBIGUOUS', cited_source: citedUrl, supported_elements: [], unsupported_elements: [], reason: 'No cached source available to check against — left as drafted.', recommended_action: 'keep', claim_type: claim.claim_type, entities: claim.entities };
           }
           try {
             const { system, user } = entailmentPrompt(claim, candidates);
@@ -718,7 +718,7 @@ export const researchPipeline: PipelineDefinition = {
             return parseVerdict(resp.message?.content ?? '', claim, citedUrl);
           } catch (err) {
             console.warn(`[Verify] judge failed for ${claim.claim_id}:`, err instanceof Error ? err.message : err);
-            return { claim_id: claim.claim_id, claim: claim.claim, verdict: 'AMBIGUOUS', cited_source: citedUrl, supported_elements: [], unsupported_elements: [], reason: 'Judge error — left as drafted.', recommended_action: 'keep' };
+            return { claim_id: claim.claim_id, claim: claim.claim, verdict: 'AMBIGUOUS', cited_source: citedUrl, supported_elements: [], unsupported_elements: [], reason: 'Judge error — left as drafted.', recommended_action: 'keep', claim_type: claim.claim_type, entities: claim.entities };
           }
         });
         ctx.params._verifications = results;
@@ -775,8 +775,10 @@ export const researchPipeline: PipelineDefinition = {
             const { system, user } = tier1JudgePrompt(claim, fetched);
             const resp = await ctx.client.chat({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], ...noThink(model), options: { temperature: 0.1, num_predict: 400 } });
             const t1 = parseTier1(resp.message?.content ?? '');
-            if (t1.status === 'CONTRADICTED') contradicted++;
-            return applyTier1(v, t1);
+            const folded = applyTier1(v, t1, claim);
+            if (folded.tier1?.set_aside) console.warn(`[Verify] Tier-1 ${v.claim_id}: CONTRADICTED set aside — ${folded.tier1.set_aside}`);
+            else if (t1.status === 'CONTRADICTED') contradicted++;
+            return folded;
           } catch (err) {
             console.warn(`[Verify] Tier-1 failed for ${v.claim_id}:`, err instanceof Error ? err.message : err);
             return v;
@@ -836,7 +838,7 @@ export const researchPipeline: PipelineDefinition = {
               console.warn(`[Verify] rejected rewrite for ${id} (guard: URL/stacked-hedge/format/size)`);
               continue;
             }
-            md = md.slice(0, loc.start) + rewritten + md.slice(loc.end);
+            md = spliceSentence(md, loc, rewritten);
             applied++;
           } catch (err) {
             console.warn(`[Verify] sentence correction failed for ${id}:`, err instanceof Error ? err.message : err);

@@ -18,8 +18,7 @@ import {
   entailmentPrompt,
   type Claim,
   type VerificationResult,
-  type Tier1Result,
-} from '../../src/pipeline/verification.js';
+  type Tier1Result, tier1EvidenceGate, spliceSentence, } from '../../src/pipeline/verification.js';
 
 describe('parseJsonLoose', () => {
   it('parses a bare array', () => {
@@ -105,8 +104,8 @@ describe('Tier-1 independent cross-check', () => {
 
   it('applyTier1 CONTRADICTED escalates the claim to a correction', () => {
     const v: VerificationResult = { claim_id: 't1', claim: corporate.claim, verdict: 'VERIFIED', supported_elements: [], unsupported_elements: [], reason: '', recommended_action: 'keep' };
-    const t: Tier1Result = { status: 'CONTRADICTED', source_url: 'https://nvidia.com/news', evidence: 'NVIDIA licensed Groq tech in December 2025.' };
-    const out = applyTier1(v, t);
+    const t: Tier1Result = { status: 'CONTRADICTED', source_url: 'https://nvidia.com/news', evidence: "NVIDIA licensed Groq's LPU technology for $20 billion in December 2025." };
+    const out = applyTier1(v, t, corporate);
     expect(out.verdict).toBe('CONTRADICTED');
     expect(out.recommended_action).toBe('correct');
     expect(needsCorrection(out)).toBe(true);
@@ -134,6 +133,89 @@ describe('Tier-1 independent cross-check', () => {
     expect(md).toContain('CONTRADICTED');
     expect(md).toMatch(/independent source/i);
     expect(md).toContain('December 2025');
+  });
+});
+
+describe('Tier-1 evidence gate (the 2026-09-28 AI-news run, verification.json)', () => {
+  const claimOf = (claim: string, entities: string[]): Claim => ({ claim_id: 'x', claim, claim_type: 'corporate_event', time_sensitive: true, entities, requires_verification: true });
+  const base = (claim: string): VerificationResult => ({ claim_id: 'x', claim, verdict: 'AMBIGUOUS', supported_elements: [], unsupported_elements: [], reason: '', recommended_action: 'qualify' });
+
+  it('keeps the one real correction: evidence restates the claim with the date changed', () => {
+    const c = claimOf('GPT-6 Sol and GPT-6 Luna were released on September 21, 2026.', ['OpenAI', 'GPT-6 Sol', 'GPT-6 Luna']);
+    const t: Tier1Result = { status: 'CONTRADICTED', evidence: 'On September 22, 2026, the company released GPT-6 Sol and GPT-6 Luna' };
+    expect(tier1EvidenceGate(c, t).ok).toBe(true);
+    const out = applyTier1(base(c.claim), t, c);
+    expect(out.recommended_action).toBe('correct');
+    expect(out.tier1?.set_aside).toBeUndefined();
+  });
+
+  it('sets aside evidence about a sibling product (LFM2.5 230M / VL-1.6B for a VL-3B claim)', () => {
+    const c = claimOf("Liquid AI's LFM2.5-VL-3B demonstrated day-one WebGPU inference in a browser.", ['Liquid AI', 'LFM2.5-VL-3B']);
+    const t: Tier1Result = { status: 'CONTRADICTED', evidence: "No multimodal input: LFM2.5 230M is text-only (though Liquid AI's LFM2.5-VL-1.6B handles vision separately)" };
+    const g = tier1EvidenceGate(c, t);
+    expect(g.ok).toBe(false);
+    expect(g.reason).toMatch(/3b/);
+    const out = applyTier1(base(c.claim), t, c);
+    expect(out.recommended_action).toBe('qualify');      // the cited-source action stands
+    expect(out.verdict).toBe('AMBIGUOUS');
+    expect(out.tier1?.status).toBe('CONTRADICTED');       // the judge's verdict is still on record
+    expect(out.tier1?.set_aside).toMatch(/subject/);
+  });
+
+  it('sets aside evidence about a different body (the Halos lab for a TÜV SÜD certification claim)', () => {
+    const c = claimOf("NVIDIA's Halos platform is certified to ISO 26262 ASIL D and ISO/SAE 21434 by TÜV SÜD.", ['NVIDIA', 'Halos', 'TÜV SÜD']);
+    const t: Tier1Result = { status: 'CONTRADICTED', evidence: 'NVIDIA unveils Halos, a lab that checks the safety paperwork of robots and self-driving cars but certifies neither' };
+    const g = tier1EvidenceGate(c, t);
+    expect(g.ok).toBe(false);
+    expect(g.reason).toMatch(/tüv/);
+  });
+
+  it("sets aside the parent product's launch when the claim is about a feature (managed agents vs hooks)", () => {
+    const c = claimOf("Google's Gemini API managed agents introduced environment hooks on September 22, 2026.", ['Google', 'Gemini API']);
+    const t: Tier1Result = { status: 'CONTRADICTED', evidence: "May 19, 2026 ... Today, we're launching Managed Agents in the Gemini API." };
+    expect(tier1EvidenceGate(c, t).ok).toBe(false);
+    expect(applyTier1(base(c.claim), t, c).recommended_action).toBe('qualify');
+  });
+
+  it('a CONTRADICTED with no quoted evidence never corrects', () => {
+    const c = claimOf('NVIDIA acquired Groq in December 2024.', ['NVIDIA', 'Groq']);
+    const out = applyTier1(base(c.claim), { status: 'CONTRADICTED' }, c);
+    expect(out.recommended_action).toBe('qualify');
+    expect(out.tier1?.set_aside).toMatch(/no quoted evidence/);
+  });
+
+  it('the appendix counts set-aside contradictions and does not list them as corrections', () => {
+    const c = claimOf("Liquid AI's LFM2.5-VL-3B demonstrated day-one WebGPU inference in a browser.", ['Liquid AI', 'LFM2.5-VL-3B']);
+    const kept: VerificationResult = { ...base(c.claim), verdict: 'VERIFIED', recommended_action: 'keep' };
+    const out = applyTier1(kept, { status: 'CONTRADICTED', evidence: 'LFM2.5 230M is text-only' }, c);
+    const md = verificationSection([out]);
+    expect(md).toMatch(/1 off-subject contradiction set aside/);
+    expect(md).not.toMatch(/independent source:/);
+  });
+});
+
+describe('guardRewrite', () => {
+  const original = 'On an Apple M4 GPU, these kernels ran 2.57× faster (geometric mean) than ONNX Runtime Web (median 1,396 ms) [14].';
+  it('accepts a clean hedge', () => {
+    expect(guardRewrite('According to [14], on an Apple M4 GPU these kernels ran 2.57× faster (geometric mean) than ONNX Runtime Web (median 1,396 ms) [14].', original)).not.toBeNull();
+  });
+  it('rejects a rewrite that dropped a clause and left an unbalanced parenthesis', () => {
+    expect(guardRewrite('According to [14], these kernels ran 2.57× faster (geometric mean) and 1.90× faster (median) than ONNX 1,396 ms) [14].', original)).toBeNull();
+  });
+  it('rejects a rewrite that repeats a citation marker more than the original carried it', () => {
+    expect(guardRewrite('According to [14], these kernels ran 2.57× faster [14] than ONNX Runtime Web [14].', original)).toBeNull();
+  });
+});
+
+describe('spliceSentence', () => {
+  it('keeps the whitespace the locator captured, so "[14].According to" never happens', () => {
+    const md = 'Hugging Face released the library under Apache-2.0 [14]. On an Apple M4 GPU these kernels ran 2.57× faster than ONNX Runtime Web [14]. A crowdsourced suite collects data.';
+    const loc = locateClaimSentence(md, 'these kernels ran 2.57× faster than ONNX Runtime Web')!;
+    expect(loc.sentence.startsWith(' ')).toBe(true);
+    const out = spliceSentence(md, loc, '  According to [14], on an Apple M4 GPU these kernels ran 2.57× faster than ONNX Runtime Web [14].  ');
+    expect(out).toContain('[14]. According to [14], on an Apple M4 GPU');
+    expect(out).toContain('[14]. A crowdsourced suite');
+    expect(out).not.toContain('.According');
   });
 });
 
@@ -403,7 +485,7 @@ describe('model-nominated external checks (absence claims)', () => {
 
   it('applyTier1 CONTRADICTED on an absence claim escalates to correction', () => {
     const v: VerificationResult = { claim_id: 'e1', claim: phantom.claim, verdict: 'UNSUPPORTED', supported_elements: [], unsupported_elements: [], reason: '', recommended_action: 'qualify' };
-    const out = applyTier1(v, { status: 'CONTRADICTED', source_url: 'https://ai.meta.com/blog/muse-glimmer', evidence: 'Today we are releasing Muse Glimmer.' });
+    const out = applyTier1(v, { status: 'CONTRADICTED', source_url: 'https://ai.meta.com/blog/muse-glimmer', evidence: 'Today we are releasing Muse Glimmer.' }, phantom);
     expect(out.verdict).toBe('CONTRADICTED');
     expect(out.recommended_action).toBe('correct');
   });
