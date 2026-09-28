@@ -66,7 +66,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          node -e "const r=require('./vitest-windows.json'); const f=[]; for (const file of r.testResults) for (const t of file.assertionResults) if (t.status==='failed') f.push(file.name.replace(process.cwd(),'').replace(/\\\\/g,'/')+' :: '+t.fullName+' :: '+(t.failureMessages[0]||'').split('\n')[0].slice(0,160)); console.log(f.length+' failing on Windows'); console.log(f.join('\n'));"
+          node -e "const r=require('./vitest-windows.json'); const f=[]; for (const file of r.testResults) for (const t of file.assertionResults) if (t.status==='failed') f.push(file.name.replace(process.cwd(),'').replace(/\\\\/g,'/')+' :: '+t.fullName+' :: '+(t.failureMessages[0]||'').split('\n').slice(0,3).join(' | ').slice(0,600)); console.log(f.length+' failing on Windows'); console.log(f.join('\n'));"
 
       - name: e2e harness selftest
         shell: bash

@@ -18,7 +18,7 @@ describe('supervisor.mjs rollback', () => {
     const shim = join(repo, 'shim'); mkdirSync(shim);
     if (process.platform === 'win32') writeFileSync(join(shim, 'npm.cmd'), '@echo npm ci exploded 1>&2\r\n@exit /b 1\r\n');
     else { writeFileSync(join(shim, 'npm'), '#!/bin/sh\necho "npm ci exploded" >&2; exit 1\n'); chmodSync(join(shim, 'npm'), 0o755); }
-    const { rollback } = await import(pathToFileURL(resolve('scripts/supervisor.mjs')).href) as { rollback: (sha: string, cwd: string, env: NodeJS.ProcessEnv) => boolean };
+    const { rollback } = await import(pathToFileURL(resolve('scripts/supervisor-lib.mjs')).href) as { rollback: (sha: string, cwd: string, env: NodeJS.ProcessEnv) => boolean };
     const logs: string[] = []; const orig = console.log; console.log = (...a: unknown[]) => { logs.push(a.join(' ')); };
     let ok: boolean;
     try { ok = rollback(old, repo, { ...process.env, PATH: `${shim}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH}` }); }
@@ -37,7 +37,7 @@ describe('supervisor.mjs rollback', () => {
     writeFileSync(join(repo, 'package-lock.json'), '{"v":1}'); writeFileSync(join(repo, 'a.txt'), '1'); git('add', '.'); git('commit', '-qm', 'old');
     const old = git('rev-parse', 'HEAD');
     writeFileSync(join(repo, 'a.txt'), '2'); git('add', '.'); git('commit', '-qm', 'new');
-    const { rollback } = await import(pathToFileURL(resolve('scripts/supervisor.mjs')).href) as { rollback: (sha: string, cwd: string, env: NodeJS.ProcessEnv) => boolean };
+    const { rollback } = await import(pathToFileURL(resolve('scripts/supervisor-lib.mjs')).href) as { rollback: (sha: string, cwd: string, env: NodeJS.ProcessEnv) => boolean };
     const orig = console.log; console.log = () => {};
     try { expect(rollback(old, repo, process.env)).toBe(true); } finally { console.log = orig; }
     expect(git('rev-parse', 'HEAD')).toBe(old);
