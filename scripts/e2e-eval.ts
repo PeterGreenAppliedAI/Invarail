@@ -225,10 +225,6 @@ async function makeEnv(model: string, ollamaUrl: string): Promise<Env> {
   process.env.BRAVE_API_KEY = 'stub';
   process.chdir(root);
   const config = loadConfig(configPath);
-  // The ONE thing the harness adds beyond the wizard's output: a confirm gate on task_add for
-  // the web channel, so the ledger path (preview → stored params → sender-bound confirm) is
-  // exercised end to end. Everything else is exactly what the wizard wrote.
-  config.channels.web = { ...config.channels.web, security: { ...(config.channels.web?.security ?? {}), confirmTools: ['task_add'] } } as typeof config.channels.web;
   // The client the way the orchestrator builds it — from THIS config, so calls that name
   // no num_ctx (quality judge, summaries) get the generated defaultContextSize. A shared
   // client built without it sent those calls to the server's default and reloaded the
@@ -452,6 +448,11 @@ const TASKS: E2ETask[] = [
     prompt: 'Add a task to my task board: "Rotate the API keys" with high priority.',
     flow: async (env, send) => {
       const facts: Record<string, boolean | string> = {};
+      // The ONE thing this task adds beyond the wizard's output: a confirm gate on task_add for
+      // the web channel, so the ledger path is exercised end to end. Only HERE — when it was
+      // applied to every env (2026-09-28) the task-board and multi tasks of every model "failed"
+      // because task_add correctly returned a confirmation preview instead of adding the task.
+      env.config.channels.web = { ...env.config.channels.web, security: { ...(env.config.channels.web?.security ?? {}), confirmTools: ['task_add'] } } as typeof env.config.channels.web;
       const first = await send('e2e-confirm', 'Add a task to my task board: "Rotate the API keys" with high priority.', 300_000);
       facts.routed = first.category;
       const pending = first.pendingActions?.[0];
