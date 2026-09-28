@@ -195,7 +195,12 @@ function resolveChannelSecurity(
 ): ChannelSecurity | undefined {
   if (!channel) return undefined;
   const chConfig = config.channels[channel];
-  return chConfig?.security ?? undefined;
+  if (chConfig?.security) return chConfig.security;
+  // The console is HOSTED by the web adapter: unless an operator writes a channels.console
+  // entry, the web channel's policy governs its /console/api/chat route too (F08 — a
+  // restriction on `web` used to be bypassed by the same server's console endpoint).
+  if (channel === 'console') return config.channels.web?.security ?? undefined;
+  return undefined;
 }
 
 /** Tools stripped from ALL cron dispatches — automated jobs can't mutate state. */
