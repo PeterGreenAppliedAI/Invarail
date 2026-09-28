@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { containedPath } from '../../security/paths.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { ConsoleApiDeps } from '../types.js';
@@ -47,8 +48,8 @@ export function handleSessionTranscript(
 
   // Verify resolved path stays within transcript directory
   const baseDir = resolve(deps.config.session.transcriptDir);
-  const targetDir = resolve(join(baseDir, safeAgent));
-  if (!targetDir.startsWith(baseDir + '/')) {
+  const targetDir = containedPath(baseDir, safeAgent);   // canonical, separator-agnostic (F21)
+  if (!targetDir) {
     sendError(res, 'Invalid agent ID', 400);
     return;
   }
@@ -68,8 +69,8 @@ export function handleSessionDelete(
   const safeKey = sanitizePath(sessionKey);
 
   const baseDir = resolve(deps.config.session.transcriptDir);
-  const targetDir = resolve(join(baseDir, safeAgent));
-  if (!targetDir.startsWith(baseDir + '/')) {
+  const targetDir = containedPath(baseDir, safeAgent);   // canonical, separator-agnostic (F21)
+  if (!targetDir) {
     sendError(res, 'Invalid agent ID', 400);
     return;
   }

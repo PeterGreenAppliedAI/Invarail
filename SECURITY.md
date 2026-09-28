@@ -27,7 +27,8 @@ is no bounty, but findings are credited in DECISIONS.md unless you ask otherwise
   `code_session` run inside the sandbox container (no network, workspace read-only by
   default); a session that cannot be sandboxed is refused rather than run on the host.
   Pi builds (`pi_build`, `!improve`) run on the host inside git worktrees — that is the
-  boundary there, not a container.
+  boundary there, not a container. Persistent REPL sessions belong to the principal and
+  agent that started them; another caller cannot read, run in, or close them.
 - **Who a web/console request is.** With `channels.web.token` set, the bearer is the
   owner's credential and the request runs as `ownerId`; a `senderId` in the body or query
   only partitions the session (one transcript per device) and cannot make a caller someone

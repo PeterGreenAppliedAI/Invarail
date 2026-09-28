@@ -154,7 +154,7 @@ Channel security is enforced in `src/dispatch.ts` via 6 layered filters applied 
 
 Additional security:
 - SSRF protection in `src/tools/ssrf.ts` — all URL-fetching tools must use it.
-- Exec security: Docker sandbox or command allowlist, configured per `config.tools.exec.security`. With `docker`, **code sessions run inside the sandbox container too** (`docker exec -i … python3 -u -i`; `createCodeSessionTool(manager, dockerBackend)` → `startFromProcess`, F05/F06 2026-09-27) and fail CLOSED when the container cannot start — never a silent host fallback. Pi (`pi_build`, the self-mod rail) still runs on the host: its worktrees are the boundary there (F18, open).
+- Exec security: Docker sandbox or command allowlist, configured per `config.tools.exec.security`. With `docker`, **code sessions run inside the sandbox container too** (`docker exec -i … python3 -u -i`; `createCodeSessionTool(manager, dockerBackend)` → `startFromProcess`, F05/F06 2026-09-27) and fail CLOSED when the container cannot start — never a silent host fallback. Pi (`pi_build`, the self-mod rail) still runs on the host: its worktrees are the boundary there. **Sessions are owned** (F18, 2026-09-27): the tool keys every REPL by `agent/principal/name` from ToolContext, so another principal's session of the same name does not exist for you — list/run/output/close all scope. A missing interpreter fires the child's `error` event, which is handled (F22 — it used to be an uncaught exception that took the service down); cursors are absolute stream offsets, so the output cap never eats a later command's result (F23).
 - Cron safety: `cronMode` strips write tools; `exec`/`send_message` are only available when the job was explicitly scheduled as that category (`filterCronTools` — the owner-authored schedule is the code gate). Jobs retry 2x with exponential backoff + notify on final failure. Cron expressions are croner-validated in `cron_add`/`cron_edit` BEFORE persisting.
 - Pipeline isolation: all pipeline dispatches get fresh context (no parent session history).
 
@@ -526,7 +526,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + the e2e harness `--selftest` (real registry/pipelines, no model) + build + console build on every push/PR to main
-- **Current:** 1135 tests across 131 files
+- **Current:** 1138 tests across 132 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel), `scripts/model-eval.ts` (the ENGINE on mock tools — evals/), **`scripts/e2e-eval.ts`** (the FRONT DOOR: a wizard-generated config for the model under test through `dispatchMessage` in a scratch install, real registry/stores/pipelines, web stubbed over a fixed corpus, code oracles + `--selftest`; found the one-model-install reload + thinking-router bugs 2026-09-27). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

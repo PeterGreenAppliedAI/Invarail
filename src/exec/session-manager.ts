@@ -18,12 +18,19 @@ interface Session {
   runtime: SessionRuntime;
   process: ChildProcess;
   outputBuffer: string;
+  /** Bytes trimmed off the front of outputBuffer so far — cursors are ABSOLUTE stream
+   *  offsets (`discarded + outputBuffer.length`), so a trim can never invalidate one (F23). */
+  discarded: number;
+  /** The child failed to spawn (ENOENT etc.) — reported through the tool contract, never thrown (F22). */
+  spawnError?: string;
   startedAt: string;
   idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export class SessionManager {
   private sessions = new Map<string, Session>();
+  /** Why a session vanished right after "started" (spawn ENOENT) — so the next run says so. */
+  private lastSpawnError = new Map<string, string>();
   private config: Required<SessionExecConfig>;
 
   constructor(config?: Partial<SessionExecConfig>) {
@@ -63,6 +70,7 @@ export class SessionManager {
       runtime,
       process: proc,
       outputBuffer: '',
+      discarded: 0,
       startedAt: new Date().toISOString(),
       idleTimer: null,
     };
@@ -78,6 +86,14 @@ export class SessionManager {
     });
 
     proc.on('exit', () => {
+      this.cleanup(id);
+    });
+    // A missing interpreter (spawn ENOENT) fires 'error' AFTER start() returned "started";
+    // without a handler it is an uncaught exception that takes the whole service down.
+    proc.on('error', (err) => {
+      session.spawnError = err.message;
+      this.lastSpawnError.set(id, err.message);
+      console.warn(`[SessionManager] Session "${id}" process error: ${err.message}`);
       this.cleanup(id);
     });
 
@@ -113,6 +129,7 @@ export class SessionManager {
       runtime,
       process: proc,
       outputBuffer: '',
+      discarded: 0,
       startedAt: new Date().toISOString(),
       idleTimer: null,
     };
@@ -129,6 +146,14 @@ export class SessionManager {
     proc.on('exit', () => {
       this.cleanup(id);
     });
+    // A missing interpreter (spawn ENOENT) fires 'error' AFTER start() returned "started";
+    // without a handler it is an uncaught exception that takes the whole service down.
+    proc.on('error', (err) => {
+      session.spawnError = err.message;
+      this.lastSpawnError.set(id, err.message);
+      console.warn(`[SessionManager] Session "${id}" process error: ${err.message}`);
+      this.cleanup(id);
+    });
 
     this.sessions.set(id, session);
     this.resetIdleTimer(session);
@@ -141,7 +166,7 @@ export class SessionManager {
    */
   async run(id: string, code: string): Promise<string> {
     const session = this.sessions.get(id);
-    if (!session) return `Error: Session "${id}" not found`;
+    if (!session) return `Error: Session "${id}" not found${this.lastSpawnError.has(id) ? ` — it failed to start: ${this.lastSpawnError.get(id)}` : ''}`;
 
     if (!session.process.stdin?.writable) {
       return `Error: Session "${id}" stdin is not writable (process may have exited)`;
@@ -149,8 +174,9 @@ export class SessionManager {
 
     this.resetIdleTimer(session);
 
-    // Clear output buffer before running
-    const beforeLength = session.outputBuffer.length;
+    // Absolute stream offset of the first byte this command may produce (F23: a trim of the
+    // buffer shifts its contents, never this number).
+    const beforeLength = session.discarded + session.outputBuffer.length;
 
     // Write code + sentinel command
     const sentinelCmd = this.getSentinelCommand(session.runtime);
@@ -230,7 +256,7 @@ export class SessionManager {
 
     return new Promise((resolve) => {
       const check = () => {
-        const newOutput = session.outputBuffer.slice(fromIndex);
+        const newOutput = session.outputBuffer.slice(Math.max(0, fromIndex - session.discarded));
         const sentinelIdx = newOutput.indexOf(SENTINEL);
 
         if (sentinelIdx !== -1) {
@@ -265,8 +291,10 @@ export class SessionManager {
 
   private trimOutputBuffer(session: Session): void {
     if (session.outputBuffer.length > this.config.maxOutputBytes) {
-      // Keep the tail
-      session.outputBuffer = session.outputBuffer.slice(-this.config.maxOutputBytes);
+      // Keep the tail; remember how much of the stream is gone so cursors stay absolute
+      const drop = session.outputBuffer.length - this.config.maxOutputBytes;
+      session.discarded += drop;
+      session.outputBuffer = session.outputBuffer.slice(drop);
     }
   }
 

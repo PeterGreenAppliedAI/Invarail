@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import type { InvarailTool } from './types.js';
+import type { InvarailTool, ToolContext } from './types.js';
 import type { SessionManager, SessionRuntime } from '../exec/session-manager.js';
 
 /** What the Docker backend offers a session: the container, and a REPL inside it. */
@@ -35,11 +35,17 @@ export function createCodeSessionTool(
     },
     category: 'exec',
 
-    async execute(params: Record<string, unknown>): Promise<string> {
+    async execute(params: Record<string, unknown>, ctx?: ToolContext): Promise<string> {
       const action = params.action as string;
-      const sessionId = params.session as string;
       const runtime = params.runtime as SessionRuntime;
       const code = params.code as string;
+      // F18: a REPL belongs to the principal + agent that started it. The manager keys by a
+      // scoped id; the model only ever sees its own short names, and another principal's
+      // session of the same name is simply not there.
+      const scope = `${ctx?.agentId ?? 'main'}/${ctx?.senderId ?? 'anonymous'}/`;
+      const short = params.session as string | undefined;
+      const sessionId = short ? `${scope}${short}` : (short as string);
+      const unscope = (s: string): string => s.split(scope).join('');
 
       switch (action) {
         case 'start': {
@@ -52,32 +58,32 @@ export function createCodeSessionTool(
               // Fail CLOSED: a session that cannot be sandboxed does not silently run on the host.
               return `Error: sandbox unavailable (${err instanceof Error ? err.message : err}) — no session started`;
             }
-            return sessionManager.startFromProcess(sessionId, runtime, sandbox.spawnSession(runtime));
+            return unscope(sessionManager.startFromProcess(sessionId, runtime, sandbox.spawnSession(runtime)));
           }
-          return sessionManager.start(sessionId, runtime);
+          return unscope(sessionManager.start(sessionId, runtime));
         }
 
         case 'run': {
           if (!sessionId) return 'Error: session parameter is required for run';
           if (!code) return 'Error: code parameter is required for run';
-          return sessionManager.run(sessionId, code);
+          return unscope(await sessionManager.run(sessionId, code));
         }
 
         case 'output': {
           if (!sessionId) return 'Error: session parameter is required for output';
-          return sessionManager.getOutput(sessionId);
+          return unscope(sessionManager.getOutput(sessionId));
         }
 
         case 'close': {
           if (!sessionId) return 'Error: session parameter is required for close';
-          return sessionManager.close(sessionId);
+          return unscope(sessionManager.close(sessionId));
         }
 
         case 'list': {
-          const sessions = sessionManager.list();
+          const sessions = sessionManager.list().filter(s => s.id.startsWith(scope));
           if (sessions.length === 0) return 'No active sessions';
           return sessions
-            .map(s => `- ${s.id} (${s.runtime}, started ${s.startedAt}, ${s.outputBytes} bytes output)`)
+            .map(s => `- ${unscope(s.id)} (${s.runtime}, started ${s.startedAt}, ${s.outputBytes} bytes output)`)
             .join('\n');
         }
 

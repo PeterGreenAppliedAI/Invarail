@@ -8,6 +8,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { PluginManifest, PluginExport } from './types.js';
@@ -57,7 +58,8 @@ export async function loadPlugins(toolRegistry: ToolRegistry): Promise<number> {
             continue;
           }
 
-          const mod = await import(mainPath) as PluginExport;
+          // A raw absolute path is not an import specifier on Windows (`c:` reads as a URL scheme) — F21
+          const mod = await import(pathToFileURL(mainPath).href) as PluginExport;
 
           if (mod.tool) {
             toolRegistry.register(mod.tool);

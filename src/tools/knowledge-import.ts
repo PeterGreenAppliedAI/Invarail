@@ -1,4 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
+import { containedPath } from '../security/paths.js';
 import { resolve, extname, basename } from 'node:path';
 import type { InvarailTool } from './types.js';
 import type { OllamaClient } from '../ollama/client.js';
@@ -42,9 +43,9 @@ export function createKnowledgeImportTool(
 
       // Resolve relative to workspace and validate containment
       const workspaceRoot = resolve(workspacePath);
-      const fullPath = resolve(workspacePath, filePath);
+      const fullPath = containedPath(workspaceRoot, filePath);   // canonical, separator-agnostic (F21)
 
-      if (!fullPath.startsWith(workspaceRoot + '/') && fullPath !== workspaceRoot) {
+      if (!fullPath) {
         return 'Error: Path traversal not allowed — files must be inside workspace';
       }
 
