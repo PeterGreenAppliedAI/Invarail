@@ -56,9 +56,11 @@ Loaded footprints, measured on Ollama (what the card actually holds, KV cache in
 **Windows:** the test suite and the front-door selftest run green on `windows-latest` in
 CI on every push, and the wizard's headless smokes run there too — so a clean Windows
 checkout installs and passes its checks. It is not yet a *supported install*: no Windows box
-has run `npm start` against a real Ollama, and the supervisor (`scripts/supervisor.sh`) is
-bash. Docker Desktop, LibreOffice (`soffice.exe`) and the `py`/`python` launcher are all
-detected; `python3` is never assumed.
+has run `npm start` against a real Ollama there. The supervisor has a Node port for it
+(`npm run supervise` → `scripts/supervisor.mjs`, the same contract as the bash script: health
+check, crash loop, exit-42 deploys with gates and rollback, halt on a failed reinstall).
+Docker Desktop, LibreOffice (`soffice.exe`) and the `py`/`python` launcher are all detected;
+`python3` is never assumed.
 
 ## Tier 0 — fifteen minutes to a working agent
 
