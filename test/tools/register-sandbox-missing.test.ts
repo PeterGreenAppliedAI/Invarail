@@ -1,20 +1,21 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DockerBackend } from '../../src/exec/docker-backend.js';
+import { registerAllTools } from '../../src/tools/register-all.js';
+import { ToolRegistry } from '../../src/tools/registry.js';
+import { loadConfig } from '../../src/config/loader.js';
 
 // Third review F05: a config that asks for the Docker sandbox and cannot get it must not run
 // model-authored commands on the host instead. It boots WITHOUT exec and code sessions.
-vi.mock('../../src/exec/docker-backend.js', async (orig) => {
-  const mod = await orig<typeof import('../../src/exec/docker-backend.js')>();
-  return { ...mod, DockerBackend: Object.assign(class extends mod.DockerBackend {}, { isAvailable: vi.fn().mockResolvedValue(false) }) };
-});
-
+// (A spy on the static method, not vi.mock: the module mock did not apply on Windows CI and
+// the real `docker info` ran into the test timeout.)
 describe('exec.security docker without Docker', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('registers neither exec nor code_session, and says so', async () => {
-    const { registerAllTools } = await import('../../src/tools/register-all.js');
-    const { ToolRegistry } = await import('../../src/tools/registry.js');
-    const { loadConfig } = await import('../../src/config/loader.js');
+    vi.spyOn(DockerBackend, 'isAvailable').mockResolvedValue(false);
     const config = loadConfig('/tmp/nonexistent-config.json5');
     config.tools = { ...(config.tools ?? {}), exec: { ...(config.tools?.exec ?? {}), security: 'docker' } } as typeof config.tools;
     config.agents = { default: 'main', list: [{ id: 'main', name: 'x', workspace: mkdtempSync(join(tmpdir(), 'ws-')) }], bindings: [] } as typeof config.agents;
@@ -26,5 +27,5 @@ describe('exec.security docker without Docker', () => {
     expect(registry.get('code_session')).toBeUndefined();
     expect(registry.get('read_file')).toBeDefined();   // workspace file ops are not code execution
     expect(errors.some(e => /NOT registered/.test(e))).toBe(true);
-  });
+  }, 30_000);
 });
