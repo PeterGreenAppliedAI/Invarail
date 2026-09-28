@@ -176,6 +176,15 @@ interface Env {
   tasks: TaskStore;
   cron: CronStore;
   webLog: string[];
+  /** The registry's SQLite store — must be closed before the scratch install is removed (Windows EBUSY). */
+  embeddingStore?: { close(): void };
+}
+
+/** Close what holds files open, then remove the scratch install. */
+function teardown(env: Env): void {
+  try { env.embeddingStore?.close(); } catch { /* already closed */ }
+  process.chdir(REPO);
+  rmSync(env.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 function wizardState(model: string, ollamaUrl: string): WizardState {
@@ -236,12 +245,12 @@ async function makeEnv(model: string, ollamaUrl: string): Promise<Env> {
   const cron = new CronStore(join(root, 'data', 'cron.json'));
   const cronService = new CronService({ store: cron, onTrigger: async () => undefined, timezone: config.timezone });
   const registry = new ToolRegistry();
-  await registerAllTools(registry, config, { ollamaClient: client, taskStore: tasks, factStore: facts, cronService });
+  const { embeddingStore } = await registerAllTools(registry, config, { ollamaClient: client, taskStore: tasks, factStore: facts, cronService });
   const webLog: string[] = [];
   for (const t of makeWebStubs(webLog)) registry.register(t);   // same names → replaces the real ones
   const pipelines = new PipelineRegistry();
   registerAllPipelines(pipelines);
-  return { root, ws, config, client, registry, pipelines, sessions, facts, tasks, cron, webLog };
+  return { root, ws, config, client, registry, pipelines, sessions, facts, tasks, cron, webLog, embeddingStore };
 }
 
 // ---------------------------------------------------------------- tasks
@@ -598,7 +607,7 @@ async function runTask(model: string, ollamaUrl: string, task: E2ETask, rep: num
   if (error && bucketOf(error) === 'PROVIDER_OUTAGE' && attempt === 0) {
     // the serving stack, not the model — one retry after a pause, then unscored
     console.log(`    provider outage on ${task.id} (${error.slice(0, 60)}) — retrying once in 20s`);
-    process.chdir(REPO); rmSync(env.root, { recursive: true, force: true });
+    teardown(env);
     await new Promise(r => setTimeout(r, 20_000));
     return runTask(model, ollamaUrl, task, rep, runDir, 1);
   }
@@ -616,8 +625,7 @@ async function runTask(model: string, ollamaUrl: string, task: E2ETask, rep: num
   mkdirSync(keep, { recursive: true });
   writeFileSync(join(keep, 'answer.txt'), answer);
   if (existsSync(join(env.ws, 'research'))) cpSync(join(env.ws, 'research'), join(keep, 'research'), { recursive: true });
-  process.chdir(REPO);
-  rmSync(env.root, { recursive: true, force: true });
+  teardown(env);
   return {
     id: task.id, expected: task.expect, routed: result?.category, routedBy: result?.classification?.confidence,
     checks, score, durationMs: Date.now() - start,
@@ -640,8 +648,7 @@ async function selftest(): Promise<void> {
     const bad = checks.filter(c => !c.pass);
     console.log(`  ${bad.length ? 'FAIL' : 'ok  '} ${task.id}${bad.length ? ' — ' + bad.map(c => `${c.name} (${c.detail ?? ''})`).join('; ') : ''}`);
     failures += bad.length;
-    process.chdir(REPO);
-    rmSync(env.root, { recursive: true, force: true });
+    teardown(env);
   }
   if (failures) { console.error(`${failures} oracle(s) fail on the reference performer — fix the checks before trusting a score`); process.exit(1); }
   console.log('all oracles pass on the reference performer');
