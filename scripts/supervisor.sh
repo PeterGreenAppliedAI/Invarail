@@ -40,7 +40,15 @@ rollback() {
   # lockfile differs between what we left and what we restored.
   if ! git diff --quiet "$from" "$1" -- package-lock.json; then
     log "rollback: lockfile differs — npm ci to match the restored source"
-    npm ci --no-audit --no-fund || log "rollback: npm ci FAILED — dependencies do not match the restored lockfile"
+    if ! npm ci --no-audit --no-fund; then
+      # Booting restored source on an unmatched dependency tree is a service that "runs" and
+      # is broken. Halt, leave a marker the doctor reads (and npm start blocks on), and stop.
+      local sha; sha="$(git rev-parse HEAD)"
+      mkdir -p data
+      printf '{"reason":"npm ci failed during rollback — dependencies do not match the restored lockfile","sha":"%s","at":"%s"}\n' "$sha" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > data/supervisor-halt.json
+      log "rollback: npm ci FAILED — HALTING. data/supervisor-halt.json written; fix, verify, delete the marker, restart the supervisor"
+      exit 1
+    fi
   fi
 }
 gates_ok() { log "gates: tsc + vitest"; npx tsc --noEmit && npx vitest run; }

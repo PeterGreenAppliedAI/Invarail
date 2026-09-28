@@ -526,7 +526,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check + tests + the e2e harness `--selftest` (real registry/pipelines, no model) + build + console build on every push/PR to main
-- **Current:** 1151 tests across 135 files
+- **Current:** 1155 tests across 137 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel), `scripts/model-eval.ts` (the ENGINE on mock tools — evals/), **`scripts/e2e-eval.ts`** (the FRONT DOOR: a wizard-generated config for the model under test through `dispatchMessage` in a scratch install, real registry/stores/pipelines, web stubbed over a fixed corpus, code oracles + `--selftest`; found the one-model-install reload + thinking-router bugs 2026-09-27). NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

@@ -131,24 +131,30 @@ export async function registerAllTools(
 
   // Docker backend (if configured)
   let dockerBackend: DockerBackend | undefined;
+  let sandboxMissing = false;
   if (config.tools?.exec?.security === 'docker') {
     const dockerAvailable = await DockerBackend.isAvailable();
     if (dockerAvailable) {
       dockerBackend = new DockerBackend(config.tools.exec.docker);
       console.log('[Docker] Docker sandbox enabled');
     } else {
-      console.warn('[Docker] Docker requested but not available — falling back to allowlist');
+      // The config asked for a sandbox. Running model-authored commands on the host instead
+      // would be the quiet degradation every other seam has retired (third review F05): boot
+      // WITHOUT exec and code sessions, say so here and in the doctor, and let the agent tell
+      // the user those tools are unavailable until Docker is up.
+      sandboxMissing = true;
+      console.error('[Docker] exec.security is "docker" but Docker is not available — exec and code_session are NOT registered (nothing runs on the host). Start Docker, or set exec.security: "allowlist" deliberately.');
     }
   }
 
-  // Exec tools
-  registry.register(createExecTool(config.tools?.exec, dockerBackend));
+  // Exec tools (read/write are workspace-scoped file operations, not code execution)
+  if (!sandboxMissing) registry.register(createExecTool(config.tools?.exec, dockerBackend));
   registry.register(createReadFileTool());
   registry.register(createWriteFileTool());
 
   // Code session tool — in the sandbox when exec security is docker (F05/F06)
   const sessionManager = new SessionManager(config.tools?.exec?.sessions);
-  registry.register(createCodeSessionTool(sessionManager, dockerBackend));
+  if (!sandboxMissing) registry.register(createCodeSessionTool(sessionManager, dockerBackend));
 
   // Browser tool (pass Ollama URL for visual mode vision model calls)
   if (config.browser?.enabled) {

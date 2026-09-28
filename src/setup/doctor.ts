@@ -13,6 +13,9 @@ import { foregroundTier } from './measured-models.js';
 import { memoryBackend, embeddingsEnabled, okfEnabled } from '../memory/policy.js';
 import { checkBundle } from '../knowledge/okf.js';
 
+/** Written by scripts/supervisor.sh when a rollback's dependency reinstall fails. */
+export const SUPERVISOR_HALT = 'data/supervisor-halt.json';
+
 export type DoctorStatus = 'PASS' | 'WARN' | 'FAIL';
 
 export interface DoctorCheck {
@@ -60,6 +63,15 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
   const push = (name: string, status: DoctorStatus, detail?: string, fix?: string) => c.push({ name, status, detail, fix });
 
   push('Node.js', report.node.ok ? 'PASS' : 'FAIL', `v${report.node.version}`, report.node.ok ? undefined : 'Install Node 22+ (https://nodejs.org)');
+
+  // A supervisor that could not restore dependencies on rollback halts and leaves this
+  // marker: the next boot explains why it is down instead of quietly starting a half-restored
+  // tree (third review N06). `npm start` blocks on it.
+  if (existsSync(SUPERVISOR_HALT)) {
+    let why = '';
+    try { const m = JSON.parse(readFileSync(SUPERVISOR_HALT, 'utf-8')) as { reason?: string; at?: string; sha?: string }; why = `${m.reason ?? 'unknown'} (${m.at ?? '?'}, at ${m.sha?.slice(0, 8) ?? '?'})`; } catch { why = 'marker unreadable'; }
+    push('Supervisor halt', 'FAIL', `the last rollback could not restore dependencies: ${why}`, `npm ci, verify \`npm run typecheck && npm test\`, then delete ${SUPERVISOR_HALT}`);
+  }
 
   if (!report.config.present) {
     push('Config', 'FAIL', `${report.config.path} not found`, 'npm run setup   (or: cp invarail.config.starter.json5 invarail.config.json5)');
@@ -198,7 +210,7 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
     else push('Graph memory (FalkorDB)', 'WARN', 'not reachable — memory falls back to flat files (no entity traversal / vector search)', report.docker.found ? report.falkordb.start : `needs Docker: ${report.docker.install}`);
 
     if (config.tools?.exec?.security === 'docker') {
-      push('Docker (exec sandbox)', report.docker.found ? 'PASS' : 'FAIL', report.docker.detail, report.docker.found ? undefined : `${report.docker.install} — until then exec runs on the HOST allowlist`);
+      push('Docker (exec sandbox)', report.docker.found ? 'PASS' : 'FAIL', report.docker.detail, report.docker.found ? undefined : `${report.docker.install} — until then exec and code_session are NOT registered (nothing model-authored runs on the host); or set exec.security: "allowlist" deliberately`);
     } else {
       push('Docker', report.docker.found ? 'PASS' : 'WARN', report.docker.found ? report.docker.detail : 'not available — FalkorDB/SearXNG sidecars and the exec sandbox need it', report.docker.found ? undefined : report.docker.install);
     }

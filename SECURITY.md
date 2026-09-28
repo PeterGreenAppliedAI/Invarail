@@ -21,6 +21,24 @@ fixed with a regression test or closed with a recorded reason in `DECISIONS.md`.
 You can expect an acknowledgement within a few days. This is a solo project; there
 is no bounty, but findings are credited in DECISIONS.md unless you ask otherwise.
 
+## Deployment posture
+
+**Supported:** one owner, on a LAN, with the web token as the wall — the phone console and
+the Chrome extension reach it over the network with the bearer; a tokenless bind is
+loopback-only. **Not a claim:** multi-user deployments (trusted non-owner users on a
+channel) or internet-facing exposure. The security plane is built for the first; the second
+has known open items (scheduled-job provenance is an owner decision, Pi runs on the host).
+
+**Degrades loudly or stops, never quietly.** A config that asks for the Docker sandbox and
+cannot get it boots WITHOUT exec and code sessions and the doctor FAILs; a rollback whose
+dependency reinstall fails HALTS with a marker the doctor reads and `npm start` blocks on;
+a confirmation that could not be recorded is not offered; a search whose daily count could
+not be persisted is refused. Two model-facing paths run on the host by design and say so
+here: **Pi** (`pi_build`, `!improve`) works in git worktrees behind the merge gate, and the
+**diagram renderer** runs a code-owned Python script over model-supplied data (the model
+never authors that script). Reopen condition for Pi: the self-improve loop running
+unattended more often than it does today.
+
 ## Scope notes
 
 - **Code sessions and the sandbox.** With `tools.exec.security: "docker"`, `exec` AND

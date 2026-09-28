@@ -35,6 +35,9 @@ phi4 and the gemma3 small models cannot native-tool-call on Ollama at all (their
 templates lack it) — router/extraction only. `npm run doctor` tells you whether your
 foreground model fits this machine.
 
+Posture: one owner on a LAN with the web token is the supported shape (SECURITY.md); a
+multi-user or internet-facing install is not a claim this project makes.
+
 | Machine | Fits |
 |---|---|
 | 8GB RAM, no GPU | qwen2.5:7b doing everything — chat, most tools, no code |
@@ -49,6 +52,13 @@ Loaded footprints, measured on Ollama (what the card actually holds, KV cache in
 | qwen3.5:9b | 5.7GB | 6.0GB — hybrid attention, the KV cache barely grows |
 | qwen2.5:7b | 5.1GB | 5.6GB |
 | gemma4:12b | 8.4GB | 8.4GB — not an 8GB-card model |
+
+**Windows:** the test suite and the front-door selftest run green on `windows-latest` in
+CI on every push, and the wizard's headless smokes run there too — so a clean Windows
+checkout installs and passes its checks. It is not yet a *supported install*: no Windows box
+has run `npm start` against a real Ollama, and the supervisor (`scripts/supervisor.sh`) is
+bash. Docker Desktop, LibreOffice (`soffice.exe`) and the `py`/`python` launcher are all
+detected; `python3` is never assumed.
 
 ## Tier 0 — fifteen minutes to a working agent
 

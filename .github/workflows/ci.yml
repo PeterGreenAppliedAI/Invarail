@@ -71,3 +71,15 @@ jobs:
       - name: e2e harness selftest
         shell: bash
         run: npx tsx scripts/e2e-eval.ts --selftest
+
+      - name: Wizard smokes (headless Starter, then Custom with defaults)
+        shell: bash
+        run: |
+          printf '1\n\nn\nn\n' | npx tsx src/setup/index.ts
+          test -f invarail.config.json5 && rm -f invarail.config.json5 .env
+          ( printf '2\n'; for i in $(seq 1 60); do printf '\n'; done ) | npx tsx src/setup/index.ts
+          test -f invarail.config.json5
+
+      - name: Console build
+        working-directory: console
+        run: npm ci && npm run build

@@ -16,7 +16,9 @@ import type { ConsoleApiDeps } from '../../console/types.js';
 import { handleConsoleRequest, originRefused } from '../../console/api.js';
 import { resolveWebIdentity } from '../../security/web-identity.js';
 
-const voiceHtml = readFileSync(new URL('./voice-ui.html', import.meta.url), 'utf-8');
+// The standalone hold-to-talk page (voice-ui.html) was read here at IMPORT time and never
+// served — the console owns voice now — and the read was what made the production bundle
+// throw ENOENT on import (F20). Gone; the file stays in src as a reference page.
 
 // Resolve console/dist path relative to project root
 const PROJECT_ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..', '..');

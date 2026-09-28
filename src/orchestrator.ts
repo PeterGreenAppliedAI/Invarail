@@ -225,7 +225,7 @@ export class Orchestrator {
             // Extract [FILE:]/[IMAGE:] tokens into real attachments (same as the normal message
             // path) — otherwise a cron that produces a PDF leaks the raw token into the chat text
             // and never delivers the file.
-            const media = extractMediaAttachments(result.answer);
+            const media = extractMediaAttachments(result.answer, { agentId });
             const artifactNote = artifacts.length > 0
               ? `\n📎 Files from this run:\n${artifacts.map(a => `- ${a}`).join('\n')}`
               : '';
@@ -1063,7 +1063,7 @@ export class Orchestrator {
         // Confirmed tools can produce media (image_generate, document) — run
         // the same [FILE:] extraction as the normal reply path, else the token
         // prints as literal text and the attachment never reaches the channel
-        const confirmMedia = extractMediaAttachments(confirmOutcome.reply!);
+        const confirmMedia = extractMediaAttachments(confirmOutcome.reply!, { agentId: confirmOutcome.executed?.agentId });
         await this.channelRegistry.send(
           { channel: msg.channel, channelId: msg.channelId!, guildId: msg.guildId, replyToId: msg.id },
           {
@@ -1228,7 +1228,7 @@ export class Orchestrator {
 
         // Strip [FILE:] tokens before TTS — an unstripped token gets SPOKEN ALOUD,
         // and the file never arrives. Same class as the !research leak (2026-09-19).
-        const voiceMedia = extractMediaAttachments(result.answer);
+        const voiceMedia = extractMediaAttachments(result.answer, { agentId: route.agentId });
         const voiceText = voiceMedia.cleanText || result.answer;
 
         msg.onProgress?.('tts');
@@ -1323,7 +1323,7 @@ export class Orchestrator {
         }
 
         if (streamMsg) {
-          const media = extractMediaAttachments(result.answer);
+          const media = extractMediaAttachments(result.answer, { agentId: route.agentId });
           const chunks = splitFinalMessage(media.cleanText || result.answer, 2000);
           // The delivery backstop can scrub an answer to nothing (e.g. a bare-chat model
           // that emitted only tool-call markup). Discord rejects empty sends/edits —
@@ -1378,7 +1378,7 @@ export class Orchestrator {
             ).catch(err => console.warn('[Orchestrator] Button send failed:', err instanceof Error ? err.message : err));
           }
         } else {
-          const media = extractMediaAttachments(result.answer);
+          const media = extractMediaAttachments(result.answer, { agentId: route.agentId });
           const text = media.cleanText || result.answer;
           const chunks = splitFinalMessage(text, 2000);
           // Same guard the streaming branch has had since 2026-08-21 — this branch

@@ -117,3 +117,17 @@ describe('doctor', () => {
     expect(gpu.status).toBe('PASS'); expect(gpu.detail).toMatch(/RTX 3060/);
   });
 });
+
+describe('supervisor halt marker (third review N06)', () => {
+  it('FAILs with the reason and the recovery steps when the marker exists', async () => {
+    const { SUPERVISOR_HALT } = await import('../../src/setup/doctor.js');
+    const dir = mkdtempSync(join(tmpdir(), 'halt-'));
+    const prev = process.cwd(); process.chdir(dir);
+    try {
+      mkdirSync('data'); writeFileSync(SUPERVISOR_HALT, JSON.stringify({ reason: 'npm ci failed during rollback', sha: 'abcdef1234567890', at: '2026-09-28T03:00:00Z' }));
+      const c = doctorChecks(base, cfg()).find(x => x.name === 'Supervisor halt')!;
+      expect(c.status).toBe('FAIL'); expect(c.detail).toMatch(/npm ci failed during rollback/); expect(c.fix).toMatch(/delete data\/supervisor-halt\.json/);
+      expect(doctorChecks(base, cfg()).find(x => x.name === 'Supervisor halt' && x.status === 'FAIL')).toBeDefined();
+    } finally { process.chdir(prev); }
+  });
+});

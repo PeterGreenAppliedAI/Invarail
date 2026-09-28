@@ -78,3 +78,20 @@ describe('default roots are artifact directories, not the whole data tree (re-re
     }
   });
 });
+
+describe('artifact roots are the ACTIVE agent\'s (third review F04)', () => {
+  it('with an agent, another agent\'s research file is not attachable; data/media still is', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'media-agent-'));
+    const mine = join(cwd, 'data', 'workspaces', 'main', 'research'); mkdirSync(mine, { recursive: true });
+    const theirs = join(cwd, 'data', 'workspaces', 'other', 'research'); mkdirSync(theirs, { recursive: true });
+    const media = join(cwd, 'data', 'media'); mkdirSync(media, { recursive: true });
+    writeFileSync(join(mine, 'r.md'), 'mine'); writeFileSync(join(theirs, 'r.md'), 'theirs'); writeFileSync(join(media, 'm.png'), 'png');
+    const roots = defaultArtifactRoots(cwd, 'main');
+    expect(roots.some(r => r.includes(join('workspaces', 'main', 'research')))).toBe(true);
+    expect(roots.some(r => r.includes(join('workspaces', 'other')))).toBe(false);
+    const out = extractMediaAttachments(`[FILE:${join(theirs, 'r.md')}] and [FILE:${join(mine, 'r.md')}] and [FILE:${join(media, 'm.png')}]`, { allowedRoots: roots });
+    expect(out.attachments.map(a => a.filename).sort()).toEqual(['m.png', 'r.md']);
+    // legacy callers (no agent) keep every workspace, as before
+    expect(defaultArtifactRoots(cwd).some(r => r.includes(join('workspaces', 'other')))).toBe(true);
+  });
+});

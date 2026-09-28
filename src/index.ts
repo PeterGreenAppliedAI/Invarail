@@ -50,7 +50,7 @@ async function main() {
       console.log('[Invarail] doctor:');
       console.log(formatDoctor(dr.checks, { quiet: true }));
     }
-    const blocking = dr.checks.filter(c => c.status === 'FAIL' && (c.name === 'Config' || c.name === 'Ollama' || c.name === 'Node.js'));
+    const blocking = dr.checks.filter(c => c.status === 'FAIL' && (c.name === 'Config' || c.name === 'Ollama' || c.name === 'Node.js' || c.name === 'Supervisor halt'));
     if (blocking.length > 0) {
       console.error(`[Invarail] Cannot start: ${blocking.map(b => b.name).join(', ')}. Run \`npm run doctor\` for the full report.`);
       process.exit(1);

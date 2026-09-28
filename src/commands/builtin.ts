@@ -697,7 +697,7 @@ export async function runBuiltinCommand(host: CommandHost, msg: InboundMessage, 
       // this handler sent result.answer raw, so a finished research PDF arrived in
       // Discord as the literal text "[FILE:data/media/documents/....pdf]" and the
       // report was never delivered (live-caught 2026-09-19).
-      const media = extractMediaAttachments(result.answer);
+      const media = extractMediaAttachments(result.answer, { agentId: route.agentId });
       let response = media.cleanText || result.answer;
       if (deckExists) {
         response += `\n\n📊 **View your deck:** /console/api/files/${deckPath}`;
