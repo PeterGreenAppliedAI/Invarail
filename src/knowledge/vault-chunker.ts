@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 /**
  * Vault chunker — normalization ladder + structure-aware chunking.
  *
