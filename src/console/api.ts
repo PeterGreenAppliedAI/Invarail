@@ -30,6 +30,28 @@ export function corsOriginFor(origin: string | string[] | undefined, allowedOrig
   return allowedOrigins.includes(o) ? o : null;
 }
 
+/**
+ * A state-changing request that carries an Origin the server does not recognise is a
+ * cross-site request: refuse it BEFORE reading the body. Same-origin (the console UI, which
+ * sends `Origin: http://<host>` on POST) and listed/extension origins pass; a request with
+ * no Origin header (curl, the extension's service worker, server-to-server) passes — CSRF
+ * needs a browser, and browsers always send Origin on cross-site POST. Withholding CORS
+ * headers alone never stopped the request from being processed (third review T02).
+ */
+export function originRefused(req: IncomingMessage, allowedOrigins: string[]): boolean {
+  const method = (req.method ?? 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
+  const raw = req.headers.origin;
+  const origin = Array.isArray(raw) ? raw[0] : raw;
+  if (!origin) return false;
+  if (corsOriginFor(origin, allowedOrigins)) return false;
+  try {
+    const host = req.headers.host ?? '';
+    if (new URL(origin).host.toLowerCase() === host.toLowerCase()) return false;   // same-origin
+  } catch { /* unparsable Origin → refused */ }
+  return true;
+}
+
 export async function handleConsoleRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -55,6 +77,11 @@ export async function handleConsoleRequest(
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return true;
+  }
+
+  if (originRefused(req, allowedOrigins)) {
+    sendError(res, 'Cross-origin request refused', 403);
     return true;
   }
 

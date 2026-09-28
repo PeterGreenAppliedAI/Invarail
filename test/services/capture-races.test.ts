@@ -56,3 +56,27 @@ describe('MemoryCapture under concurrency and reset', () => {
     expect(state().s1).toBeUndefined();
   });
 });
+
+describe('reset during the WRITE (third review N04)', () => {
+  it('facts already written stay, but the marker for the reset conversation is not recreated', async () => {
+    const gate = deferred<void>();
+    const dir = mkdtempSync(join(tmpdir(), 'capture-race-'));
+    const written: FactInput[] = [];
+    const deps: MemoryCaptureDeps = {
+      config: { memory: { capture: {} } } as unknown as InvarailConfig,
+      factStore: () => ({ loadRecentlyRemoved: () => [], writeFactsBatch: async (f: FactInput[]) => { await gate.promise; written.push(...f); return f; }, rebuildFacts: () => undefined }) as never,
+      graphMemory: () => undefined,
+      loadTranscript: () => conversation(10),
+      extract: async () => [{ text: 'observed before reset' } as FactInput],
+      workspacePathFor: () => dir,
+    };
+    const capture = new MemoryCapture(deps);
+    const p = capture.maybeCapture('main', 's1', 'peter');
+    await new Promise(r => setTimeout(r, 20));           // extraction done, write suspended
+    capture.takeSessionTail('main', 's1', conversation(10));   // the !reset lands mid-write
+    gate.resolve();
+    expect(await p).toBe(1);                             // the fact was observed and kept
+    const state = JSON.parse(readFileSync(join(dir, 'memory', 'capture-state.json'), 'utf-8'));
+    expect(state.s1).toBeUndefined();                    // no marker for a conversation that no longer exists
+  });
+});

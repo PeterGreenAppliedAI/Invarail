@@ -5,6 +5,7 @@ import { FactEntrySchema, FactInputSchema } from '../config/schema.js';
 import type { FactEntry, FactInput, FactCategory } from '../config/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import { conceptForFact, factConceptPath, appendLog, FACT_DOMAIN } from '../knowledge/okf.js';
+import { safeBasename } from '../security/paths.js';
 
 /** Category display labels for facts.md */
 const CATEGORY_LABELS: Record<FactCategory, string> = {
@@ -582,8 +583,12 @@ export class FactStore {
 
   // --- Private helpers ---
 
+  /** Per-sender directory. A sender id is a DATA KEY: a plain name is used as-is (every
+   *  existing directory keeps working), anything path-like is hashed (third review F15). */
   private memDir(senderId?: string): string {
-    return senderId ? join(this.basePath, senderId) : this.basePath;
+    if (!senderId) return this.basePath;
+    const safe = safeBasename(senderId) ?? `u_${createHash('sha1').update(senderId).digest('hex').slice(0, 16)}`;
+    return join(this.basePath, safe);
   }
 
   private normalizeText(text: string): string {

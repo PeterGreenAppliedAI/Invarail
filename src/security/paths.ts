@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 /**
@@ -11,18 +11,43 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
  * F12/F13/F16). Canonicalize first, decide on the canonical path, one function.
  */
 
-/** realpath of the deepest EXISTING ancestor, plus the not-yet-created tail. */
-export function canonicalPath(absolute: string): string {
+/** Does this path component exist AS ITSELF — file, directory, or symlink (dangling included)? */
+function lexists(p: string): boolean {
+  try { lstatSync(p); return true; } catch { return false; }
+}
+
+/**
+ * realpath of the deepest EXISTING ancestor, plus the not-yet-created tail.
+ *
+ * Existence is tested with lstat, not stat: a DANGLING symlink exists as a link even though
+ * its target does not, and `existsSync` follows links and says "absent" — which let the walk
+ * skip the link, rebuild a path inside the root, and hand `writeFileSync` a name the kernel
+ * then followed OUT of the root (third review T01, 2026-09-28). A dangling link is resolved
+ * to its target path and canonicalized in turn, so containment judges the destination.
+ */
+export function canonicalPath(absolute: string, depth = 0): string {
   let cur = absolute;
   const tail: string[] = [];
-  while (!existsSync(cur)) {
+  while (!lexists(cur)) {
     const parent = dirname(cur);
     if (parent === cur) break;
     tail.unshift(basename(cur));
     cur = parent;
   }
   let real: string;
-  try { real = realpathSync(cur); } catch { real = cur; }
+  try {
+    real = realpathSync(cur);
+  } catch {
+    // exists per lstat but realpath fails: a dangling symlink (or a loop) — follow the link
+    // text ourselves, bounded, so the destination is what gets judged.
+    let target: string | null = null;
+    try { target = readlinkSync(cur); } catch { target = null; }
+    if (target !== null && depth < 8) {
+      const dest = resolve(dirname(cur), target);
+      return canonicalPath(tail.length ? join(dest, ...tail) : dest, depth + 1);
+    }
+    real = cur;
+  }
   return tail.length ? join(real, ...tail) : real;
 }
 

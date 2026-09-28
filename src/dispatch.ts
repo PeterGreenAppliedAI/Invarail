@@ -1112,6 +1112,7 @@ async function runSpecialist(
             sessionKey,
             category,
           });
+          if (!recorded) return `Error: ${toolName} needs confirmation, but the confirmation ledger could not be written — nothing was run. Tell the user the action could not be queued (check data/ is writable).`;
           recordedPending.push({ id: recorded.id, tool: recorded.tool });
           return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nTell the user what you're about to do and ask them to reply "confirm ${recorded.id}" to proceed once, or "always ${recorded.id}" to also stop asking for this exact target (expires in 10 minutes).`;
         }
@@ -1400,6 +1401,7 @@ async function runPipelineDispatch(
             sessionKey,
             category,
           });
+          if (!recorded) return `Error: ${toolName} needs confirmation, but the confirmation ledger could not be written — nothing was run. Tell the user the action could not be queued (check data/ is writable).`;
           recordedPending.push({ id: recorded.id, tool: recorded.tool });
           return `⚠️ Confirmation required — about to run **${toolName}**:\n\`\`\`\n${preview}\n\`\`\`\nReply "confirm ${recorded.id}" to proceed once, or "always ${recorded.id}" to also stop asking for this exact target (expires in 10 minutes).`;
         }

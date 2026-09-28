@@ -25,14 +25,16 @@ export class SearchQuota {
     }
   }
 
-  private save(state: { date: string; count: number }): void {
+  private save(state: { date: string; count: number }): boolean {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
       const tmp = `${this.path}.${process.pid}.tmp`;
       writeFileSync(tmp, JSON.stringify(state));
       renameSync(tmp, this.path);
+      return true;
     } catch (err) {
       console.warn('[SearchQuota] Could not persist:', err instanceof Error ? err.message : err);
+      return false;
     }
   }
 
@@ -47,12 +49,16 @@ export class SearchQuota {
   }
 
   /** Reserve one query. Refuses (without counting) once today's ceiling is reached. */
-  tryConsume(now = new Date()): { ok: true; used: number } | { ok: false; used: number; ceiling: number } {
+  tryConsume(now = new Date()): { ok: true; used: number } | { ok: false; used: number; ceiling: number; reason?: string } {
     const day = SearchQuota.dayKey(now);
     const s = this.load();
     const count = s.date === day ? s.count : 0;
     if (this.ceiling > 0 && count >= this.ceiling) return { ok: false, used: count, ceiling: this.ceiling };
-    this.save({ date: day, count: count + 1 });
+    // A ceiling is a hard limit: a count that could not be written is a count that cannot be
+    // trusted, so the query does not go out (unlimited ceilings never persist-gate).
+    if (!this.save({ date: day, count: count + 1 }) && this.ceiling > 0) {
+      return { ok: false, used: count, ceiling: this.ceiling, reason: 'the daily count could not be persisted' };
+    }
     return { ok: true, used: count + 1 };
   }
 

@@ -34,3 +34,22 @@ describe('SearchQuota', () => {
     vi.unstubAllGlobals();
   });
 });
+
+import { writeFileSync } from 'node:fs';
+import { SearchQuota } from '../../src/tools/search-quota.js';
+
+describe('a ceiling fails closed when the count cannot be persisted (third review)', () => {
+  it('refuses the query with the reason; an unlimited ceiling is unaffected', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'quota-ro-'));
+    const fileAsDir = join(dir, 'notadir'); writeFileSync(fileAsDir, 'x');
+    const warn = console.warn; console.warn = () => {};
+    try {
+      const capped = new SearchQuota(join(fileAsDir, 'q.json'), 250);
+      const r = capped.tryConsume();
+      expect(r.ok).toBe(false);
+      expect((r as { reason?: string }).reason).toMatch(/persisted/);
+      const unlimited = new SearchQuota(join(fileAsDir, 'q.json'), 0);
+      expect(unlimited.tryConsume().ok).toBe(true);
+    } finally { console.warn = warn; }
+  });
+});

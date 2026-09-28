@@ -222,6 +222,13 @@ export class MemoryCapture {
       // Saved AFTER the writes so the captured list is never ahead of the stores —
       // and merged into a FRESH read of the file: the snapshot taken before the await
       // is stale once another session's capture finished meanwhile (re-review N03).
+      // Second guard: a reset that landed while the facts were being written (third review
+      // N04). The facts already written stay — they were observed — but the marker for a
+      // conversation that no longer exists is not recreated.
+      if ((this.generation.get(guardKey) ?? 0) !== startedGeneration) {
+        console.log(`[Capture] Session ${sessionKey} was reset during the write — marker not recreated (${written} fact(s) kept)`);
+        return written;
+      }
       const fresh = this.loadState(agentId);
       fresh[sessionKey] = { processed: transcript.length, captured };
       this.saveState(agentId, fresh);

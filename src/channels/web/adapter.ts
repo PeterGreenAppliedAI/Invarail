@@ -13,7 +13,7 @@ import type {
 } from '../types.js';
 import { channelConnectError, channelSendError } from '../../errors.js';
 import type { ConsoleApiDeps } from '../../console/types.js';
-import { handleConsoleRequest } from '../../console/api.js';
+import { handleConsoleRequest, originRefused } from '../../console/api.js';
 import { resolveWebIdentity } from '../../security/web-identity.js';
 
 const voiceHtml = readFileSync(new URL('./voice-ui.html', import.meta.url), 'utf-8');
@@ -96,9 +96,11 @@ export class WebApiAdapter implements ChannelAdapter {
       }
 
       if (req.method === 'POST' && url.startsWith('/api/voice')) {
+        if (originRefused(req, this.allowedOrigins)) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Cross-origin request refused' })); return; }
         if (!this.checkAuth(req, res)) return;
         await this.handleVoiceMessage(req, res);
       } else if (req.method === 'POST' && url === '/api/message') {
+        if (originRefused(req, this.allowedOrigins)) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Cross-origin request refused' })); return; }
         if (!this.checkAuth(req, res)) return;
         await this.handleHttpMessage(req, res);
       } else if (req.method === 'GET' && url === '/health') {

@@ -300,6 +300,9 @@ export class SelfModService {
       action: 'self_mod_proposed', tier: 'propose_confirm', source: 'user_command',
       reversible: true, outcome: 'proposed', detail: slug, resource: active.branch,
     });
+    if (!action) {
+      return { ok: false, slug, reply: `🔧 Self-mod **${slug}** is ready in its worktree, but the confirmation ledger could not be written — nothing to confirm. Fix data/ permissions and run \`!improve retry\`.` } as ReturnType<typeof this.propose> extends Promise<infer R> ? R : never;
+    }
     const diffStat = this.git(['diff', '--stat', `${active.baseSha}...HEAD`], active.worktreePath);
     return {
       ok: true, slug, pendingId: action.id,

@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { safeBasename } from '../../security/paths.js';
+import { resolveWebIdentity } from '../../security/web-identity.js';
 import { readdirSync, statSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -126,15 +128,19 @@ export async function handleCodeBuild(req: IncomingMessage, res: ServerResponse,
   const body = await parseBody<{ message?: string; senderId?: string; targetSlug?: string }>(req);
   const message = (body.message ?? '').trim();
   if (!message) { sendError(res, 'Missing "message"'); return; }
-  const targetSlug = body.targetSlug?.trim() || undefined;
+  // A target slug names a project directory under builds/: a single plain component or nothing (F06).
+  const rawSlug = body.targetSlug?.trim() || undefined;
+  const targetSlug = rawSlug ? safeBasename(rawSlug) ?? undefined : undefined;
+  if (rawSlug && !targetSlug) { sendError(res, 'Invalid targetSlug', 400); return; }
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
   const keepalive = setInterval(() => res.write(': keepalive\n\n'), 15_000);
 
   try {
-    const senderId = body.senderId ?? deps.config.heartbeat?.delivery?.target ?? 'console-user';
-    const route = resolveRoute({ channel: 'console', senderId, channelId: 'console' }, deps.config);
+    const identity = resolveWebIdentity({ config: deps.config, claimed: body.senderId, channelId: 'console', fallback: deps.config.heartbeat?.delivery?.target ?? 'console-user' });
+    const senderId = identity.senderId;
+    const route = resolveRoute({ channel: 'console', senderId, channelId: identity.channelId }, deps.config);
 
     const result = await deps.dispatch({
       message,

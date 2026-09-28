@@ -127,3 +127,16 @@ describe('CONFIRMATION_PATTERN', () => {
     }
   });
 });
+
+describe('record() fails closed when the ledger cannot be written (third review)', () => {
+  it('returns null instead of an id nobody could ever confirm', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ledger-ro-'));
+    const fileAsDir = join(dir, 'notadir');
+    writeFileSync(fileAsDir, 'x');   // the ledger's parent "directory" is a file: mkdir/rename cannot land, on any OS
+    const store = new PendingActionStore(join(fileAsDir, 'pending.json'));
+    const warn = console.warn; console.warn = () => {};
+    try {
+      expect(store.record({ tool: 'send_message', params: {}, sender: 'peter', channel: 'discord', agentId: 'main', sessionKey: 's' } as any)).toBeNull();
+    } finally { console.warn = warn; }
+  });
+});

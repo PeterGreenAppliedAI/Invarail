@@ -295,7 +295,7 @@ export async function buildPrepSection(deps: PrepSectionDeps): Promise<string> {
       }, PREP_TTL_MS);
       logAutonomousAction({ action: 'prep_reminder_proposed', tier: 'propose_confirm', source: 'briefing', reversible: true, outcome: 'proposed', detail: `${event.title} -${a.reminder.minutesBefore}m` });
       const local = fire.toLocaleString('en-US', { timeZone, weekday: 'short', hour: 'numeric', minute: '2-digit' });
-      lines.push(`⏰ **${event.title}** — reminder ${local}: "${a.reminder.message.slice(0, 60)}" → \`confirm ${entry.id}\``);
+      if (entry) lines.push(`⏰ **${event.title}** — reminder ${local}: "${a.reminder.message.slice(0, 60)}" → \`confirm ${entry.id}\``);
       continue;
     }
 
@@ -305,7 +305,7 @@ export async function buildPrepSection(deps: PrepSectionDeps): Promise<string> {
         tool: 'task_add', params: { title: a.task.title }, sender, channel, agentId, sessionKey: 'briefing',
       }, PREP_TTL_MS);
       logAutonomousAction({ action: 'prep_task_proposed', tier: 'propose_confirm', source: 'briefing', reversible: true, outcome: 'proposed', detail: a.task.title.slice(0, 80) });
-      lines.push(`📋 **${event.title}** — task: "${a.task.title.slice(0, 60)}" → \`confirm ${entry.id}\``);
+      if (entry) lines.push(`📋 **${event.title}** — task: "${a.task.title.slice(0, 60)}" → \`confirm ${entry.id}\``);
     }
   }
 

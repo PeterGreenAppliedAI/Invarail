@@ -244,6 +244,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
               sessionKey: 'heartbeat:self-improve',
               category: 'code',
             }, 12 * 60 * 60 * 1000);  // 12h — the briefing-proposal TTL precedent
+            if (!action) throw new Error('confirmation ledger not writable — proposal not queued');
             history.append({ signature: draft.signature, spec: draft.spec, proposedAt: new Date().toISOString(), outcome: 'proposed', pendingId: action.id });
             logAutonomousAction({ action: 'self_improve_proposed', tier: 'propose_confirm', source: 'heartbeat', reversible: true, outcome: 'proposed', detail: draft.signature });
             proposalSummary = `🔧 **Self-improvement proposal**: ${draft.spec.slice(0, 200)}\n(evidence: \`${draft.tool}\` failed ${draft.count}× — "${draft.error.slice(0, 80)}")\nReply \`confirm ${action.id}\` to let Pi attempt it in an isolated worktree, or \`deny ${action.id}\` to reject it permanently.`;

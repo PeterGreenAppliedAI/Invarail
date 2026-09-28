@@ -29,6 +29,13 @@ is no bounty, but findings are credited in DECISIONS.md unless you ask otherwise
   Pi builds (`pi_build`, `!improve`) run on the host inside git worktrees — that is the
   boundary there, not a container. Persistent REPL sessions belong to the principal and
   agent that started them; another caller cannot read, run in, or close them.
+- **Cross-site requests.** A state-changing request whose `Origin` is neither the console's
+  own host, a listed `allowedOrigins` entry, nor the Chrome extension is refused before its
+  body is read — on the console API, `/api/message` and voice. Withholding CORS headers was
+  never a wall; this is.
+- **Symlinks.** Path containment resolves every existing component with `lstat`, dangling
+  links included: a link is judged by where it points, so a link out of the workspace is
+  refused whether or not its target exists yet.
 - **Who a web/console request is.** With `channels.web.token` set, the bearer is the
   owner's credential and the request runs as `ownerId`; a `senderId` in the body or query
   only partitions the session (one transcript per device) and cannot make a caller someone

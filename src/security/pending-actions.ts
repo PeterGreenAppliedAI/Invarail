@@ -95,7 +95,7 @@ export class PendingActionStore {
   /** Record a previewed action. Returns the entry (with id) for display.
    *  ttlMs defaults to 10 min (interactive confirms); briefing prep proposals
    *  pass a longer TTL since the user may read the briefing much later. */
-  record(entry: Omit<PendingAction, 'id' | 'createdAt' | 'expiresAt'>, ttlMs = TTL_MS): PendingAction {
+  record(entry: Omit<PendingAction, 'id' | 'createdAt' | 'expiresAt'>, ttlMs = TTL_MS): PendingAction | null {
     const now = Date.now();
     const action: PendingAction = {
       ...entry,
@@ -105,7 +105,12 @@ export class PendingActionStore {
     };
     const actions = this.load();
     actions.push(action);
-    this.save(actions);
+    if (!this.save(actions)) {
+      // An id the ledger never stored is a confirmation that can never be honoured — say so
+      // instead of handing the user a dead preview (third review, persistence false-success).
+      console.warn(`[PendingActions] Could not record ${action.tool} for ${action.sender} — ledger not writable`);
+      return null;
+    }
     console.log(`[PendingActions] Recorded ${action.tool} (id=${action.id}) for ${action.sender}`);
     return action;
   }
