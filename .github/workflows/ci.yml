@@ -37,3 +37,38 @@ jobs:
       - name: Console build
         working-directory: console
         run: npm ci && npm run build
+
+  # Windows: the suite is not green there yet (POSIX fixtures, chmod, python3 naming — the
+  # reviewers' count was 16). This job is the Windows box the project never had: it runs
+  # the same checks, reports, and cannot turn main red until the tail is fixed. Flip
+  # continue-on-error off when it is.
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test -- --reporter=dot --reporter=json --outputFile=vitest-windows.json
+        shell: bash
+
+      - name: Failure list
+        if: always()
+        shell: bash
+        run: |
+          node -e "const r=require('./vitest-windows.json'); const f=[]; for (const file of r.testResults) for (const t of file.assertionResults) if (t.status==='failed') f.push(file.name.replace(process.cwd(),'').replace(/\\\\/g,'/')+' :: '+t.fullName+' :: '+(t.failureMessages[0]||'').split('\n')[0].slice(0,160)); console.log(f.length+' failing on Windows'); console.log(f.join('\n'));"
+
+      - name: e2e harness selftest
+        shell: bash
+        run: npx tsx scripts/e2e-eval.ts --selftest
