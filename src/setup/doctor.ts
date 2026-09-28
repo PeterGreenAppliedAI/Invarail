@@ -115,6 +115,12 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
     }
   }
 
+  // Voice: enabled means a server must answer. The stack is Kokoro (TTS) + faster-whisper (STT).
+  if (config) {
+    if (config.tts?.enabled) push('Text-to-speech (Kokoro)', report.voice.tts.reachable ? 'PASS' : 'FAIL', report.voice.tts.reachable ? report.voice.tts.url : `tts.enabled but no server answers at ${config.tts.url}`, report.voice.tts.reachable ? undefined : `start it (${report.voice.tts.install}) or set tts.enabled: false`);
+    if (config.stt?.enabled) push('Speech-to-text (faster-whisper)', report.voice.stt.reachable ? 'PASS' : 'FAIL', report.voice.stt.reachable ? report.voice.stt.url : `stt.enabled but no server answers at ${config.stt.url}`, report.voice.stt.reachable ? undefined : `start it (${report.voice.stt.install}) or set stt.enabled: false`);
+  }
+
   // Memory tier requirements (src/memory/policy.ts)
   if (config) {
     const backend = memoryBackend(config);

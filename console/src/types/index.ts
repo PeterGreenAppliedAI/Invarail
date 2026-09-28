@@ -154,3 +154,7 @@ export interface ToolInfo {
   category: string;
   parameters?: Record<string, unknown>;
 }
+
+// GET /console/api/doctor — the same checks `npm run doctor` prints
+export interface DoctorCheck { name: string; status: 'PASS' | 'WARN' | 'FAIL'; detail?: string; fix?: string }
+export interface DoctorReport { checks: DoctorCheck[]; passes: number; warns: number; fails: number; platform: string }

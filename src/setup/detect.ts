@@ -37,6 +37,9 @@ export interface DetectReport {
   python: Probe;
   /** Optional: the vault tier is a folder of markdown; Obsidian is the viewer people expect for it. */
   obsidian: Probe;
+  /** Voice is present or absent by environment: Kokoro (TTS) and faster-whisper (STT), both
+   *  OpenAI-compatible servers, probed at their usual local ports. Never asked for, never assumed. */
+  voice: { tts: { url?: string; reachable: boolean; install: string }; stt: { url?: string; reachable: boolean; install: string } };
   config: { path: string; present: boolean };
   env: { present: boolean };
 }
@@ -75,6 +78,16 @@ export const INSTALL_HINTS: Record<string, Record<Platform, string>> = {
     mac: 'brew install --cask libreoffice',
     linux: 'sudo apt install libreoffice   (or your distro\'s package)',
     windows: 'winget install TheDocumentFoundation.LibreOffice',
+  },
+  kokoro: {
+    mac: 'docker run -d -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest   (Kokoro TTS, OpenAI-compatible; GPU image: kokoro-fastapi-gpu)',
+    linux: 'docker run -d -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest   (Kokoro TTS, OpenAI-compatible; GPU image: kokoro-fastapi-gpu)',
+    windows: 'docker run -d -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest   (Kokoro TTS, OpenAI-compatible; GPU image: kokoro-fastapi-gpu)',
+  },
+  whisper: {
+    mac: 'docker run -d -p 8000:8000 fedirz/faster-whisper-server:latest-cpu   (faster-whisper, OpenAI-compatible /v1/audio/transcriptions)',
+    linux: 'docker run -d -p 8000:8000 fedirz/faster-whisper-server:latest-cuda   (faster-whisper, OpenAI-compatible /v1/audio/transcriptions)',
+    windows: 'docker run -d -p 8000:8000 fedirz/faster-whisper-server:latest-cpu   (faster-whisper, OpenAI-compatible /v1/audio/transcriptions)',
   },
   obsidian: {
     mac: 'brew install --cask obsidian   (https://obsidian.md/download)',
@@ -127,6 +140,32 @@ const OBSIDIAN_CANDIDATES: Record<Platform, string[]> = {
   linux: ['/usr/bin/obsidian', '/usr/local/bin/obsidian', '/snap/bin/obsidian', `${process.env.HOME ?? ''}/.local/share/flatpak/exports/bin/md.obsidian.Obsidian`, '/var/lib/flatpak/exports/bin/md.obsidian.Obsidian'],
   windows: [`${process.env.LOCALAPPDATA ?? ''}\\Obsidian\\Obsidian.exe`, `${process.env.LOCALAPPDATA ?? ''}\\Programs\\Obsidian\\Obsidian.exe`],
 };
+
+/** The local ports the two voice servers usually sit on: TTS = the config default and Kokoro-FastAPI;
+ *  STT = faster-whisper-server. An OpenAI-compatible server answers `/v1/models`. */
+const TTS_CANDIDATES = ['http://127.0.0.1:5005', 'http://127.0.0.1:8880'];
+const STT_CANDIDATES = ['http://127.0.0.1:8000'];
+
+async function firstReachable(urls: string[]): Promise<string | undefined> {
+  for (const u of urls) {
+    for (const path of ['/v1/models', '/health', '/']) {
+      try {
+        const res = await fetch(`${u}${path}`, { signal: AbortSignal.timeout(1500) });
+        if (res.ok) return u;
+      } catch { /* next */ }
+    }
+  }
+  return undefined;
+}
+
+export async function detectVoice(p: Platform = detectPlatform(), opts?: { offline?: boolean }): Promise<DetectReport['voice']> {
+  const tts = opts?.offline ? undefined : await firstReachable(TTS_CANDIDATES);
+  const stt = opts?.offline ? undefined : await firstReachable(STT_CANDIDATES);
+  return {
+    tts: { url: tts, reachable: !!tts, install: INSTALL_HINTS.kokoro[p] },
+    stt: { url: stt, reachable: !!stt, install: INSTALL_HINTS.whisper[p] },
+  };
+}
 
 /** Obsidian is optional — the vault is plain markdown — but it is what a vault-tier user opens. */
 export async function detectObsidian(p: Platform = detectPlatform()): Promise<Probe> {
@@ -202,7 +241,7 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     ...(gpuMatch ? { gpuName: gpuMatch[1].trim(), gpuVramGb: Math.round(Number(gpuMatch[2]) / 1024 * 10) / 10 } : {}),
   };
   const ollamaBackends = await Promise.all((opts.ollamaBackendUrls ?? []).map(probeOllama));
-  const [ollama, docker, falkorUp, searxngState, libreoffice, python, obsidian] = await Promise.all([
+  const [ollama, docker, falkorUp, searxngState, libreoffice, python, obsidian, voice] = await Promise.all([
     probeOllama(ollamaUrl),
     detectDocker(p),
     opts.offline ? Promise.resolve(false) : tcpReachable(falkor.host, falkor.port),
@@ -210,6 +249,7 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     detectLibreOffice(p),
     detectPython(p),
     detectObsidian(p),
+    detectVoice(p, { offline: opts.offline }),
   ]);
 
   return {
@@ -224,6 +264,7 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     libreoffice,
     python,
     obsidian,
+    voice,
     config: { path: configPath, present: existsSync(configPath) },
     env: { present: existsSync('.env') },
   };

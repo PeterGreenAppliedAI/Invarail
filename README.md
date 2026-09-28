@@ -82,11 +82,13 @@ npm run doctor     # every dependency your config enables — found or missing, 
 npm start          # runs the doctor quietly, builds the console once, boots
 ```
 
-**The wizard detects before it asks.** It probes Node, Ollama and the models on it, Docker, FalkorDB, SearXNG, LibreOffice, and Python with matplotlib and pandas, and prints what it found. Then the questions that are actually yours: which model (an empty Ollama gets an offer to pull one), which channels, and whether the console should be reachable from other devices. Say yes to that and it generates the bearer token into `.env` and binds the network; say no and it binds loopback. Sidecars it can run for you (graph memory, search) are offered with a default of yes; system software (Docker, LibreOffice, Python) is named with the install command for your OS and never installed behind your back.
+**The wizard detects before it asks.** It probes Node, Ollama and the models on it, Docker, FalkorDB, SearXNG, LibreOffice, and Python with matplotlib and pandas, and prints what it found. Then the questions that are actually yours: which model (ranked by the published evals and by what fits your GPU; an empty Ollama gets an offer to pull one), how it should remember (graph with FalkorDB, flat files, or your Obsidian vault — with or without an embedding model), which channels, and whether the console should be reachable from other devices. Voice is never asked: if a Kokoro (TTS) or faster-whisper (STT) server is running it is used, otherwise voice is off. Say yes to that and it generates the bearer token into `.env` and binds the network; say no and it binds loopback. Sidecars it can run for you (graph memory, search) are offered with a default of yes; system software (Docker, LibreOffice, Python) is named with the install command for your OS and never installed behind your back.
 
 **Tier 0 is fifteen minutes:** Node 22+, Ollama with one model, the web console. Everything above it is one config block and degrades gracefully when absent — [INSTALL.md](INSTALL.md) has the ladder. `npm run doctor` re-checks the machine against your config any time; `npm start` refuses only when boot would be pointless (no config, no Ollama).
 
 **Search has a reputation cost.** Hosted providers (Brave, Perplexity, Grok, Tavily) spend *their* reputation and rate-limit you honestly. Self-hosted **SearXNG** spends *yours*: every query fans out to the engines from your IP, and agents search in bursts. The wizard offers it behind an explicit warning, ships a suggested `searxng/settings.yml`, paces outbound calls, and writes a daily query ceiling — read [SEARXNG.md](SEARXNG.md) before choosing it.
+
+**Where it runs:** macOS and Linux from source; Windows passes the same test suite, the front-door selftest and the wizard smokes in CI on every push, but is not yet a supported install ([INSTALL.md](INSTALL.md)). Posture: one owner on a LAN with the web token is the supported shape; multi-user and internet-facing are not claims this project makes ([SECURITY.md](SECURITY.md)).
 
 **Before exposing anything beyond this machine:** the wizard's generated token is the wall for the console (the adapter refuses a network bind without one). For chat channels, set `ownerId` and per-channel `trustedUsers`, `ownerOnlyTools`, and `confirmTools` — `ownerOnlyTools` is a code gate; those tools do not exist in the model's world for anyone else.
 
@@ -155,7 +157,7 @@ Then `"mcp:flows"` in a specialist's tools array exposes the whole server.
 
 ## Safety Summary
 
-Exec allowlist or Docker sandbox · SSRF protection on all fetchers · path-traversal validation on writes and file serving · per-user rate limiting · cron write-stripping + owner-authored identity · confirmation ledger with sender-bound single-use actions · target-bound revocable grants · owner-only code gate · per-channel category/tool/trust filtering · bearer-token web auth · TLS verification on by default · atomic writes (tmp + rename).
+Exec allowlist or Docker sandbox (and no exec at all when the requested sandbox is missing) · SSRF protection on all fetchers · symlink-aware path containment on writes and file serving · cross-site writes refused by Origin · per-user rate limiting · cron write-stripping + owner-authored identity · confirmation ledger with sender-bound single-use actions · target-bound revocable grants · owner-only code gate · per-channel category/tool/trust filtering · bearer-token web auth · TLS verification on by default · atomic writes (tmp + rename).
 
 ## Attribution
 

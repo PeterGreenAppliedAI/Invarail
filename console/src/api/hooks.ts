@@ -1,10 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchApi } from './client';
-import type { SystemStatus, OllamaModel, ChannelInfo, SessionMeta, ConversationTurn, Task, CronJob, FactEntry, ToolInfo, ResearchDeck, BuildMeta, BuildDetail } from '../types';
+import type { DoctorReport, SystemStatus, OllamaModel, ChannelInfo, SessionMeta, ConversationTurn, Task, CronJob, FactEntry, ToolInfo, ResearchDeck, BuildMeta, BuildDetail } from '../types';
 
 // --- System ---
 export function useStatus() {
   return useQuery<SystemStatus>({ queryKey: ['status'], queryFn: () => fetchApi('/status'), refetchInterval: 30_000 });
+}
+export function useDoctor() {
+  return useQuery<DoctorReport>({ queryKey: ['doctor'], queryFn: () => fetchApi('/doctor'), refetchInterval: 60_000 });
 }
 export function useModels() {
   return useQuery<OllamaModel[]>({ queryKey: ['models'], queryFn: () => fetchApi('/models') });

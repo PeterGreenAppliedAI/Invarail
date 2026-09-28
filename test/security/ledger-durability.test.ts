@@ -7,18 +7,23 @@ import { GrantStore } from '../../src/security/grants.js';
 
 // Re-review F19 (2026-09-27): a swallowed save failure let an entry be confirmed twice and a
 // grant revocation report success while the grant stayed on disk. Both now fail closed.
-// chmod is a no-op on Windows, so the read-only-directory fault cannot be staged there; the
-// fail-closed code under test is platform-independent.
-describe.skipIf(process.platform === 'win32')('ledger and grants fail closed when the write does not land', () => {
+/** Make the store's next tmp+rename fail: POSIX = read-only directory; Windows = read-only
+ *  target file (rename over a read-only file is refused there, directory mode bits are not). */
+function jam(dir: string, file: string): () => void {
+  if (process.platform === 'win32') { chmodSync(file, 0o444); return () => chmodSync(file, 0o666); }
+  chmodSync(dir, 0o500); return () => chmodSync(dir, 0o700);
+}
+
+describe('ledger and grants fail closed when the write does not land', () => {
   it('consume returns null when the ledger cannot be rewritten, and the entry is still there', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ledger-'));
     const store = new PendingActionStore(join(dir, 'pending.json'));
     const { id } = store.record({ tool: 'send_message', params: {}, sender: 'peter', channel: 'discord', agentId: 'main', sessionKey: 's' } as any);
-    chmodSync(dir, 0o500);                       // directory read-only: the tmp+rename cannot land
+    const release = jam(dir, join(dir, 'pending.json'));   // the tmp+rename cannot land
     try {
       expect(store.consume(id)).toBeNull();
       expect(store.findById(id, 'peter')?.id).toBe(id);
-    } finally { chmodSync(dir, 0o700); }
+    } finally { release(); }
     expect(store.consume(id)?.id).toBe(id);      // writable again → consumed
     expect(store.findById(id, 'peter')).toBeNull();
   });
@@ -27,11 +32,11 @@ describe.skipIf(process.platform === 'win32')('ledger and grants fail closed whe
     const dir = mkdtempSync(join(tmpdir(), 'grants-'));
     const store = new GrantStore(join(dir, 'grants.json'));
     const g = store.record({ tool: 'send_message', target: 'discord:123', principal: 'peter' } as any);
-    chmodSync(dir, 0o500);
+    const release = jam(dir, join(dir, 'grants.json'));
     try {
       expect(store.revoke(g.id, 'peter')).toBeNull();
       expect(store.findMatch('send_message', 'discord:123', 'peter')?.id).toBe(g.id);
-    } finally { chmodSync(dir, 0o700); }
+    } finally { release(); }
     expect(store.revoke(g.id, 'peter')?.id).toBe(g.id);
   });
 });

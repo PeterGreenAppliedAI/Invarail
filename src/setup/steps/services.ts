@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { convertVaultToOkf } from '../../knowledge/okf.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { askText, askYesNo, askChoice, printStep, printSuccess, printWarning, printInfo, printError } from '../prompts.js';
-import { testHttpEndpoint, testDocker, installFalkorDB, composeUp, runInstallArgs } from '../connectivity.js';
+import { testDocker, installFalkorDB, composeUp, runInstallArgs } from '../connectivity.js';
 import { obsidianInstallArgs } from '../detect.js';
 import { findVisionModels, findReasoningModels } from '../defaults.js';
 import { detectSearxng, type DetectReport } from '../detect.js';
@@ -170,30 +170,21 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
     }
   }
 
-  // TTS
-  if (await askYesNo('Enable Text-to-Speech (TTS)?', false)) {
+  // Voice — present or absent by environment, never asked for. Kokoro (TTS) and
+  // faster-whisper (STT) are the supported stack; both are OpenAI-compatible servers.
+  if (report?.voice.tts.reachable && report.voice.tts.url) {
     result.tts.enabled = true;
-    result.tts.url = await askText('TTS server URL', 'http://127.0.0.1:5005');
-    printInfo(`Testing TTS at ${result.tts.url}...`);
-    const ok = await testHttpEndpoint(result.tts.url);
-    if (ok) {
-      printSuccess('TTS server is reachable');
-    } else {
-      printWarning('TTS server not reachable — make sure it is running before starting Invarail');
-    }
+    result.tts.url = report.voice.tts.url;
+    printSuccess(`Text-to-speech: server found at ${result.tts.url} (Kokoro-compatible)`);
+  } else {
+    printInfo(`Text-to-speech: no server found — voice replies off. Kokoro is the supported TTS: ${report?.voice.tts.install ?? 'see INSTALL.md'}`);
   }
-
-  // STT
-  if (await askYesNo('Enable Speech-to-Text (STT)?', false)) {
+  if (report?.voice.stt.reachable && report.voice.stt.url) {
     result.stt.enabled = true;
-    result.stt.url = await askText('STT server URL', 'http://127.0.0.1:8000');
-    printInfo(`Testing STT at ${result.stt.url}...`);
-    const ok = await testHttpEndpoint(result.stt.url);
-    if (ok) {
-      printSuccess('STT server is reachable');
-    } else {
-      printWarning('STT server not reachable — make sure it is running before starting Invarail');
-    }
+    result.stt.url = report.voice.stt.url;
+    printSuccess(`Speech-to-text: server found at ${result.stt.url} (faster-whisper-compatible)`);
+  } else {
+    printInfo(`Speech-to-text: no server found — voice input off. faster-whisper is the supported STT: ${report?.voice.stt.install ?? 'see INSTALL.md'}`);
   }
 
   // Vision

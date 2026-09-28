@@ -18,6 +18,7 @@ const base: DetectReport = {
   libreoffice: { found: false, detail: 'soffice not found', install: 'brew install --cask libreoffice' },
   python: { found: true, detail: 'Python 3.12' },
   obsidian: { found: false, detail: 'Obsidian not found', install: 'brew install --cask obsidian' },
+  voice: { tts: { reachable: false, install: 'docker run … kokoro' }, stt: { reachable: false, install: 'docker run … whisper' } },
   config: { path: 'invarail.config.json5', present: true },
   env: { present: true },
 };
@@ -96,6 +97,15 @@ describe('doctor', () => {
     mkdirSync(join(dir, 'notes')); writeFileSync(join(dir, 'notes', 'a.md'), '# no type\n');
     const okf = doctorChecks(base, cfg({ memory: { backend: 'vault', embeddingModel: 'none' }, vault: { path: dir, okf: true } })).find(c => c.name === 'OKF bundle')!;
     expect(okf.status).toBe('WARN'); expect(okf.detail).toMatch(/notes\/a\.md/);
+  });
+
+  it('voice: an enabled TTS/STT with no server answering FAILs with the stack named; found servers PASS', () => {
+    const off = doctorChecks(base, cfg({ tts: { enabled: true, url: 'http://127.0.0.1:5005' }, stt: { enabled: true, url: 'http://127.0.0.1:8000' } }));
+    expect(off.find(c => c.name === 'Text-to-speech (Kokoro)')!.status).toBe('FAIL');
+    expect(off.find(c => c.name === 'Speech-to-text (faster-whisper)')!.fix).toMatch(/whisper/);
+    const found = { ...base, voice: { tts: { url: 'http://127.0.0.1:8880', reachable: true, install: '' }, stt: { url: 'http://127.0.0.1:8000', reachable: true, install: '' } } };
+    expect(doctorChecks(found, cfg({ tts: { enabled: true, url: 'http://127.0.0.1:8880' } })).find(c => c.name === 'Text-to-speech (Kokoro)')!.status).toBe('PASS');
+    expect(doctorChecks(base, cfg()).find(c => /Text-to-speech/.test(c.name))).toBeUndefined();   // off = nothing to check
   });
 
   it('prompt profile: warns when the profile disagrees with the foreground tier, either way', () => {
