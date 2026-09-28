@@ -132,6 +132,27 @@ Reliability, then, for a 9B through the real front door: 30/33 task-reps before 
 with the three misses being one behaviour that is now guarded, plus one routing flip in
 three on a request that is defensibly either category.
 
+### Three reps, all three small-tier models, corrected harness (2026-09-28)
+
+The confirm-ledger task's `confirmTools: ['task_add']` had leaked into every task's install
+(see DECISIONS "A Harness Mistake That Looked Like Model Decline"), which made two tasks
+"fail" for every model. With the gate scoped to its own flow, three reps of the full
+12-task battery on a quiet A5000 (`report-*-3reps*.md`, `results-*.json`):
+
+| Model | Task-reps | Overall | Where the misses are |
+|---|---|---|---|
+| qwen3.5:9b (`…-corrected-harness`) | **36/36** | 100% | none — the intent nudge holds; task-board 3/3 |
+| gemma4:12b | 35/36 | 99% | one rep of web-fact-to-file routed `exec` instead of `multi` and never searched |
+| qwen2.5:7b | 31/36 | 95% | multi-release-notes 3/3 routed `task`: adds the task, then *announces* the summary and stops; exec-csv-revenue 2/3 wrote the wrong total (one rep 123456 — a fabrication, the caveat from the board) |
+
+Read together: **execution is not where the small tier loses.** Every exec, memory, cron,
+website, confirm-ledger and research rep passed on all three models — 45/45 research reps
+across the tier, PDF included. The misses are the router (the model classifying its own
+request in a one-model install: `exec` for "look up X and write it", `task` for "add a task
+and summarize the changes") and, on the 7B, one announced-intent stall AFTER a successful
+tool call — a shape the nudge does not cover, since it fires only after the premature-answer
+repair. Both are engine/config levers, measurable per model with `--task`, not model swaps.
+
 ## Reading the numbers
 
 - **Prompt tokens per battery are ~77K for 11 tasks** on the 9B/12B — the system prompt is

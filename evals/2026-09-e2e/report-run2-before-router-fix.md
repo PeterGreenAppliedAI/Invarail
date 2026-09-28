@@ -357,4 +357,4 @@ The market has matured around three distinct tiers based on VRAM size and memory
 </details>
 
 ---
-Provenance: {"date":"2026-09-27T19:09:52.353Z","gitCommit":"198058d","ollamaUrl":"http://10.9.8.19:11434","reps":1,"profile":"full","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}
+Provenance: {"date":"2026-09-27T19:09:52.353Z","gitCommit":"198058d","ollamaUrl":"http://<lan-ollama>:11434","reps":1,"profile":"full","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}
