@@ -1,4 +1,5 @@
 import type { PipelineDefinition, PipelineContext } from '../types.js';
+import { PYTHON } from '../../exec/python.js';
 
 /**
  * Code generation pipeline: enrich → build → verify → [fix] → [re-verify] → commit → report
@@ -42,7 +43,7 @@ async function runTests(projectDir: string): Promise<{ pass: boolean; output: st
     // every pip/pytest call ENOENT'd and a passing build got mislabeled "tests failing". Recreate
     // (--clear) whenever the interpreter is missing.
     if (!existsSync(python)) {
-      const venvResult = await run('python3', ['-m', 'venv', '--clear', venvDir], projectDir, 30000);
+      const venvResult = await run(PYTHON, ['-m', 'venv', '--clear', venvDir], projectDir, 30000);
       if (venvResult.code !== 0 || !existsSync(python)) {
         // Couldn't build a Python env — infrastructure, NOT a code failure. Skip the gate so it
         // doesn't mislabel the build or fire the fix loop on un-runnable tests.

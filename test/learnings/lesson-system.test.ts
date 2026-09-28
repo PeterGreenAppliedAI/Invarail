@@ -13,8 +13,11 @@ import type { OllamaClient } from '../../src/ollama/client.js';
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'lessons-')); });
+let injectedStore: EmbeddingStore | null = null;
 afterEach(() => {
   setEmbeddingStoreForTests(null);
+  injectedStore?.close();   // Windows holds the SQLite file open: close before rm (EBUSY)
+  injectedStore = null;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -188,7 +191,8 @@ describe('synthesizeLessons', () => {
 
 describe('lesson injection gates', () => {
   beforeEach(() => {
-    setEmbeddingStoreForTests(new EmbeddingStore(join(dir, 'test-memory.db')));
+    injectedStore = new EmbeddingStore(join(dir, 'test-memory.db'));
+    setEmbeddingStoreForTests(injectedStore);
   });
 
   it('evidence:1 lesson is indexed but NOT injected; evidence:2 goes live', async () => {

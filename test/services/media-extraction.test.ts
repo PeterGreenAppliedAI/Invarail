@@ -46,7 +46,9 @@ describe('extractMediaAttachments containment', () => {
   });
 
   it('defaults the root to <cwd>/data', () => {
-    const out = extractMediaAttachments('[FILE:/etc/hosts]');
+    const outside = join(mkdtempSync(join(tmpdir(), 'outside-')), 'hosts.txt');
+    writeFileSync(outside, 'not an artifact');   // exists, outside every root — on any OS
+    const out = extractMediaAttachments(`[FILE:${outside}]`);
     expect(out.attachments).toEqual([]);
     expect(out.cleanText).toBe('');
   });

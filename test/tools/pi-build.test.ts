@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,7 +61,10 @@ describe('pi_build tool (adapter-driven)', () => {
     const tool = createPiBuildTool(config, adapter);
 
     const out = await tool.execute({ prompt: 'fix the bug', projectDir }, ctx);
-    expect(out).toContain(`Project directory: ${projectDir}`);
+    // The printed path may be the given one or its canonical form (Windows tmp is an 8.3 short
+    // name; macOS tmp is a symlink) — same directory either way.
+    const printed = out.match(/Project directory: (.+)/)?.[1]?.trim();
+    expect(printed && realpathSync(printed)).toBe(realpathSync(projectDir));
     expect(out).toContain('session: existing');
     const req = (adapter.runSession as ReturnType<typeof vi.fn>).mock.calls[0][0] as PiSessionRequest;
     expect(req.prompt).toBe('fix the bug');

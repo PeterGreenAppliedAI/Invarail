@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { PYTHON_ALIASES } from '../exec/python.js';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -7,7 +8,7 @@ import type { ExecConfig } from '../config/types.js';
 import type { DockerBackend } from '../exec/docker-backend.js';
 
 export function createExecTool(config?: ExecConfig, dockerBackend?: DockerBackend): InvarailTool {
-  const allowlist = new Set(config?.allowlist ?? ['ls', 'cat', 'python3', 'node', 'git']);
+  const allowlist = new Set(config?.allowlist ?? ['ls', 'cat', ...PYTHON_ALIASES, 'node', 'git']);
   const timeout = config?.timeout ?? 30_000;
   const useDocker = !!dockerBackend;
 

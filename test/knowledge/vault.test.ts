@@ -145,7 +145,7 @@ describe('vault reindex + retrieval', () => {
 
   it('storeDocument writes a slugged markdown file into the domain', () => {
     const path = storeDocument(vaultPath, 'business', 'Q3 Planning: Notes!', 'Some content here.');
-    expect(path).toContain('business/q3-planning-notes.md');
+    expect(path).toBe(join(vaultPath, 'business', 'q3-planning-notes.md'));   // OS-native: a filesystem path, not an artifact
     expect(listDomains(vaultPath)).toContain('business');
   });
 });

@@ -149,7 +149,7 @@ describe('document tool conversion error logging', () => {
     try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it('throws CONVERSION_ERROR and logs input path + stderr when LibreOffice exits non-zero', async () => {
+  it.skipIf(process.platform === 'win32')('throws CONVERSION_ERROR and logs input path + stderr when LibreOffice exits non-zero', async () => {
     useSoffice(fakeSoffice('echo "fake converter exploded" >&2\nexit 3'));
     const input = join(TMP_DIR, `input-${Math.random().toString(36).slice(2)}.txt`);
     writeFileSync(input, 'hello');
@@ -166,7 +166,7 @@ describe('document tool conversion error logging', () => {
     expect(warnOutput()).toContain('exit=3');
   });
 
-  it('logs input path when LibreOffice exits 0 but produces no output file', async () => {
+  it.skipIf(process.platform === 'win32')('logs input path when LibreOffice exits 0 but produces no output file', async () => {
     useSoffice(fakeSoffice('exit 0'));
     const input = join(TMP_DIR, `quiet-${Math.random().toString(36).slice(2)}.txt`);
     writeFileSync(input, 'hello');

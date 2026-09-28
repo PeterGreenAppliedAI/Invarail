@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { saveAttachment, isImageMime } from '../../src/services/attachments.js';
 import type { Attachment } from '../../src/channels/types.js';
 
@@ -102,8 +102,8 @@ describe('saveAttachment', () => {
 
     const result = saveAttachment(att, 'slack', 'msg111');
     expect(result).not.toBeNull();
-    expect(result!.localPath).not.toContain('\\');
-    expect(result!.localPath).not.toContain('\0');
+    expect(basename(result!.localPath)).not.toContain('\\');   // the NAME — the OS path has backslashes on Windows
+    expect(basename(result!.localPath)).not.toContain('\0');
   });
 
   it('truncates long filenames to 200 chars', () => {
@@ -117,7 +117,7 @@ describe('saveAttachment', () => {
     const result = saveAttachment(att, 'discord', 'msg222');
     expect(result).not.toBeNull();
     // The sanitized filename part should be at most 200 chars
-    const diskName = result!.localPath.split('/').pop()!;
+    const diskName = basename(result!.localPath);
     const prefix = 'discord_msg222_';
     const sanitizedPart = diskName.slice(prefix.length);
     expect(sanitizedPart.length).toBeLessThanOrEqual(200);

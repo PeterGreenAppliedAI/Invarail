@@ -1,4 +1,5 @@
 import { writeFileSync, mkdirSync, unlinkSync, statSync } from 'node:fs';
+import { PYTHON } from '../exec/python.js';
 import { join, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -380,7 +381,7 @@ async function generateBackground(
 
 function runPython(scriptPath: string, timeout = 60_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('python3', [scriptPath], { timeout, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(PYTHON, [scriptPath], { timeout, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         reject(toolExecutionError('diagram_generate', new Error(stderr || err.message)));
         return;

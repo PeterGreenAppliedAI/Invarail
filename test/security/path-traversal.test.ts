@@ -85,6 +85,7 @@ describe('Session route sanitization', () => {
     const baseDir = resolve('/data/sessions');
     const agentId = sanitizePath('../../../etc');
     const targetDir = resolve(join(baseDir, agentId));
-    expect(targetDir.startsWith(baseDir + '/')).toBe(true);
+    const rel = relative(baseDir, targetDir);
+    expect(rel && !rel.startsWith('..') && !isAbsolute(rel)).toBe(true);   // inside, on any OS
   });
 });

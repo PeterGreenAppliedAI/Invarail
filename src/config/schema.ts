@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PYTHON_ALIASES } from '../exec/python.js';
 
 export const OllamaConfigSchema = z.object({
   url: z.string().default('http://127.0.0.1:11434'),
@@ -367,7 +368,7 @@ export const DockerConfigSchema = z.object({
 
 export const ExecConfigSchema = z.object({
   security: z.enum(['allowlist', 'docker']).default('allowlist'),
-  allowlist: z.array(z.string()).default(['ls', 'cat', 'python3', 'node', 'git']),
+  allowlist: z.array(z.string()).default(['ls', 'cat', ...PYTHON_ALIASES, 'node', 'git']),   // the platform's Python name(s)
   timeout: z.number().default(30000),
   sessions: SessionExecConfigSchema.optional(),
   docker: DockerConfigSchema.optional(),

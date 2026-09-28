@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { PYTHON } from './python.js';
 import type { SessionExecConfig } from '../config/types.js';
 
 const SENTINEL = '__INVARAIL_DONE__';
@@ -232,7 +233,7 @@ export class SessionManager {
   private getRuntimeCommand(runtime: SessionRuntime): { command: string; args: string[] } {
     switch (runtime) {
       case 'python':
-        return { command: 'python3', args: ['-u', '-i'] };
+        return { command: PYTHON, args: ['-u', '-i'] };
       case 'node':
         return { command: 'node', args: ['--interactive'] };
       case 'bash':

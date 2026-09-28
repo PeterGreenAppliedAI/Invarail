@@ -7,7 +7,9 @@ import { GrantStore } from '../../src/security/grants.js';
 
 // Re-review F19 (2026-09-27): a swallowed save failure let an entry be confirmed twice and a
 // grant revocation report success while the grant stayed on disk. Both now fail closed.
-describe('ledger and grants fail closed when the write does not land', () => {
+// chmod is a no-op on Windows, so the read-only-directory fault cannot be staged there; the
+// fail-closed code under test is platform-independent.
+describe.skipIf(process.platform === 'win32')('ledger and grants fail closed when the write does not land', () => {
   it('consume returns null when the ledger cannot be rewritten, and the entry is still there', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ledger-'));
     const store = new PendingActionStore(join(dir, 'pending.json'));

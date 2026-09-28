@@ -62,7 +62,7 @@ describe('observation spill (dsh borrow)', () => {
     });
     const obs = result.steps[0].observation;
     expect(obs).toContain('FULL output saved to');
-    expect(obs).toContain('.spill/');
+    expect(obs).toMatch(/\.spill[\\/]/);   // the hint is an OS path
     const spillDir = join(ws, '.spill');
     const files = readdirSync(spillDir);
     expect(files).toHaveLength(1);
