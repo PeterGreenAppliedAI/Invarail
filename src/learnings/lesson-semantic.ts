@@ -13,8 +13,8 @@ function lessonText(lesson: Lesson): string {
   return `${lesson.situation}. ${lesson.description}${triggers}`;
 }
 
-export async function upsertLessonEmbedding(client: OllamaClient, lesson: Lesson): Promise<void> {
-  await upsertSourceEmbedding(client, LESSON_SOURCE, lesson.slug, lessonText(lesson));
+export async function upsertLessonEmbedding(client: OllamaClient, lesson: Lesson, embeddingModel?: string): Promise<void> {
+  await upsertSourceEmbedding(client, LESSON_SOURCE, lesson.slug, lessonText(lesson), embeddingModel);
 }
 
 export function deleteLessonEmbedding(slug: string): void {
@@ -27,8 +27,9 @@ export async function findLessonBySimilarity(
   store: LessonStore,
   situation: string,
   floor = LESSON_MATCH_FLOOR,
+  embeddingModel?: string,
 ): Promise<{ slug: string; score: number } | null> {
-  const results = await findBySourceSimilarity(client, LESSON_SOURCE, situation, floor);
+  const results = await findBySourceSimilarity(client, LESSON_SOURCE, situation, floor, 3, embeddingModel);
   for (const r of results) {
     if (store.get(r.key)) return { slug: r.key, score: r.score };
     deleteLessonEmbedding(r.key); // stale index entry for an archived lesson
@@ -46,8 +47,9 @@ export async function relevantLessonLines(
   store: LessonStore,
   message: string,
   floor = LESSON_MATCH_FLOOR,
+  embeddingModel?: string,
 ): Promise<string[]> {
-  const results = await findBySourceSimilarity(client, LESSON_SOURCE, message, floor, 4);
+  const results = await findBySourceSimilarity(client, LESSON_SOURCE, message, floor, 4, embeddingModel);
   const lines: string[] = [];
   for (const r of results) {
     const lesson = store.get(r.key);

@@ -67,6 +67,8 @@ export async function synthesizeLessons(opts: {
   client: OllamaClient;
   model: string;
   workspacePath: string;
+  /** config.memory.embeddingModel; `"none"` keeps lessons text-only (no dense dedup, no injection) */
+  embeddingModel?: string;
   metricsPath?: string;
   deadLetterPath?: string;
 }): Promise<LessonSynthesisResult> {
@@ -136,16 +138,16 @@ export async function synthesizeLessons(opts: {
     if (store.get(slug)) {
       store.recordEvidence(slug, trigger);
       const refreshed = store.get(slug);
-      if (refreshed) await upsertLessonEmbedding(opts.client, refreshed);
+      if (refreshed) await upsertLessonEmbedding(opts.client, refreshed, opts.embeddingModel);
       result.reinforced.push(slug);
       logAutonomousAction({ action: 'lesson_evidence', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'success', detail: slug });
       continue;
     }
-    const similar = await findLessonBySimilarity(opts.client, store, `${lesson.situation}. ${lesson.boundary}`);
+    const similar = await findLessonBySimilarity(opts.client, store, `${lesson.situation}. ${lesson.boundary}`, undefined, opts.embeddingModel);
     if (similar) {
       store.recordEvidence(similar.slug, trigger);
       const refreshed = store.get(similar.slug);
-      if (refreshed) await upsertLessonEmbedding(opts.client, refreshed);
+      if (refreshed) await upsertLessonEmbedding(opts.client, refreshed, opts.embeddingModel);
       result.reinforced.push(similar.slug);
       logAutonomousAction({ action: 'lesson_evidence', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'success', detail: similar.slug });
       continue;
@@ -168,7 +170,7 @@ export async function synthesizeLessons(opts: {
       boundary: lesson.boundary!,
     };
     store.save(newLesson);
-    await upsertLessonEmbedding(opts.client, newLesson);
+    await upsertLessonEmbedding(opts.client, newLesson, opts.embeddingModel);
     result.newLessons.push(slug);
     logAutonomousAction({ action: 'lesson_recorded', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'success', detail: `${slug} (${candidate.kind})` });
   }

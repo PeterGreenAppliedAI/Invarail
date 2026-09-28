@@ -23,9 +23,9 @@ export function setEmbeddingStoreForTests(store: EmbeddingStore | null): void {
 }
 
 /** Generic per-source upsert — stable id `<source>:<key>` makes re-indexing idempotent. */
-export async function upsertSourceEmbedding(client: OllamaClient, source: string, key: string, text: string): Promise<void> {
+export async function upsertSourceEmbedding(client: OllamaClient, source: string, key: string, text: string, model?: string): Promise<void> {
   try {
-    const embedding = await generateEmbedding(client, text);
+    const embedding = await generateEmbedding(client, text, model);
     if (embedding.length === 0) return;
     embeddingStore().add({
       id: `${source}:${key}`,
@@ -56,9 +56,10 @@ export async function findBySourceSimilarity(
   query: string,
   floor: number,
   maxResults = 3,
+  model?: string,
 ): Promise<Array<{ key: string; score: number }>> {
   try {
-    const queryEmbedding = await generateEmbedding(client, query);
+    const queryEmbedding = await generateEmbedding(client, query, model);
     if (queryEmbedding.length === 0) return [];
     return embeddingStore().search(queryEmbedding, maxResults, floor, source).map(r => ({ key: r.file, score: r.score }));
   } catch (err) {

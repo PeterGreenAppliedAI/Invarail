@@ -1,4 +1,5 @@
 import { FalkorDB, Graph } from 'falkordb';
+import { NO_EMBEDDINGS } from './policy.js';
 import { DEFAULT_EMBED_MODEL, type OllamaClient } from '../ollama/client.js';
 
 /**
@@ -103,6 +104,7 @@ export class ExperienceStore {
   get connected(): boolean { return this.initialized && this.graph !== null; }
 
   private async ensure(): Promise<boolean> {
+    if (this.config.embeddingModel === NO_EMBEDDINGS) return false; // no-embedder tier: nothing to index or match
     if (this.connected) return true;
     try { await this.connect(); return true; } catch { return false; }
   }

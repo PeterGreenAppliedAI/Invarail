@@ -207,6 +207,20 @@ describe('lesson injection gates', () => {
     expect((await relevantLessonLines(client, store, 'make a research report'))[0]).toContain('research pipeline');
   });
 
+  it('the configured embedding model reaches the embed call; "none" never calls it', async () => {
+    const store = new LessonStore(dir);
+    const client = fakeEmbedClient();
+    store.save(makeLesson({ evidenceCount: 2 }));
+    await upsertLessonEmbedding(client, store.get('plan-pipeline-research-boundary')!, 'qwen3-embedding:4b');
+    const embed = (client as unknown as { embed: ReturnType<typeof vi.fn> }).embed;
+    expect(embed).toHaveBeenLastCalledWith(expect.any(String), 'qwen3-embedding:4b');
+    expect((await relevantLessonLines(client, store, 'make a research report', undefined, 'qwen3-embedding:4b'))[0]).toContain('research pipeline');
+    embed.mockClear();
+    expect(await relevantLessonLines(client, store, 'make a research report', undefined, 'none')).toHaveLength(0);
+    expect(await findLessonBySimilarity(client, store, 'research report', undefined, 'none')).toBeNull();
+    expect(embed).not.toHaveBeenCalled();
+  });
+
   it('archived lesson embeddings are pruned on lookup', async () => {
     const store = new LessonStore(dir);
     const client = fakeEmbedClient();

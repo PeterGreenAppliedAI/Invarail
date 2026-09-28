@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { NO_EMBEDDINGS } from './policy.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { OllamaClient } from '../ollama/client.js';
@@ -302,8 +303,14 @@ function cosineSimilarity(a: number[], b: number[]): number {
 export async function generateEmbedding(
   client: OllamaClient,
   text: string,
+  /** config.memory.embeddingModel — pass it wherever config is in scope. `"none"`
+   *  (the no-embedder tier) returns an empty vector WITHOUT a call: the lesson
+   *  priming path was embedding on the hardcoded fallback model under that tier
+   *  (45s timeouts on every turn, 2026-09-28). */
+  model?: string,
 ): Promise<number[]> {
-  const embeddings = await client.embed(text);
+  if (model === NO_EMBEDDINGS) return [];
+  const embeddings = model ? await client.embed(text, model) : await client.embed(text);
   return embeddings[0] ?? [];
 }
 

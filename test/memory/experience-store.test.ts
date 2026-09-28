@@ -129,4 +129,15 @@ describe('supersedeById', () => {
     expect(res).toBeNull();
     expect(graph.queries.some(x => x.q.includes('SUPERSEDES'))).toBe(false);
   });
+
+  it('the no-embedder tier ("none") makes the store inert: no embed call, no graph query, empty results', async () => {
+    const graph = fakeGraph();
+    const client = { embed: vi.fn(async () => [[0.1, 0.2, 0.3]]) } as unknown as OllamaClient;
+    const store = new ExperienceStore(client, { embeddingModel: 'none' });
+    (store as unknown as { graph: unknown }).graph = graph;
+    expect(await store.searchRelevant('anything at all', 2, 0.6)).toEqual([]);
+    expect(await store.save(baseInput)).toBeNull();
+    expect((client as unknown as { embed: ReturnType<typeof vi.fn> }).embed).not.toHaveBeenCalled();
+    expect(graph.queries.length).toBe(0);
+  });
 });

@@ -1,4 +1,4 @@
-import { sharedExperienceStore, type ExperienceStore } from '../memory/experience-store.js';
+import { sharedExperienceStore, experienceStoreConfigFrom, type ExperienceStore } from '../memory/experience-store.js';
 import type { GraphMemoryStore } from '../memory/graph-store.js';
 import type { OllamaClient } from '../ollama/client.js';
 
@@ -23,6 +23,8 @@ export interface CodingMemoryDeps {
   ownerId?: string;
   /** Workspace path for the LessonStore (lessons skipped when absent) */
   workspacePath?: string;
+  /** config.memory.embeddingModel — lessons are dense lookups; `"none"` skips them */
+  embeddingModel?: string;
 }
 
 /**
@@ -44,7 +46,7 @@ export async function buildPriorExperienceBrief(spec: string, deps: CodingMemory
   }
   try {
     if (deps.client && deps.workspacePath) {
-      const lessonLines = await lessonLinesFor(deps.client, deps.workspacePath, spec);
+      const lessonLines = await lessonLinesFor(deps.client, deps.workspacePath, spec, deps.embeddingModel);
       lines.push(...lessonLines.slice(0, 2));
     }
   } catch (err) {
@@ -73,7 +75,7 @@ export function buildMemorySearchCallback(deps: CodingMemoryDeps): (query: strin
         parts.push(...facts.slice(0, 5).map(f => `[fact] ${String((f as { text?: string }).text ?? '').slice(0, 200)}`).filter(l => l !== '[fact] '));
       }
       if (deps.client && deps.workspacePath) {
-        parts.push(...(await lessonLinesFor(deps.client, deps.workspacePath, query)).slice(0, 2));
+        parts.push(...(await lessonLinesFor(deps.client, deps.workspacePath, query, deps.embeddingModel)).slice(0, 2));
       }
       return parts.length > 0 ? parts.slice(0, 8).join('\n') : 'No relevant prior experience or facts found.';
     } catch (err) {
@@ -91,19 +93,22 @@ export function buildCodingMemoryDeps(opts: {
   ownerId?: string;
   workspacePath?: string;
   experienceStore?: ExperienceStore;
-  falkordb?: { host?: string; port?: number; graphName?: string };
+  /** config.memory — the store config (falkordb + embedding model) is derived HERE, the
+   *  allowlisted consumer, so register-all never touches the experience layer. */
+  memory?: Parameters<typeof experienceStoreConfigFrom>[0];
 }): CodingMemoryDeps {
   return {
     client: opts.client,
     graphMemory: opts.graphMemory,
     ownerId: opts.ownerId,
     workspacePath: opts.workspacePath,
-    experienceStore: opts.experienceStore ?? (opts.client ? sharedExperienceStore(opts.client, opts.falkordb) : undefined),
+    embeddingModel: opts.memory?.embeddingModel,
+    experienceStore: opts.experienceStore ?? (opts.client ? sharedExperienceStore(opts.client, experienceStoreConfigFrom(opts.memory)) : undefined),
   };
 }
 
-async function lessonLinesFor(client: OllamaClient, workspacePath: string, message: string): Promise<string[]> {
+async function lessonLinesFor(client: OllamaClient, workspacePath: string, message: string, embeddingModel?: string): Promise<string[]> {
   const { LessonStore } = await import('../learnings/lesson-store.js');
   const { relevantLessonLines } = await import('../learnings/lesson-semantic.js');
-  return relevantLessonLines(client, new LessonStore(workspacePath), message);
+  return relevantLessonLines(client, new LessonStore(workspacePath), message, undefined, embeddingModel);
 }

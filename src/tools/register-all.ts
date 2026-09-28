@@ -221,7 +221,7 @@ export async function registerAllTools(
   if (config.pi?.enabled) {
     const { buildCodingMemoryDeps } = await import('../coding/coding-memory.js');
     const memoryDeps = options?.ollamaClient
-      ? buildCodingMemoryDeps({ client: options.ollamaClient, graphMemory: options.graphMemory, ownerId: config.ownerId, workspacePath: workspace, falkordb: config.memory?.falkordb })
+      ? buildCodingMemoryDeps({ client: options.ollamaClient, graphMemory: options.graphMemory, ownerId: config.ownerId, workspacePath: workspace, memory: config.memory })
       : undefined;
     registry.register(createPiBuildTool(config.pi, undefined, memoryDeps));
     console.log(`[Tools] Pi registered (${config.pi.model}${memoryDeps ? ', memory-briefed' : ''})`);

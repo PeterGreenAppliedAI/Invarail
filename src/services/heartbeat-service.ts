@@ -196,6 +196,7 @@ export async function runHeartbeat(deps: HeartbeatDeps): Promise<void> {
           client,
           model: config.memory?.extractionModel ?? config.router.model,
           workspacePath,
+          embeddingModel: config.memory?.embeddingModel,
         });
         if (lessons.newLessons.length > 0 || lessons.reinforced.length > 0) {
           lessonSummary = `📚 **Lessons**: ${lessons.newLessons.length} new${lessons.newLessons.length ? ` (${lessons.newLessons.join(', ')})` : ''}, ${lessons.reinforced.length} reinforced`;

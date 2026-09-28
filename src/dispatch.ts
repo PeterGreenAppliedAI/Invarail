@@ -19,6 +19,7 @@ import {
 import { stripThinkingTags } from './utils/text.js';
 import { resolveWorkspacePath } from './agents/scope.js';
 import { buildWorkspaceContext, type WorkspaceCategory } from './agents/workspace.js';
+import { embeddingsEnabled } from './memory/policy.js';
 import { logDispatch, logRouterClassification, logAutonomousAction, logReviewNote, logMetric } from './metrics.js';
 
 /**
@@ -405,13 +406,17 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     // Lessons and experiences steer TOOL use. A voice turn is bare chat with no tools,
     // and each of these is another embed on the priming path (2026-09-26: priming
     // was 1.4–2.1s of a voice turn, with routing at 1ms beside it).
+    // Both are dense lookups: under the no-embedder tier (embeddingModel "none") there is
+    // nothing to look up — the lesson path had been embedding on the hardcoded fallback
+    // model and the experience path asking for model "none" (2026-09-28 e2e log).
     const isVoiceTurn = !!params.modelOverride;
-    if (!isVoiceTurn && params.config.memory?.lessons?.enabled !== false && query.length > 10) {
+    const denseOk = embeddingsEnabled(params.config.memory);
+    if (!isVoiceTurn && denseOk && params.config.memory?.lessons?.enabled !== false && query.length > 10) {
       try {
         const { LessonStore } = await import('./learnings/lesson-store.js');
         const { relevantLessonLines } = await import('./learnings/lesson-semantic.js');
         const workspacePath = resolveWorkspacePath(params.agentId ?? params.config.agents.default, params.config);
-        const lessonLines = await relevantLessonLines(params.client, new LessonStore(workspacePath), query);
+        const lessonLines = await relevantLessonLines(params.client, new LessonStore(workspacePath), query, undefined, params.config.memory?.embeddingModel);
         if (lessonLines.length > 0) {
           console.log(`[Dispatch] Lesson injection: ${lessonLines.length}`);
           primingParts.push(`## Lessons from past failures (steer around these)\n${lessonLines.join('\n')}`);
@@ -422,7 +427,7 @@ async function buildUserPriming(params: DispatchParams, message: string, senderI
     // plain prompt text; never permissions/routing/confirm (the authority
     // boundary, DECISIONS 2026-08-10). Evidence ≥ 2: explicit signals
     // (reaction/deny) are born at 2; inferred ones must recur.
-    if (!isVoiceTurn && params.config.memory?.experiences?.enabled !== false && query.length > 10) {
+    if (!isVoiceTurn && denseOk && params.config.memory?.experiences?.enabled !== false && query.length > 10) {
       try {
         const { sharedExperienceStore, experienceStoreConfigFrom } = await import('./memory/experience-store.js');
         const matches = (await sharedExperienceStore(params.client, experienceStoreConfigFrom(params.config.memory)).searchRelevant(query, 2, 0.6))
