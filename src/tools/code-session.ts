@@ -1,12 +1,26 @@
+import type { ChildProcess } from 'node:child_process';
 import type { InvarailTool } from './types.js';
 import type { SessionManager, SessionRuntime } from '../exec/session-manager.js';
 
+/** What the Docker backend offers a session: the container, and a REPL inside it. */
+export interface SessionSandbox {
+  ensureRunning(): Promise<void>;
+  spawnSession(runtime: string): ChildProcess;
+}
+
+/**
+ * With a sandbox (exec security = docker) every REPL runs INSIDE the sandbox container —
+ * the same wall the exec tool has. Reviews F05/F06 (2026-09-27): code sessions ran on the
+ * host regardless of the Docker setting, because the backend's `spawnSession` and the
+ * manager's `startFromProcess` existed and nothing connected them.
+ */
 export function createCodeSessionTool(
   sessionManager: SessionManager,
+  sandbox?: SessionSandbox,
 ): InvarailTool {
   return {
     name: 'code_session',
-    description: 'Manage persistent code sessions. Start a REPL, run code that preserves state between calls, get output, or close sessions.',
+    description: `Manage persistent code sessions${sandbox ? ' (each REPL runs inside the Docker sandbox: no network, the workspace mounted read-only — return results as output, write files with write_file)' : ''}. Start a REPL, run code that preserves state between calls, get output, or close sessions.`,
     parameterDescription: 'action (required): start/run/output/close/list. session (required for start/run/output/close): Session name. runtime (required for start): python/node/bash. code (required for run): Code to execute.',
     example: 'code_session[{"action": "start", "session": "analysis", "runtime": "python"}]',
     parameters: {
@@ -31,6 +45,15 @@ export function createCodeSessionTool(
         case 'start': {
           if (!sessionId) return 'Error: session parameter is required for start';
           if (!runtime) return 'Error: runtime parameter is required for start';
+          if (sandbox) {
+            try {
+              await sandbox.ensureRunning();
+            } catch (err) {
+              // Fail CLOSED: a session that cannot be sandboxed does not silently run on the host.
+              return `Error: sandbox unavailable (${err instanceof Error ? err.message : err}) — no session started`;
+            }
+            return sessionManager.startFromProcess(sessionId, runtime, sandbox.spawnSession(runtime));
+          }
           return sessionManager.start(sessionId, runtime);
         }
 

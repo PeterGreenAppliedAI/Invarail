@@ -90,13 +90,22 @@ export class SessionManager {
   /**
    * Start a session from an external ChildProcess (e.g., Docker).
    */
+  /** Adopt an externally spawned REPL (the Docker sandbox's `docker exec -i …`). The same
+   *  gates as `start()` — a sandboxed session is still bound by the runtime allowlist. */
   startFromProcess(id: string, runtime: SessionRuntime, proc: ChildProcess): string {
     if (this.sessions.has(id)) {
+      proc.kill();
       return `Session "${id}" already exists`;
     }
 
     if (this.sessions.size >= this.config.maxSessions) {
+      proc.kill();
       return `Max sessions (${this.config.maxSessions}) reached. Close one first.`;
+    }
+
+    if (!this.config.allowedRuntimes.includes(runtime)) {
+      proc.kill();
+      return `Runtime "${runtime}" not allowed. Allowed: ${this.config.allowedRuntimes.join(', ')}`;
     }
 
     const session: Session = {

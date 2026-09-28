@@ -146,9 +146,9 @@ export async function registerAllTools(
   registry.register(createReadFileTool());
   registry.register(createWriteFileTool());
 
-  // Code session tool
+  // Code session tool — in the sandbox when exec security is docker (F05/F06)
   const sessionManager = new SessionManager(config.tools?.exec?.sessions);
-  registry.register(createCodeSessionTool(sessionManager));
+  registry.register(createCodeSessionTool(sessionManager, dockerBackend));
 
   // Browser tool (pass Ollama URL for visual mode vision model calls)
   if (config.browser?.enabled) {
