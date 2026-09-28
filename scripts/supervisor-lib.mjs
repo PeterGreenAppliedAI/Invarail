@@ -81,6 +81,12 @@ async function healthOk(child) {
 export async function main() {
   process.chdir(REPO);
   if (existsSync(HALT)) { log(`halt marker present (${HALT}) — refusing to start until it is removed`); process.exit(1); }
+  // Never a second instance: if something already answers /health on this port, the running
+  // app would make every child look healthy while it crash-looped on the bound port.
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/health`, { signal: AbortSignal.timeout(1500) });
+    if (res.ok) { log(`an Invarail already answers on :${PORT} — refusing to start a second (stop it, or set INVARAIL_PORT)`); process.exit(1); }
+  } catch { /* nothing there — proceed */ }
   let rollbackSha = '';   // non-empty = this boot is a deploy attempt
   let crashes = 0, windowStart = Date.now();
   let child = null;
