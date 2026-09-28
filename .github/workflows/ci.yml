@@ -79,6 +79,8 @@ jobs:
           test -f invarail.config.json5 && rm -f invarail.config.json5 .env
           ( printf '2\n'; for i in $(seq 1 60); do printf '\n'; done ) | npx tsx src/setup/index.ts
           test -f invarail.config.json5
+          # the generated config must PARSE — a wizard that writes an invalid file is the bug the smoke exists for
+          npx tsx -e "import('./src/config/loader.ts').then(m => { m.loadConfig('invarail.config.json5'); console.log('generated config parses'); })"
 
       - name: Console build
         working-directory: console

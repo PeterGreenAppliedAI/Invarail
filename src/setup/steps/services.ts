@@ -324,10 +324,19 @@ export async function runServicesStep(models: OllamaModel[], enabledChannels: st
       } else {
         result.heartbeat.channel = await askChoice('Deliver heartbeat reports to:', enabledChannels);
       }
-      result.heartbeat.target = await askText('Channel/user ID for heartbeat delivery');
-      printSuccess(`Heartbeat → ${result.heartbeat.channel} (${result.heartbeat.target})`);
+      result.heartbeat.target = await askText('Channel/user ID for heartbeat delivery (required — where the 2-hourly report goes)');
+      if (!result.heartbeat.target) {
+        // A heartbeat with nowhere to deliver is a config the loader rejects (delivery.target is
+        // required). Leave it off rather than write an invalid file — the Windows wizard smoke
+        // caught exactly this on its first run (2026-09-28).
+        result.heartbeat.enabled = false;
+        printWarning('No delivery target given — heartbeat left DISABLED. Enable it later: heartbeat: { enabled: true, delivery: { channel, target } }');
+      } else {
+        printSuccess(`Heartbeat → ${result.heartbeat.channel} (${result.heartbeat.target})`);
+      }
     } else {
-      printWarning('No channels enabled — heartbeat will run but cannot deliver reports');
+      result.heartbeat.enabled = false;
+      printWarning('No channels enabled — heartbeat left DISABLED (it needs a channel to deliver reports to)');
     }
   }
 

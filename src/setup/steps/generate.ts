@@ -281,7 +281,7 @@ export function buildConfig(state: WizardState): string {
   // Heartbeat block — omitted when disabled: the schema requires `delivery` whenever the
   // block exists, so `heartbeat: { enabled: false }` never parsed (round-trip test, 2026-09-27).
   let heartbeatBlock = '';
-  if (state.services.heartbeat.enabled && state.services.heartbeat.channel) {
+  if (state.services.heartbeat.enabled && state.services.heartbeat.channel && state.services.heartbeat.target) {
     heartbeatBlock = `  heartbeat: {
     enabled: true,
     schedule: "0 */2 * * *",

@@ -41,6 +41,16 @@ describe('wizard-generated config', () => {
     expect(buildConfig(shared)).toMatch(/extractionContextSize: 32768/);
   });
 
+  it('a heartbeat with a channel but no target is left out — the loader requires delivery.target', () => {
+    const noTarget: WizardState = { ...state, services: { ...state.services, heartbeat: { enabled: true, channel: 'web', target: '' } } };
+    const text = buildConfig(noTarget);
+    expect(text).not.toMatch(/heartbeat: \{/);
+    const dir = mkdtempSync(join(tmpdir(), 'wizard-'));
+    const p = join(dir, 'invarail.config.json5'); writeFileSync(p, text);
+    process.env.WEB_TOKEN = state.channels.web.token!;
+    expect(() => loadConfig(p)).not.toThrow();
+  });
+
   it('memory tiers: graph, flat/no embedder, vault + OKF each land in the config the loader accepts', () => {
     const graph = buildConfig(state);
     expect(graph).toMatch(/backend: "graph"/); expect(graph).toMatch(/embeddingModel: "qwen3-embedding:8b"/);
