@@ -237,7 +237,7 @@ async function semanticChunks(
 export function docTitle(text: string, filePath: string): string {
   const h1 = text.match(/^#\s+(.+)$/m);
   if (h1) return h1[1].trim();
-  const stem = filePath.split('/').pop() ?? filePath;
+  const stem = basename(filePath);   // vault-relative paths are posix, but a caller may pass a native one
   return stem.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
 }
 

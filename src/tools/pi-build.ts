@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, statSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import type { z } from 'zod';
 import type { InvarailTool, ToolContext } from './types.js';
 import type { PiConfigSchema } from '../config/schema.js';
@@ -86,7 +86,7 @@ Returns the project directory and a list of files created.`,
 
       if (isFix) {
         projectDir = existingProjectDir!;
-        slug = projectDir.split('/').pop() || 'project';
+        slug = basename(projectDir) || 'project';   // not split('/'): Windows paths use backslashes
         fullPrompt = prompt;
       } else {
         slug = slugify((params.projectName as string) || '');

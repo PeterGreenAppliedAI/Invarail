@@ -1,4 +1,5 @@
 import type { PipelineDefinition, PipelineContext } from '../types.js';
+import { basename } from 'node:path';
 import { PYTHON } from '../../exec/python.js';
 
 /**
@@ -342,7 +343,7 @@ export const codeGenPipeline: PipelineDefinition = {
         const verify = ctx.params._verifyResult as { pass: boolean; skipped?: boolean } | undefined;
         const pi = ctx.params._pi as { git?: { commitLocal: boolean; pushRemote: boolean; visibility: 'private' | 'public' } } | undefined;
         const git = pi?.git ?? { commitLocal: true, pushRemote: false, visibility: 'private' as const };
-        const slug = projectDir.split('/').pop() || 'build';
+        const slug = basename(projectDir) || 'build';   // not split('/'): Windows paths use backslashes
         const status = verify?.skipped ? 'no recognized tests' : verify?.pass ? 'tests passing' : 'WIP — tests failing';
         ctx.params._gitResult = await commitBuild(projectDir, slug, status, git);
         console.log(`[CodeGen] Git: ${(ctx.params._gitResult as { note: string }).note}`);
