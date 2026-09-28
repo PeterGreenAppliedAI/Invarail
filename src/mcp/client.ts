@@ -62,6 +62,12 @@ export class McpStdioClient {
       if (text) console.warn(`[MCP:${this.opts.name}] stderr: ${text.slice(0, 500)}`);
     });
     child.on('error', (err) => this.failAll(mcpServerError(this.opts.name, err)));
+    // A write after the server died surfaces as EPIPE on the stdin stream — on Windows as an
+    // unhandled 'error' event that would take the process down (Windows CI, 2026-09-28).
+    child.stdin!.on('error', (err) => {
+      if (!this.closed) console.warn(`[MCP:${this.opts.name}] stdin error: ${err.message}`);
+      this.failAll(mcpServerError(this.opts.name, err));
+    });
     child.on('exit', (code, signal) => {
       if (!this.closed) {
         console.warn(`[MCP:${this.opts.name}] process exited (code=${code}, signal=${signal})`);
@@ -123,7 +129,9 @@ export class McpStdioClient {
   }
 
   private send(message: Record<string, unknown>): void {
-    this.child?.stdin?.write(`${JSON.stringify(message)}\n`);
+    const stdin = this.child?.stdin;
+    if (!stdin || stdin.destroyed || !stdin.writable) return;   // a dead server: the exit/error handlers reject the request
+    stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   private onStdout(chunk: Buffer): void {

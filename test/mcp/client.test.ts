@@ -64,3 +64,25 @@ describe('McpStdioClient', () => {
     await expect(pending).rejects.toThrow(/client closed/);
   });
 });
+
+describe('stdio client after the server is gone (Windows EPIPE)', () => {
+  it('a write after exit does not raise an unhandled error; the request rejects cleanly', async () => {
+    const { McpStdioClient } = await import('../../src/mcp/client.js');
+    // a server that exits immediately
+    const client = new McpStdioClient({ name: 'gone', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutMs: 2000 } as any);
+    const unhandled: unknown[] = [];
+    const onErr = (e: unknown) => unhandled.push(e);
+    process.on('uncaughtException', onErr);
+    try {
+      await expect(client.connect()).rejects.toMatchObject({ code: 'MCP_SERVER_ERROR' });
+      await new Promise(r => setTimeout(r, 100));
+      // any later send (a call, then close) must not blow up the process
+      await client.callTool('anything', {}).catch(() => undefined);
+      client.close();
+      await new Promise(r => setTimeout(r, 100));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('uncaughtException', onErr);
+    }
+  });
+});
