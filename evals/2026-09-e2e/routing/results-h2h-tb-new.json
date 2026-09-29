@@ -1,0 +1,294 @@
+{
+  "provenance": {
+    "date": "2026-09-29T06:11:49.686Z",
+    "gitCommit": "07a2326",
+    "ollamaUrl": "http://<lan-ollama>:11434",
+    "reps": 5,
+    "profile": "wizard",
+    "workspace": "fresh",
+    "tasks": [
+      "chat-plain",
+      "chat-exact-word",
+      "task-board",
+      "memory-save-recall",
+      "exec-csv-revenue",
+      "exec-fib-script",
+      "multi-release-notes",
+      "cron-schedule",
+      "web-fact-to-file",
+      "website-summarize",
+      "confirm-ledger",
+      "research-report"
+    ]
+  },
+  "results": [
+    {
+      "model": "qwen3.5:9b",
+      "profile": "wizard→small",
+      "think": false,
+      "configTokens": {
+        "specialists": 0
+      },
+      "reps": [
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3946,
+            "promptTokens": 6183,
+            "completionTokens": 277,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "All three tasks have been added to your task board:\n\n1. **Renew SSL certificate** (ID: ed623c50) - High priority, Status: todo\n2. **Water the plants** (ID: 216030a0) - Low priority, Status: todo  \n3. **Submit quarterly report** (ID: b69b4697) - Medium priority, Due: 2026-08-28, Status: todo\n\nNote: The third task was assigned medium priority by default since no priority was specified.",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3688,
+            "promptTokens": 6171,
+            "completionTokens": 261,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "All three tasks have been successfully added to your task board:\n\n1. **Renew SSL certificate** (ID: c513ab05) - High priority\n2. **Water the plants** (ID: cbe12a34) - Low priority  \n3. **Submit quarterly report** (ID: 40cd947d) - Medium priority, due 2026-08-28\n\nAll tasks are currently in \"todo\" status.",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3689,
+            "promptTokens": 6159,
+            "completionTokens": 261,
+            "modelCalls": 4,
+            "iterations": 4,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "All three tasks have been added to your task board:\n\n1. **Renew SSL certificate** (ID: e41cd791) - High priority\n2. **Water the plants** (ID: 5a0844d7) - Low priority  \n3. **Submit quarterly report** (ID: 0f7f84f7) - Medium priority, due 2026-08-28\n\nNote: The \"Submit quarterly report\" task was assigned medium priority by default since no priority was specified.",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3373,
+            "promptTokens": 3066,
+            "completionTokens": 249,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "Done! I've added all three tasks to your task board:\n\n1. **\"Renew SSL certificate\"** (ID: dee1b203) - High priority\n2. **\"Water the plants\"** (ID: 4e4ffcb7) - Low priority  \n3. **\"Submit quarterly report\"** (ID: 062cb092) - Medium priority, due 2026-08-28\n\nAll tasks are currently in \"todo\" status.",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 3311,
+            "promptTokens": 3064,
+            "completionTokens": 246,
+            "modelCalls": 2,
+            "iterations": 2,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "Done! I've added all three tasks to your task board:\n\n1. **\"Renew SSL certificate\"** (ID: daea8bf2) - high priority\n2. **\"Water the plants\"** (ID: ed43e2d2) - low priority  \n3. **\"Submit quarterly report\"** (ID: 00debeb7) - medium priority, due 2026-08-28\n\nAll tasks are currently in \"todo\" status.",
+            "webCalls": []
+          }
+        ]
+      ],
+      "taskScores": {
+        "task-board": 1
+      },
+      "categoryScores": {
+        "task": 1
+      },
+      "overall": 1,
+      "totalMs": 40669
+    }
+  ]
+}

@@ -122,14 +122,14 @@ export const SPECIALIST_TEMPLATES: Record<string, SpecialistTemplate> = {
 
 export const ROUTER_CATEGORIES: Record<string, { description: string }> = {
   chat: { description: 'Simple conversation, greetings, opinions, questions about the owner/user, or anything answerable from context' },
-  web_search: { description: 'Questions needing current internet information about external topics' },
+  web_search: { description: 'Questions needing current internet information about external topics — answers in the reply only; cannot write files or add tasks' },
   memory: { description: 'Questions about past conversations or stored info' },
-  exec: { description: 'Run commands, edit files, system operations' },
+  exec: { description: 'Run commands, read/write/edit files, compute over data, system operations — cannot search the web or use the task board' },
   cron: { description: 'Schedule, list, or manage recurring tasks and heartbeat tasks' },
   message: { description: 'Send messages to other channels/users' },
   website: { description: 'Fetch and summarize a URL or web page' },
-  task: { description: 'Create, list, update, or complete tasks and to-dos' },
-  multi: { description: 'Complex requests needing multiple different tools or multi-step planning' },
+  task: { description: 'Create, list, update, or complete tasks and to-dos on the task board — task tools only; cannot read or write files' },
+  multi: { description: 'Requests that combine different kinds of action — e.g. search the web AND write a file, or read a file AND add a task. Pick this whenever no single category above has every tool the request needs' },
   research: { description: 'Deep research, reports, analysis — produces decks or PDF reports' },
   image: { description: 'Generate images, diagrams, or architecture visuals' },
   code_gen: { description: 'Generate code, build projects, scaffold applications' },

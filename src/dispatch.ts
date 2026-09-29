@@ -19,6 +19,7 @@ import {
 import { stripThinkingTags } from './utils/text.js';
 import { resolveWorkspacePath } from './agents/scope.js';
 import { buildWorkspaceContext, type WorkspaceCategory } from './agents/workspace.js';
+import { rerouteSignal, rerouteClassifyText, handoffMessage } from './router/reroute.js';
 import { embeddingsEnabled } from './memory/policy.js';
 import { logDispatch, logRouterClassification, logAutonomousAction, logReviewNote, logMetric } from './metrics.js';
 
@@ -163,6 +164,8 @@ export interface DispatchParams {
   skipPipeline?: boolean;
   /** Internal: prevent infinite re-route loops */
   _reRouted?: boolean;
+  /** A specialist reroute sends the handoff note as the message; the transcript keeps what the user actually said. */
+  _transcriptMessage?: string;
 }
 
 export interface DispatchResult {
@@ -179,6 +182,8 @@ export interface DispatchResult {
   /** Confirm-gate previews recorded during this dispatch — delivery surfaces
    *  attach confirm/always/deny buttons for the most recent one */
   pendingActions?: Array<{ id: string; tool: string }>;
+  /** Set when a specialist reroute re-dispatched this message: the category that gave up. */
+  reroutedFrom?: string;
 }
 
 /**
@@ -605,6 +610,13 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
   // 3. Resolve specialist config
   let specialistConfig = config.specialists[effectiveCategory] ?? getDefaultSpecialist(config, effectiveCategory);
 
+  // 3-. Specialist reroute: can this dispatch be re-dispatched if the specialist turns out to
+  // lack a capability? Nothing is added to the prompt — the signal is read from the answer.
+  const rerouteArmed = config.router.reroute?.enabled !== false
+    && !params._reRouted && !params.overrideCategory && !params.cronMode
+    && effectiveCategory !== 'chat'
+    && specialistConfig?.dispatchMode === 'arena' && (specialistConfig.tools.length ?? 0) > 0;
+
   // 3a. Expand `mcp:<server>` tokens to concrete tool names BEFORE the channel filters:
   // a rule naming an actual MCP tool never matched the server token, so expansion later
   // put the denied tool back into scope (outside review F09, 2026-09-27). Expansion is
@@ -924,6 +936,33 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     }
   }
 
+  // Specialist reroute (DECISIONS 2026-09-29): the specialist found a gap while working — its
+  // answer claims, or ends announcing, an action whose tool it does not hold.
+  // Re-ask the ROUTER (the specialist never picks), refuse a same-category or chat answer,
+  // and re-dispatch ONCE through the full security path with what was already done.
+  if (rerouteArmed && specialistConfig && effectiveCategory !== 'chat' && specialistConfig.dispatchMode === 'arena') {
+    const signal = rerouteSignal(stripThinking(result.answer), specialistConfig.tools);
+    if (signal) {
+      const hint = rerouteClassifyText(message, effectiveCategory, signal.missing);
+      const re = await classifyMessage(client, config.router, hint);
+      if (re.category !== effectiveCategory && re.category !== 'chat') {
+        console.log(`[Dispatch] Reroute (${signal.kind}): ${effectiveCategory} → ${re.category} (missing: ${signal.missing})`);
+        const rerouted = await dispatchMessage({
+          ...params,
+          message: handoffMessage(message, effectiveCategory, signal.missing, result.steps),
+          overrideCategory: re.category,
+          _reRouted: true,
+          _transcriptMessage: params._transcriptMessage ?? message,
+        });
+        return { ...rerouted, reroutedFrom: effectiveCategory };
+      }
+      console.log(`[Dispatch] Reroute (${signal.kind}) found no other route from ${effectiveCategory} (router said ${re.category}) — answering honestly`);
+      result = { ...result, answer: `${result.answer}
+
+(This also needs to ${signal.missing.replace(/^to\s+/i, '')}, which I can't do from here, and no other route was found for it.)` };
+    }
+  }
+
   // Strip thinking tags for display/channel delivery — but preserve raw answer in transcript
   // so the model can see its own reasoning on subsequent turns.
   const displayAnswer = stripThinking(result.answer);
@@ -998,7 +1037,7 @@ export async function dispatchMessage(params: DispatchParams): Promise<DispatchR
     const now = new Date().toISOString();
     sessionStore.appendTurn(agentId, sessionKey, {
       role: 'user',
-      content: message,
+      content: params._transcriptMessage ?? message,
       timestamp: now,
       category: effectiveCategory,
       routedBy: classification.confidence,

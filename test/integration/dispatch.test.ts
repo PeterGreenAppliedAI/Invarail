@@ -533,3 +533,122 @@ describe('channel filters apply to MCP-expanded tool names (review F09, 2026-09-
     expect(demoRead).not.toHaveBeenCalled();
   });
 });
+
+describe('specialist reroute (DECISIONS 2026-09-29)', () => {
+  const STALL = "I created the task. Next, I will read the releases.txt file and write notes/release-summary.md.";
+
+  /** A task specialist (task tools only) and a multi specialist (files + tasks), both arena.
+   *  The router answers `routes` in order; each specialist's model answers from its own script. */
+  function setup(opts: { routes: string[]; task: Array<Record<string, unknown>>; multi?: Array<Record<string, unknown>> }) {
+    const registry = new ToolRegistry();
+    const taskAdd = vi.fn().mockResolvedValue('Created task bca872ac');
+    const writeFile = vi.fn().mockResolvedValue('Written to notes/release-summary.md');
+    const reg = (name: string, execute: (...a: any[]) => any) => registry.register({
+      name, description: name, parameterDescription: 'x', category: 'test',
+      parameters: { type: 'object', properties: { title: { type: 'string', description: 't' }, path: { type: 'string', description: 'p' } }, required: [] },
+      execute,
+    });
+    reg('task_add', taskAdd);
+    reg('read_file', vi.fn().mockResolvedValue('v0.6.2 — changes'));
+    reg('write_file', writeFile);
+
+    const scripts: Record<string, Array<Record<string, unknown>>> = { 'task-m': [...opts.task], 'multi-m': [...(opts.multi ?? [{ content: 'All done.' }])] };
+    const seen: Record<string, any[]> = { 'task-m': [], 'multi-m': [] };
+    const chat = vi.fn().mockImplementation(async (req: any) => {
+      seen[req.model]?.push(req);
+      const next = scripts[req.model]?.shift() ?? { content: 'Done.' };
+      return { message: { role: 'assistant', content: next.content ?? '', tool_calls: next.tool_calls ?? null } };
+    });
+    const routes = [...opts.routes];
+    const generate = vi.fn().mockImplementation(async () => ({ response: routes.shift() ?? 'chat' }));
+    const client = { generate, chat, listModels: vi.fn().mockResolvedValue([]), isAvailable: vi.fn().mockResolvedValue(true) } as unknown as OllamaClient;
+
+    const config = loadConfig('/tmp/nonexistent-config.json5');
+    config.router.categories = { chat: { description: 'chat' }, task: { description: 'tasks' }, multi: { description: 'mixed' } } as any;
+    config.specialists.task = { model: 'task-m', maxTokens: 512, temperature: 0.1, maxIterations: 4, tools: ['task_add'], dispatchMode: 'arena' } as any;
+    config.specialists.multi = { model: 'multi-m', maxTokens: 512, temperature: 0.1, maxIterations: 4, tools: ['read_file', 'write_file', 'task_add'], dispatchMode: 'arena' } as any;
+    return { client, config, registry, generate, seen, taskAdd, writeFile };
+  }
+  const call = (name: string, args: Record<string, unknown>) => ({ content: '', tool_calls: [{ function: { name, arguments: args } }] });
+  const toolNames = (req: any) => (req?.tools ?? []).map((t: any) => t.function?.name);
+
+  it('claimed: an answer claiming an action the specialist has no tool for is re-dispatched once, to the router\'s NEW pick, with what was done', async () => {
+    // "Add a task…" is routed by the anchored pre-model override, so the router model is asked ONCE — for the re-ask.
+    const s = setup({ routes: ['multi'], task: [call('task_add', { title: 'Evaluate v0.6.2' }), { content: "I've added the task and I have written the summary to notes/release-summary.md." }] });
+    const result = await dispatchMessage({ client: s.client, registry: s.registry, config: s.config, message: 'Add a task to evaluate v0.6.2 and write notes/release-summary.md' });
+
+    expect(result.category).toBe('multi');
+    expect(result.reroutedFrom).toBe('task');
+    expect(toolNames(s.seen['task-m'][0])).toEqual(['task_add']);               // nothing added to the prompt
+    expect(s.generate).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(s.generate.mock.calls[0])).toContain('Re-route');   // the hint led, so the override did not fire again
+    const multiUser = JSON.stringify(s.seen['multi-m'][0].messages);
+    expect(multiUser).toContain('do NOT repeat');
+    expect(multiUser).toContain('Created task bca872ac');
+    expect(s.taskAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('implicit: ending on an announced action whose tool the specialist lacks triggers the same reroute', async () => {
+    const s = setup({ routes: ['task', 'multi'], task: [call('task_add', { title: 'Evaluate v0.6.2' }), { content: STALL }] });
+    const result = await dispatchMessage({ client: s.client, registry: s.registry, config: s.config, message: 'Read releases.txt, add a task, then write notes/release-summary.md' });
+    expect(result.category).toBe('multi');
+    expect(result.reroutedFrom).toBe('task');
+  });
+
+  it('rule 2: when the router names the same category again, no re-dispatch — an honest note instead', async () => {
+    const s = setup({ routes: ['task', 'task'], task: [call('task_add', { title: 'x' }), { content: STALL }] });
+    const result = await dispatchMessage({ client: s.client, registry: s.registry, config: s.config, message: 'Read releases.txt, add a task, then write notes/release-summary.md' });
+    expect(result.category).toBe('task');
+    expect(result.reroutedFrom).toBeUndefined();
+    expect(result.answer).toMatch(/no other route was found/);
+    expect(s.seen['multi-m']).toHaveLength(0);
+  });
+
+  it('rule 3: one reroute per message — a stall in the rerouted specialist does not reroute again', async () => {
+    const s = setup({ routes: ['task', 'multi', 'task'], task: [call('task_add', { title: 'x' }), { content: STALL }], multi: [{ content: 'Next, I will search the web for more.' }] });
+    const result = await dispatchMessage({ client: s.client, registry: s.registry, config: s.config, message: 'Read releases.txt and add a task' });
+    expect(result.category).toBe('multi');
+    expect(s.generate).toHaveBeenCalledTimes(2);
+  });
+
+  it('rule 1: the re-dispatch re-enters the security path — a channel that does not allow the new category still blocks it', async () => {
+    const s = setup({ routes: ['multi'], task: [call('task_add', { title: 'x' }), { content: 'Added it. Now I will write notes.md with the details.' }] });
+    s.config.channels.discord = { enabled: true, security: { allowedCategories: ['chat', 'task'] } } as any;
+    const result = await dispatchMessage({ client: s.client, registry: s.registry, config: s.config, message: 'Add a task and write notes.md', sourceContext: { channel: 'discord', channelId: 'c', senderId: 'guest' } });
+    expect(result.reroutedFrom).toBe('task');
+    expect(result.category).toBe('chat');                                      // downgraded by allowedCategories, not multi
+    expect(s.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('the transcript keeps what the user said, not the handoff note', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { SessionStore } = await import('../../src/sessions/store.js');
+    const dir = mkdtempSync(join(tmpdir(), 'reroute-transcript-'));
+    try {
+      const store = new SessionStore(dir);
+      const s = setup({ routes: ['task', 'multi'], task: [call('task_add', { title: 'x' }), { content: STALL }] });
+      const original = 'Read releases.txt, add a task, then write notes/release-summary.md';
+      await dispatchMessage({ client: s.client, registry: s.registry, config: s.config, message: original, sessionStore: store, agentId: 'main', sessionKey: 'k' });
+      const turns = store.loadTranscript('main', 'k');
+      expect(turns.filter(t => t.role === 'user').map(t => t.content)).toEqual([original]);
+      expect(turns.find(t => t.role === 'user')?.category).toBe('multi');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('never in cron, never for an owner-forced category, never when disabled in config', async () => {
+    for (const variant of ['cron', 'forced', 'disabled'] as const) {
+      const s = setup({ routes: ['task', 'multi'], task: [call('task_add', { title: 'x' }), { content: STALL }] });
+      if (variant === 'disabled') s.config.router.reroute = { enabled: false };
+      const result = await dispatchMessage({
+        client: s.client, registry: s.registry, config: s.config,
+        message: 'Read releases.txt, add a task, then write notes/release-summary.md',
+        ...(variant === 'cron' ? { cronMode: true } : {}),
+        ...(variant === 'forced' ? { overrideCategory: 'task' } : {}),
+      });
+      expect(result.reroutedFrom, variant).toBeUndefined();
+      expect(s.seen['multi-m'], variant).toHaveLength(0);
+    }
+  });
+});

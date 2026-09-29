@@ -1,0 +1,219 @@
+{
+  "provenance": {
+    "date": "2026-09-29T05:48:28.515Z",
+    "gitCommit": "07a2326",
+    "ollamaUrl": "http://<lan-ollama>:11434",
+    "reps": 5,
+    "profile": "wizard",
+    "workspace": "fresh",
+    "tasks": [
+      "chat-plain",
+      "chat-exact-word",
+      "task-board",
+      "memory-save-recall",
+      "exec-csv-revenue",
+      "exec-fib-script",
+      "multi-release-notes",
+      "cron-schedule",
+      "web-fact-to-file",
+      "website-summarize",
+      "confirm-ledger",
+      "research-report"
+    ]
+  },
+  "results": [
+    {
+      "model": "qwen3.5:9b",
+      "profile": "wizard→small",
+      "think": false,
+      "configTokens": {
+        "specialists": 0
+      },
+      "reps": [
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "checks": [
+              {
+                "name": "completed without error",
+                "pass": false,
+                "detail": "Ollama inference error: 500 Internal Server Error: {\"error\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\"}"
+              }
+            ],
+            "score": 0,
+            "durationMs": 2324,
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "modelCalls": 3,
+            "error": "Ollama inference error: 500 Internal Server Error: {\"error\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\"}",
+            "bucket": "PROVIDER_OUTAGE",
+            "unscored": true,
+            "answer": "",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "checks": [
+              {
+                "name": "completed without error",
+                "pass": false,
+                "detail": "Ollama inference error: 500 Internal Server Error: {\"error\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\"}"
+              }
+            ],
+            "score": 0,
+            "durationMs": 2286,
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "modelCalls": 3,
+            "error": "Ollama inference error: 500 Internal Server Error: {\"error\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\"}",
+            "bucket": "PROVIDER_OUTAGE",
+            "unscored": true,
+            "answer": "",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "checks": [
+              {
+                "name": "completed without error",
+                "pass": false,
+                "detail": "Ollama inference error: 500 Internal Server Error: {\"error\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\"}"
+              }
+            ],
+            "score": 0,
+            "durationMs": 2294,
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "modelCalls": 3,
+            "error": "Ollama inference error: 500 Internal Server Error: {\"error\":\"XML syntax error on line 8: element \\u003cfunction\\u003e closed by \\u003c/parameter\\u003e\"}",
+            "bucket": "PROVIDER_OUTAGE",
+            "unscored": true,
+            "answer": "",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 5784,
+            "promptTokens": 9827,
+            "completionTokens": 322,
+            "modelCalls": 7,
+            "iterations": 7,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "All three tasks have been successfully added to your task board:\n\n1. **Renew SSL certificate** (ID: 33e987b7) - High priority\n2. **Water the plants** (ID: 84d58dbb) - Low priority  \n3. **Submit quarterly report** (ID: 78edd53d) - Due 2026-08-28\n\nThe request is complete.",
+            "webCalls": []
+          }
+        ],
+        [
+          {
+            "id": "task-board",
+            "expected": [
+              "task"
+            ],
+            "routed": "task",
+            "routedBy": "model",
+            "checks": [
+              {
+                "name": "routed to task",
+                "pass": true,
+                "detail": "task"
+              },
+              {
+                "name": "three tasks exist",
+                "pass": true,
+                "detail": "3 tasks: Renew SSL certificate | Water the plants | Submit quarterly report"
+              },
+              {
+                "name": "priorities correct",
+                "pass": true,
+                "detail": "high/low"
+              },
+              {
+                "name": "due date correct",
+                "pass": true,
+                "detail": "2026-08-28"
+              },
+              {
+                "name": "non-empty answer",
+                "pass": true
+              },
+              {
+                "name": "no scaffolding leak",
+                "pass": true
+              }
+            ],
+            "score": 1,
+            "durationMs": 4220,
+            "promptTokens": 7400,
+            "completionTokens": 253,
+            "modelCalls": 5,
+            "iterations": 5,
+            "hitMaxIterations": false,
+            "unscored": false,
+            "answer": "All three tasks have been created successfully:\n\n1. **Renew SSL certificate** (ID: 1e22701b) - High priority\n2. **Water the plants** (ID: cc5bf3de) - Low priority  \n3. **Submit quarterly report** (ID: b9147cce) - Medium priority, due 2026-08-28",
+            "webCalls": []
+          }
+        ]
+      ],
+      "taskScores": {
+        "task-board": 1
+      },
+      "categoryScores": {
+        "task": 1
+      },
+      "overall": 1,
+      "totalMs": 106907
+    }
+  ]
+}

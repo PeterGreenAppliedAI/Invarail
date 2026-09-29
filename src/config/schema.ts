@@ -88,6 +88,10 @@ export const RouterConfigSchema = z.object({
   quickModel: z.string().optional(),
   categories: z.record(z.string(), RouterCategorySchema).default({}),
   shadow: RouterShadowSchema.default({}),
+  /** Specialist reroute (DECISIONS 2026-09-29): an arena specialist whose answer claims, or
+   *  ends announcing, an action whose tool it does not hold gets ONE re-dispatch through the
+   *  full security path. Never in cron, never for an owner-forced category, never twice. */
+  reroute: z.object({ enabled: z.boolean().default(true) }).default({}),
 });
 
 export const SpecialistConfigSchema = z.object({

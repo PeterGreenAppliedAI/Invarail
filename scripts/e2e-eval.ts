@@ -58,12 +58,26 @@ const DATE = new Date().toISOString().slice(0, 10);
 const argv = process.argv.slice(2);
 const flag = (name: string): string | undefined => argv.find(a => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
 const REPS = Number(flag('reps') ?? 1);
-const TASK_FILTER = flag('task');
+/** One id or a comma list: --task=multi-release-notes,web-fact-to-file */
+const TASK_FILTER = flag('task')?.split(',').map(t => t.trim()).filter(Boolean);
 /** `full` | `small` | `wizard` (whatever the wizard would write for this model's tier). */
 const PROFILE = (flag('profile') ?? 'wizard') as 'full' | 'small' | 'wizard';
 /** `fresh` (bootstrap files only) | `lived` (a workspace that has grown: USER/TOOLS/AGENTS/LEARNINGS filled in). */
 const WORKSPACE = (flag('workspace') ?? 'fresh') as 'fresh' | 'lived';
-const RUN_DIR = join(REPO, 'data', 'model-eval', `e2e-${DATE}-${PROFILE}-${WORKSPACE}`);
+/** Optional run label so an A/B's arms don't overwrite each other's output directory. */
+const LABEL = flag('label');
+/** `--reroute=off` disables the specialist reroute (router.reroute) — to measure the other routing levers alone. */
+const REROUTE_OFF = flag('reroute') === 'off';
+/** `--descriptions=legacy` restores the pre-2026-09-29 wording of the four router categories the
+ *  routing work rewrote — an A/B arm, so the old text lives here, not in the product. */
+const LEGACY_DESCRIPTIONS = flag('descriptions') === 'legacy';
+const LEGACY_CATEGORY_TEXT: Record<string, string> = {
+  web_search: 'Questions needing current internet information about external topics',
+  exec: 'Run commands, edit files, system operations',
+  task: 'Create, list, update, or complete tasks and to-dos',
+  multi: 'Complex requests needing multiple different tools or multi-step planning',
+};
+const RUN_DIR = join(REPO, 'data', 'model-eval', `e2e-${DATE}-${PROFILE}-${WORKSPACE}${LABEL ? `-${LABEL}` : ''}`);
 const SELFTEST = argv.includes('--selftest');
 const MODELS = argv.filter(a => !a.startsWith('--'));
 const OWNER = 'eval-owner';
@@ -225,6 +239,12 @@ async function makeEnv(model: string, ollamaUrl: string): Promise<Env> {
   process.env.BRAVE_API_KEY = 'stub';
   process.chdir(root);
   const config = loadConfig(configPath);
+  if (REROUTE_OFF) config.router.reroute = { enabled: false };
+  if (LEGACY_DESCRIPTIONS) {
+    for (const [name, description] of Object.entries(LEGACY_CATEGORY_TEXT)) {
+      if (config.router.categories[name]) config.router.categories[name] = { ...config.router.categories[name], description };
+    }
+  }
   // The client the way the orchestrator builds it — from THIS config, so calls that name
   // no num_ctx (quality judge, summaries) get the generated defaultContextSize. A shared
   // client built without it sent those calls to the server's default and reloaded the
@@ -364,7 +384,9 @@ const TASKS: E2ETask[] = [
   },
   {
     id: 'multi-release-notes',
-    expect: ['multi', 'exec', 'task'],
+    // Needs read_file + task_add + write_file: only multi holds all three (task has no file
+    // tools, exec has no task board). Accepting task/exec scored a guaranteed half-job as routed.
+    expect: ['multi'],
     timeoutMs: 600_000,
     prompt: 'Read releases.txt in my workspace. Add a task to my task board to evaluate the new version (put the version number in the title). Then write notes/release-summary.md summarizing the actual changes listed.',
     fixtures: env => writeFileSync(join(env.ws, 'releases.txt'), [
@@ -409,7 +431,8 @@ const TASKS: E2ETask[] = [
   },
   {
     id: 'web-fact-to-file',
-    expect: ['web_search', 'multi'],
+    // Needs web_search + write_file: web_search cannot write files, exec cannot search.
+    expect: ['multi'],
     timeoutMs: 420_000,
     prompt: 'Find the year Node.js was first released (search the web if you need to) and write just the year to node-year.txt in my workspace.',
     reference: async env => {
@@ -628,7 +651,7 @@ async function runTask(model: string, ollamaUrl: string, task: E2ETask, rep: num
   if (existsSync(join(env.ws, 'research'))) cpSync(join(env.ws, 'research'), join(keep, 'research'), { recursive: true });
   teardown(env);
   return {
-    id: task.id, expected: task.expect, routed: result?.category, routedBy: result?.classification?.confidence,
+    id: task.id, expected: task.expect, routed: result?.category, routedBy: result?.classification?.confidence, reroutedFrom: result?.reroutedFrom,
     checks, score, durationMs: Date.now() - start,
     promptTokens: meter.prompt - m0.prompt, completionTokens: meter.completion - m0.completion, modelCalls: meter.calls - m0.calls,
     iterations: result?.iterations, hitMaxIterations: result?.hitMaxIterations,
@@ -641,7 +664,7 @@ async function selftest(): Promise<void> {
   console.log('SELFTEST — scripted perfect performer through every oracle, no model');
   let failures = 0;
   for (const task of TASKS) {
-    if (TASK_FILTER && task.id !== TASK_FILTER) continue;
+    if (TASK_FILTER && !TASK_FILTER.includes(task.id)) continue;
     const env = await makeEnv('selftest-model', 'http://127.0.0.1:1');
     task.fixtures?.(env);
     const answer = await task.reference(env);
@@ -693,7 +716,7 @@ async function main(): Promise<void> {
   let gitCommit = 'unknown';
   try { gitCommit = execSync('git rev-parse --short HEAD', { cwd: REPO }).toString().trim(); } catch { /* not fatal */ }
   const prov = { date: new Date().toISOString(), gitCommit, ollamaUrl, reps: REPS, profile: PROFILE, workspace: WORKSPACE, tasks: TASKS.map(t => t.id) };
-  const tasks = TASK_FILTER ? TASKS.filter(t => t.id === TASK_FILTER) : TASKS;
+  const tasks = TASK_FILTER ? TASKS.filter(t => TASK_FILTER.includes(t.id)) : TASKS;
   console.log(`E2E eval — ${MODELS.length} model(s) × ${tasks.length} task(s) × ${REPS} rep(s) · profile=${PROFILE} workspace=${WORKSPACE} → ${RUN_DIR}`);
 
   const results: ModelRecord[] = [];
@@ -710,7 +733,7 @@ async function main(): Promise<void> {
         const rec = await runTask(model, ollamaUrl, task, rep, RUN_DIR);
         recs.push(rec);
         const bad = rec.checks.filter(c => !c.pass).map(c => c.name).join(', ');
-        console.log(`  ${rec.id}: ${rec.unscored ? 'UNSCORED' : pct(rec.score)} routed=${rec.routed ?? '—'} calls=${rec.modelCalls} ptok=${rec.promptTokens} ${(rec.durationMs / 1000).toFixed(0)}s${bad ? ` — ✗ ${bad}` : ''}${rec.error ? ` [${rec.bucket}] ${rec.error.slice(0, 80)}` : ''}`);
+        console.log(`  ${rec.id}: ${rec.unscored ? 'UNSCORED' : pct(rec.score)} routed=${rec.routed ?? '—'}${rec.reroutedFrom ? ` (rerouted from ${rec.reroutedFrom})` : ''} calls=${rec.modelCalls} ptok=${rec.promptTokens} ${(rec.durationMs / 1000).toFixed(0)}s${bad ? ` — ✗ ${bad}` : ''}${rec.error ? ` [${rec.bucket}] ${rec.error.slice(0, 80)}` : ''}`);
       }
       reps.push(recs);
     }
