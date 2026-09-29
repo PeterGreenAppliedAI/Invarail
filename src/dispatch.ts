@@ -252,9 +252,9 @@ function filterCronTools(tools: string[], category: string): string[] {
 }
 
 /**
- * Effective confirm set = channel confirmTools ∪ tools whose autonomy metadata
- * declares propose_confirm, minus per-channel autoApproveTools promotions
- * (an explicit confirmTools entry always wins over a promotion).
+ * Effective confirm set = channel confirmTools ∪ tools declaring requiresConfirm,
+ * minus per-channel autoApproveTools promotions (an explicit confirmTools entry
+ * always wins over a promotion).
  *
  * Cron pre-authorization: an owner-scheduled exec/message job IS the approval
  * for its category tool — nobody is present to confirm at run time. Only the

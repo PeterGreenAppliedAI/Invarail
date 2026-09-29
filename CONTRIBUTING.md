@@ -9,13 +9,14 @@ Thanks for your interest in contributing! Invarail is a local-model-first AI age
 - [Node.js](https://nodejs.org/) 22+
 - [Ollama](https://ollama.ai/) running locally or on your network
 - Required models:
-  - **Foreground:** any Ollama-native or OpenAI-compatible served model, configured via the single root `defaultModel` line (fills all specialist/briefing/heartbeat/vision slots — current production model: glm-5.3-flash on vLLM)
+  - **Foreground:** any Ollama-native or OpenAI-compatible served model, configured via the single root `defaultModel` line (fills all specialist/briefing/heartbeat/vision slots — current production model: qwen3.8:27B, Ollama-native on a 24GB GPU; on one small box the measured recommendation is `qwen3.5:9b` with thinking off, `qwen2.5:7b` on an 8GB machine — see [INSTALL.md](INSTALL.md))
   - **Utility tier** (Ollama):
     ```bash
     ollama pull phi4               # Router / fact extraction
     ollama pull phi4-mini          # NER / utility model
-    ollama pull qwen3-embedding:8b # Embeddings
+    ollama pull qwen3-embedding:8b # Embeddings (optional: memory.embeddingModel "none" runs without one)
     ```
+  - A one-model install works too: the Starter preset uses the foreground model for every slot.
 
 ### Setup
 
@@ -23,8 +24,10 @@ Thanks for your interest in contributing! Invarail is a local-model-first AI age
 git clone https://github.com/PeterGreenAppliedAI/Invarail.git
 cd Invarail
 npm install
-cp .env.example .env
-# Edit .env with your Ollama URL and any API keys
+npm run setup       # detect-first wizard: writes invarail.config.json5 (+ .env)
+npm run doctor      # checks every dependency your config enables
+# or by hand:
+# cp .env.example .env && cp invarail.config.starter.json5 invarail.config.json5
 ```
 
 ### Development Commands
@@ -32,16 +35,22 @@ cp .env.example .env
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Start the bot (tsx, auto-imports TypeScript) |
+| `npm start` | Quiet doctor pass, build the console once, boot |
+| `npm run setup` · `npm run doctor` | Setup wizard · dependency check against your config |
+| `npm run cli` | Terminal client |
 | `npm test` | Run all tests (Vitest) |
 | `npm run test:watch` | Run tests in watch mode |
-| `npm run typecheck` | Type-check without emitting (`tsc --noEmit`) |
+| `npm run typecheck` | Type-check without emitting (`tsc --noEmit`, then `tsc -p tsconfig.scripts.json` for the e2e harness) |
 | `npm run build` | Build for production (tsdown) |
+| `npm run supervise` | Node supervisor (health check, crash loop, exit-42 deploys with rollback) |
+| `npx tsx scripts/e2e-eval.ts --selftest` | Front-door e2e harness against a scripted performer — no model needed |
 
 ### Verify Your Setup
 
 ```bash
 npm run typecheck   # Should pass with zero errors
-npm test            # 993 tests should pass
+npm test            # 1205 tests across 140 files should pass
+npx tsx scripts/e2e-eval.ts --selftest   # front-door harness, no model
 ```
 
 ## Project Structure
@@ -65,6 +74,12 @@ src/
 ├── memory/               # FalkorDB graph store + flat fallback + SQLite embeddings
 ├── tasks/                # Task board (JSON + Markdown)
 ├── browser/              # Chrome-extension remote bridge (the browser tool lives in tools/)
+├── pipeline/             # Deterministic stage engine (research + heartbeat only)
+├── security/             # Pending-action ledger, standing grants, web identity
+├── coding/               # Pi SDK adapter + self-modification rail
+├── mcp/                  # MCP client bridge
+├── commands/             # `!…` commands
+├── setup/                # Setup wizard, environment detection, doctor
 └── exec/                 # Shell execution with sandbox
 ```
 
@@ -72,7 +87,7 @@ src/
 
 The `main` branch is **protected** — all changes must go through pull requests.
 
-- **No direct pushes to `main`** — CI status checks (typecheck, tests, build) must pass before merge
+- **No direct pushes to `main`** — CI status checks must pass before merge: typecheck, tests, the e2e harness selftest, build and console build on `ubuntu-latest`, plus a blocking `windows-latest` job (typecheck, tests, selftest, headless wizard smokes, console build)
 - **Branches must be up-to-date** with `main` before merging
 - **Branch naming conventions:**
   - `feature/` — new functionality (e.g. `feature/matrix-adapter`)
@@ -94,7 +109,7 @@ This is the most common contribution. Each tool is a self-contained module.
 
 ### 2. Add a New Channel Adapter
 
-1. Create `src/channels/myplatform/adapter.ts` implementing the `ChannelAdapter` interface (5 methods: `connect`, `disconnect`, `onMessage`, `send`, `status`)
+1. Create `src/channels/myplatform/index.ts` (or `adapter.ts`) implementing the `ChannelAdapter` interface (5 methods: `connect`, `disconnect`, `onMessage`, `send`, `status`)
 2. Add the dynamic import in `src/index.ts`
 3. Add config section in `invarail.config.json5`
 4. Zero core code changes required
@@ -103,7 +118,9 @@ This is the most common contribution. Each tool is a self-contained module.
 
 1. Add the category to `router.categories` in `invarail.config.json5`
 2. Add specialist config to `specialists` in the same file
-3. *(Optional)* Add keyword patterns in `src/router/classifier.ts`
+3. Write the category description to say what the specialist *cannot* do as well as what it does — the router picks from these, and the specialist reroute catches answers that claim a tool the specialist lacks (`src/router/reroute.ts`)
+4. *(Optional)* Add keyword patterns (`KEYWORD_HINTS`) in `src/router/classifier.ts`
+5. New specialists default to the arena (open ReAct loop); a deterministic pipeline is only for stages that verify (research, heartbeat)
 
 ### 4. Bug Fixes and Improvements
 
@@ -149,8 +166,9 @@ npm run test:watch
 2. **Make your changes** — keep PRs focused on a single concern
 3. **Run checks** before submitting:
    ```bash
-   npm run typecheck   # Zero type errors
+   npm run typecheck   # Zero type errors (app + e2e harness)
    npm test            # All tests pass
+   npx tsx scripts/e2e-eval.ts --selftest
    npm run build       # Build compiles
    ```
 4. **Open a PR** targeting `main` with:
@@ -171,7 +189,7 @@ npm run test:watch
 Invarail uses `invarail.config.json5` for all configuration. When adding features:
 
 - Add Zod schemas in `src/config/schema.ts` for validation
-- Add corresponding types in `src/config/types.ts`
+- Export types from `src/config/types.ts` as `z.infer<typeof XxxSchema>` — never hand-written interfaces
 - Use environment variable interpolation (`"${ENV_VAR}"`) for secrets
 - Document new config options in your PR
 - Note: `config.principals` provides identity mapping — channel-specific user IDs map to a single principal
@@ -181,7 +199,7 @@ Invarail uses `invarail.config.json5` for all configuration. When adding feature
 
 Invarail takes security seriously. When contributing, keep in mind:
 
-- **Exec allowlist** — shell commands must be explicitly approved
+- **Exec allowlist or Docker sandbox** — shell commands must be explicitly approved; when the Docker sandbox is requested but missing, exec and code sessions are not registered (never a silent host fallback)
 - **SSRF protection** — validate URLs with scheme whitelist and DNS pre-flight
 - **Path traversal** — file writes must stay within the workspace
 - **No secrets in code** — use `.env` for API keys and tokens

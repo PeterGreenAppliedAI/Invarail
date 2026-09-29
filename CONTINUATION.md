@@ -1,14 +1,70 @@
-> **FROZEN 2026-07-07** — point-in-time session handoff. Architecture has moved substantially since (see DECISIONS.md: arena fleet-wide, glm-5.3-flash cutover, SIP live, email steward; September 2026: qwen3.8:27B on an A5000 with prompt order as a prefix-cache contract, memory provenance + incremental capture, a Laya System-One shadow router). Kept as historical record.
+> **Status, revised 2026-09-29.** §0 (current state), §1 (rails), §3 (verification commands), the status lines in §4a/§4 and §5 (anti-goals) are kept current. §2 is the **frozen 2026-07-07 session record** — what that session changed, kept as history; file and type names in it are as they were then (e.g. `LocalClawTool`, now `InvarailTool`). Architecture has moved substantially since (see DECISIONS.md and §0).
 
 # CONTINUATION.md — Handoff for the next build session
 
 This document briefs the next AI collaborator (or future session) continuing the
-small-model robustness + bounded-autonomy work on LocalClaw. Read `CLAUDE.md`
-first — it is authoritative for architecture and code standards. This file adds
-the session-specific context, the rails you must stay on, and the remaining
-roadmap.
+small-model robustness + bounded-autonomy work on Invarail (called LocalClaw
+until the rename; old names survive in history, data paths and the pre-rename
+graph `localclaw_memory`). Read `CLAUDE.md` first — it is authoritative for
+architecture and code standards (the code wins where the two disagree). This
+file adds the session-specific context, the rails you must stay on, and the
+remaining roadmap.
 
 ---
+
+## 0. Current state (2026-09-29)
+
+What a new collaborator should assume today — each line is in CLAUDE.md and
+DECISIONS.md with receipts:
+
+- **Arena everywhere except where stages are an oracle.** `cron`, `task`,
+  `memory`, `message`, `website`, `web_search`, `exec`, `code_gen`, `multi` run
+  `dispatchMode: "arena"` (open ReAct loop with session history, same six
+  security layers and confirm ledger — DECISIONS 2026-08-21). Deterministic
+  pipelines survive only for **research** (claim verification) and the system
+  **heartbeat**. The plan pipeline is retired for dispatch (code retained); the
+  skills system is retired (2026-08-10), succeeded by experience memory and
+  lessons, which are advisory prompt text and never authority.
+- **Specialist reroute.** An arena answer that claims or ends announcing an
+  action whose tool the specialist lacks gets ONE re-dispatch through the full
+  security path (never for cron, forced categories, or twice; the transcript
+  keeps the user's words) — `src/router/reroute.ts`. Category descriptions say
+  what each specialist cannot do. A handoff *tool* was built, measured harmful
+  on qwen3.5 and removed.
+- **Models are config lines.** `defaultModel` (qwen3.8:27B on an A5000 in the
+  reference setup) fills every slot that doesn't override it; the router and
+  extraction run phi4:latest on a utility box; embeddings on their own box;
+  per-model quirks live in `src/ollama/model-caps.ts`. Prompt order is a
+  KV-prefix-cache contract (`[static system][append-only history][volatile
+  state+memory][user]`), guarded by `test/tool-loop/prefix-cache.test.ts`.
+  `promptProfile: "small"` trims workspace context for ≤14B foregrounds.
+- **Memory tiers.** `memory.backend` = `markdown` (legacy: graph if FalkorDB
+  answers, else flat) | `graph` | `flat` | `vault` (+ `vault.okf` for Open
+  Knowledge Format concept notes, `index.md`/`log.md`, `docs_read`);
+  `memory.embeddingModel: "none"` turns every embedding call off, lessons and
+  experiences included (2026-09-28). `src/memory/policy.ts` is the only reader
+  of these fields. Facts carry provenance (`stated | observed | inferred`);
+  incremental capture runs every 8 turns after delivery. The heartbeat
+  synthesis pass is designed, NOT built — the build decision is the owner's.
+  See MEMORY-SYSTEM.md.
+- **Security additions since July.** Target-bound standing grants
+  (`always <id>`), the web/console identity choke point
+  (`src/security/web-identity.ts`), the tool-policy check at confirmation time
+  (`src/security/tool-policy.ts`), sandboxed and principal-owned code sessions,
+  a read-only-forever email steward (no email-send capability exists).
+- **Self-modification rail + SIP.** Pi implements changes in isolated
+  worktrees; merge gate → owner-confirmed `self_merge` → supervised deploy with
+  rollback; the heartbeat drafts `!improve` proposals from code-detected error
+  recurrence. The owner is not yet routing fixes through it by default — offer,
+  don't push.
+- **Evaluation.** The e2e harness (`scripts/e2e-eval.ts`, split into
+  `scripts/e2e/` modules: install, corpus, tasks, report, stats, redact) runs a
+  wizard-generated config for the model under test through `dispatchMessage`
+  with code oracles; the report gives a full-pass rate with a 95% Wilson
+  interval. CI runs type check (app + scripts), tests, the harness
+  `--selftest`, build and console build on Linux, plus a Windows job (type
+  check, tests with a failure list, selftest).
+- **Size.** 1205 tests across 140 files (448 / 33 at the July handoff below).
 
 ## 1. THE RAILS — invariants you may not break
 
@@ -16,14 +72,21 @@ These are load-bearing values, not preferences. If a change you're considering
 violates one, redesign the change — do not relax the rail.
 
 1. **Small models are the floor, not the ceiling.** Everything must keep working
-   with 7-35B models (phi4:14b router, qwen3.6, gemma). Big models (DeepSeek via
-   vLLM) raise output quality; they must NEVER become structurally required. If
-   a design only works because the model is smart, redesign so code carries the
-   structure.
-2. **Code decides, model executes.** Deterministic pipelines own workflows; the
-   model fills small, bounded slots (classify into an enum, extract a JSON
-   object, rewrite ONE sentence). Never push orchestration or judgment into the
-   model when code can carry it.
+   with 7-35B models (phi4 router, qwen3.5/3.6, gemma4; the e2e harness measures
+   qwen3.5:9b, gemma4:12b and qwen2.5:7b). Bigger models (the 27B foreground,
+   vLLM on the Spark for coding) raise output quality; they must NEVER become
+   structurally required. If a design only works because the model is smart,
+   redesign so code carries the structure.
+2. **Code decides, model executes — constrain the arena, not every move.**
+   (Revised 2026-08-21; the July wording was "deterministic pipelines own
+   workflows.") Conversational work runs in the arena loop: code fixes the
+   scope, the tool set, the security layers and the confirm gates, and the model
+   chooses the moves inside them. Deterministic stages survive only where they
+   are an oracle (research verification, heartbeat), and there the model still
+   fills small, bounded slots (classify into an enum, extract a JSON object,
+   rewrite ONE sentence). Never push authorization, verification or bookkeeping
+   into the model when code can carry it — the loop is a commodity; the walls
+   are the product.
 3. **Autonomy bounds are structural, never model judgment.** The autonomy ladder
    (silent → act_then_notify → propose_confirm) is enforced by code gates:
    `resolveConfirmSet()` in dispatch.ts, `filterCronTools()`, the pending-action
@@ -31,9 +94,11 @@ violates one, redesign the change — do not relax the rail.
    whether an action is safe to take. New action types START at propose_confirm
    and are promoted only via config (`autoApproveTools`) backed by the
    `autonomous_action` metrics track record.
-4. **No model literals in logic.** Model assignment is config-driven. (Known
-   pre-existing exceptions: gemma4 temp exception in engine.ts, a browser-mode
-   check in dispatch.ts — do not add more.)
+4. **No model literals in logic.** Model assignment is config-driven
+   (`defaultModel` + per-slot overrides); per-model quirks are declared in
+   `src/ollama/model-caps.ts`, never branched on inline. (Known pre-existing
+   exceptions: gemma4 temp exception in engine.ts, a browser-mode check in
+   dispatch.ts — do not add more.)
 5. **Repo conventions:** ESM only (`.js` extensions on relative imports), error
    factory from `src/errors.ts` (no ad-hoc `throw new Error`), types derived
    from Zod via `z.infer<>` (never hand-written config types), no silent
@@ -45,8 +110,12 @@ violates one, redesign the change — do not relax the rail.
 7. **Every degradation path must land somewhere useful.** Parse failure →
    repair → best-effort params → deterministic fallback → honest error text.
    Never let a failure abort silently or return an empty answer.
+8. **Memory tier and prompt-order contracts.** Memory tier fields are read only
+   through `src/memory/policy.ts`; a no-embedder tier must make every dense
+   lookup inert, not slow. Per-turn content never goes into the cached prompt
+   head — it belongs in the volatile block before the user turn.
 
-## 2. What the previous session changed (2026-07-05/06)
+## 2. What the previous session changed (2026-07-05/06) — frozen record
 
 All changes are in the working tree / recent commits. `npx tsc --noEmit` clean,
 448 tests green at handoff. Grouped by intent:
@@ -156,11 +225,12 @@ reboot; recreate from local Terminal.app after reboots.
 ## 3. Verification commands
 
 ```bash
-npx tsc --noEmit        # must be clean
-npx vitest run          # 448 tests at handoff, 33 files
+npm run typecheck                         # tsc --noEmit + scripts tsconfig; must be clean
+npm test                                  # 1205 tests / 140 files (2026-09-29); 448 / 33 at the July handoff
+npx tsx scripts/e2e-eval.ts --selftest    # e2e harness against the real registry + pipelines, no model
 ```
 
-New test files: `test/pipeline/extractor.test.ts`,
+July-session test files: `test/pipeline/extractor.test.ts`,
 `test/security/pending-actions.test.ts`, `test/tools/registry-autonomy.test.ts`,
 plus additions in `test/tool-loop/parser.test.ts`,
 `test/integration/react-loop.test.ts`, `test/pipeline/verification.test.ts`.
@@ -207,11 +277,12 @@ full one-inbox grammar still item 8 below). Pillar 4 partially built
 (briefings append to the owner's session). One confirm entry point built
 (`src/security/confirm-handler.ts`).
 
-**Slice 3 design — shared conversation per principal (NOT built; dragons
-identified):**
+**Slice 3 design — shared conversation per principal (still NOT built as of
+2026-09-29 — no `session.sharedDmSessions` in the schema; dragons identified):**
 - Scope: DM/1:1 sessions only. Group/guild sessions must NEVER merge.
   Per-adapter `isDm` detection is required (Telegram: private chat id ==
-  sender id; Discord: no guildId; WhatsApp: jid without @g.us; console: its
+  sender id; Discord: no guildId; WhatsApp: jid without @g.us — the WhatsApp
+  adapter has since been removed; console: its
   own surface — decide whether it joins the DM session or stays separate).
 - Key change: `buildSessionKey` uses `dm:<principal>` for DM contexts,
   unchanged otherwise. Gate behind `session.sharedDmSessions` (default off).
@@ -241,22 +312,33 @@ typed SSE events, skeletons, modal guard).
    conflict caught deterministically, confirmable reminder + intake questions
    proposed into the live ledger. Remaining sliver: observe a confirmed
    one-shot reminder actually FIRE once through the running app's cron.
-2. **Cross-channel identity mapping** — now evidence-backed: 55/64 facts live
+2. **Cross-channel identity mapping** — DONE (principals, §4a Pillar 1). Original note: now evidence-backed: 55/64 facts live
    under the Telegram sender id; Discord sees 8% of the owner's memory
    (scripts/memory-floor-check.ts + graph-diag.ts). Biggest memory lever.
-3. **Prep proposals next rungs**: gmail slice in briefing context;
+3. **Prep proposals next rungs** (partly built: reply-context threading exists
+   via `src/services/prep-context.ts`; the rest not verified as of 2026-09-29): gmail slice in briefing context;
    research/agenda-doc offers; reply-context threading (v1 relies on the
    briefing text being adjacent in the conversation).
-4. **Per-model context profiles**: for `contextSize ≤ 16k`, auto-switch
+4. **Per-model context profiles** — SUPERSEDED by `promptProfile: "small"`
+   (config-declared, wizard-written, doctor-checked — never inferred from the
+   model at runtime). Original note: for `contextSize ≤ 16k`, auto-switch
    workspace to `progressive` mode and cap stable facts (workspace.ts already
    supports progressive).
-5. **Plan pipeline**: split `generate_plan` (enum-constrained specialist pick,
+5. **Plan pipeline** — MOOT: retired for dispatch 2026-08-21 (`multi` runs
+   arena after the duel). Original note: split `generate_plan` (enum-constrained specialist pick,
    then per-step messages); skip `reflect` for ≤2-step plans; replace LLM
    `check_progress` done-detection with plan-index arithmetic.
-6. **Deterministic citation numbering** in research `parse_final`.
-7. **Gmail compose tool** (backlog promotion candidate: prep proposals will
-   eventually want draft_reply → actual send; it must be requiresConfirm).
-8. **One-inbox unification (designed, deliberately deferred)** — from the July 6
+6. **Deterministic citation numbering** in research `parse_final` — DONE: code
+   regenerates the `## Sources` list from the URL list the model was given, so
+   body `[n]` citations always match and an invented URL cannot publish.
+7. **Gmail compose tool** — REJECTED by later design: the email steward is
+   read-only forever and no email-send capability exists (the boundary is tool
+   absence). Original note: backlog promotion candidate: prep proposals will
+   eventually want draft_reply → actual send; it must be requiresConfirm.
+8. **One-inbox unification (designed, still deferred as of 2026-09-29 —
+   `!heartbeat yes/no` and hex ids are live; per-channel tool lists remain
+   separate keys, though `src/security/tool-policy.ts` now answers "may this
+   principal run this tool here?" as one question)** — from the July 6
    confusion audit's synthesis. End state: EVERY proposal (tool preview, prep
    reminder/task, stale-fact review) lands in the single pending-action ledger
    as a numbered item; reply grammar is `ok N` / `no N` (with `no` a real
@@ -274,9 +356,17 @@ typed SSE events, skeletons, modal guard).
 
 ## 5. Anti-goals — do NOT do these
 
-- Do not add a reranker/cross-encoder to memory until the 0.55 floor has been
-  observed insufficient in real use (owner's explicit "monitor before adding
-  complexity" stance).
+- Do not add a reranker/cross-encoder to memory until the relevance floor
+  (0.52 since tuning; shipped at 0.55) has been observed insufficient in real
+  use (owner's explicit "monitor before adding complexity" stance).
+- Do not bring back deterministic pipelines for conversational categories, or
+  let learned artifacts (experiences, lessons) touch routing, permissions or
+  confirm decisions — the skills system is the cautionary tale.
+- Do not build the heartbeat synthesis pass, or any other open design item
+  flagged as the owner's call, without the owner's go-ahead.
+- Do not add an email-send (or any "act as the owner") capability — the line
+  is: an agent you talk to is an assistant; an agent that talks as you is
+  impersonation.
 - Do not "clean up" the fallback parser dialects (DSML, `<invoke>`, Action:)
   — they are the safety net that keeps arbitrary local models usable.
 - Do not make the heartbeat/briefing smarter by giving the model more

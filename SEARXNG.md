@@ -26,12 +26,16 @@ suspensions (DECISIONS.md, "Zero Evidence In, Confident Report Out", August 2026
 
 ## What Invarail does about it
 
-- **Rate:** one outbound query per 1.5 seconds per provider, serialized. Concurrent
-  research facets queue instead of bursting. (`src/tools/web-search.ts`)
-- **Volume:** `tools.web.search.dailyQueryCeiling` — a hard daily cap, refused with an
-  honest message once reached, reset at local midnight. The wizard writes 250. A config
-  without the key is unlimited, so set it. `npm run doctor` shows the pace, the
-  worst-case queries one research run can spend, and the ceiling.
+- **Rate:** one outbound SearXNG query per 1.5 seconds (hosted providers: one per 1.1
+  seconds), serialized per provider. Concurrent research facets queue instead of
+  bursting. (`src/tools/web-search.ts`)
+- **Volume:** `tools.web.search.dailyQueryCeiling` — a hard daily cap across the search
+  tool, refused with an honest message once reached, reset at local midnight
+  (`src/tools/search-quota.ts`, count kept in `data/search-quota.json`). It fails closed:
+  if the day's count cannot be persisted, the query is refused rather than sent uncounted.
+  Cache hits do not count. The wizard writes 250. A config without the key (schema
+  default 0) is unlimited, so set it. `npm run doctor` shows the pace, the worst-case
+  queries one research run can spend, and the ceiling (WARN when there is none).
 - **Cache:** identical queries within 15 minutes never leave the box.
 - **Local first:** the personal web index (`localIndex`) is tried before any search
   engine; healthy facets never hit a SERP at all.
@@ -58,7 +62,7 @@ suspensions (DECISIONS.md, "Zero Evidence In, Confident Report Out", August 2026
 
 - **A hosted provider** (`provider: brave | perplexity | grok | tavily`) spends *their*
   reputation and rate-limits you honestly with a 429. Brave's free tier is enough for
-  ad-hoc use; the same throttle applies.
+  ad-hoc use; the same serialized throttle and daily ceiling apply.
 - **The personal web index** never touches a search engine: curate 50 to 200 sources
   you actually read, and research gathers from those first.
 - **A separate IP** for the SearXNG container (a cheap VPS, or a VPN egress) moves the

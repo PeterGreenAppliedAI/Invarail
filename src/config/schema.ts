@@ -65,7 +65,7 @@ export const RouterCategorySchema = z.object({
  *  model was trained on that exact text, and the option head is model input. */
 export const RouterShadowSchema = z.object({
   enabled: z.boolean().default(false),
-  /** Base URL of the System-One server, e.g. http://192.168.77.221:8010 */
+  /** Base URL of the System-One server, e.g. http://<host>:8010 */
   url: z.string().optional(),
   /** Fire-and-forget bound; a slow shadow must never touch message latency. */
   timeoutMs: z.number().int().positive().default(3000),
@@ -339,7 +339,7 @@ export const SessionConfigSchema = z.object({
 export const WebSearchConfigSchema = z.object({
   provider: z.enum(['brave', 'perplexity', 'grok', 'tavily', 'searxng']).default('brave'),
   apiKey: z.string().optional(),
-  /** Base URL for self-hosted providers (searxng), e.g. "http://192.168.77.239:8080". No API key needed. */
+  /** Base URL for self-hosted providers (searxng), e.g. "http://<host>:8080". No API key needed. */
   baseUrl: z.string().optional(),
   cacheTtlMs: z.number().default(15 * 60 * 1000),
   /** Max outbound search queries per local day, all providers (0 = unlimited). Rate is

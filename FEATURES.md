@@ -6,19 +6,19 @@ Setup and usage detail for Invarail's features. The [README](README.md) is the f
 
 | Capability | Tools | Description |
 |-----------|-------|-------------|
-| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, the reference build; the schema default is `brave`) or Perplexity/Grok/Tavily, Readability extraction, headless Chromium |
+| Web Search | `web_search`, `web_fetch`, `browser` | SearXNG (self-hosted, the reference build; the schema default is `brave`) or Perplexity/Grok/Tavily, Readability extraction, headless Chromium. A daily outbound query ceiling (`tools.web.search.dailyQueryCeiling`; the wizard writes 250) bounds volume beside the per-provider rate throttle — [SEARXNG.md](SEARXNG.md) |
 | Personal web index | `local_search` | Owner-seeded RSS-first honest crawler (`src/webindex/`), tried before any SERP by `web_search` and `research` |
 | Research | `web_search`, `web_fetch`, `code_session` | Multi-facet deep research → analytical PDF report with charts and evidence verification (cited-source + independent cross-check of claims) |
-| Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat` |
+| Memory | `memory_save`, `memory_search`, `memory_get`, `memory_forget` (+ `docs_search`/`docs_store`/`docs_read` on the vault tier) | Per-user structured facts with categories, tags, entities, confidence scores, and interactive review via `!heartbeat`. Four tiers via `memory.backend`: `graph` (FalkorDB + embedder), `flat` (JSONL, keyword recall), `vault` (flat facts + your markdown/Obsidian folder, lexical search; `vault.okf` makes it an Open Knowledge Format bundle — `npm run vault:okf` converts an existing folder), or legacy `markdown` (graph if it answers, else flat). `embeddingModel: "none"` runs with no embedder — [MEMORY-SYSTEM.md](MEMORY-SYSTEM.md) |
 | Personal | `gmail_search`, `gmail_read`, `calendar_list`, `calendar_search` | Google Calendar + Gmail read-only access — owner-only code gate; served by `multi` since the `personal` category was retired (2026-08-10) |
-| Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands or Docker sandbox, persistent Python/Node/Bash REPL sessions, safe file I/O |
+| Execution | `exec`, `code_session`, `read_file`, `write_file` | Allowlisted shell commands or Docker sandbox, persistent Python/Node/Bash REPL sessions (inside the sandbox container under `security: "docker"`, owned per principal), safe file I/O. A requested sandbox that is missing means no `exec`/`code_session` at all — never a host fallback |
 | Scheduling | `cron_add`, `cron_list`, `cron_remove`, `cron_edit`, `cron_run` | Real cron expressions, timezone-aware, persistent; `cron_run` triggers any job immediately without touching its schedule |
 | Task Board | `task_add`, `task_list`, `task_update`, `task_done`, `task_remove` | Persistent kanban-style task system with TASKS.md rendering |
 | Reasoning | ~~`reason`~~ | Removed 2026-08-10 (0 uses in 30 days; the forced-reasoning engine paths went with it — DECISIONS). Synthesis is a pipeline stage or the arena's own turn |
 | Messaging | `send_message` | Cross-channel message delivery (confirm-gated, grant-eligible) |
 | Browsing | `browser` | Dual-mode browser: DOM-first with automatic visual escalation (Xvfb + vision model). Click, type, select, fill forms on any site including SPAs |
 | Vision | *(automatic)* | Image analysis via the multimodal foreground model — descriptions injected into context for natural Q&A |
-| Voice | TTS/STT | Kokoro TTS + Whisper STT (mlx-audio on Apple silicon, OpenAI-shaped HTTP) — voice in, voice out, with toggle hands-free mode |
+| Voice | TTS/STT | Kokoro TTS + Whisper STT over OpenAI-shaped HTTP (the reference build uses mlx-audio on Apple silicon) — voice in, voice out, with toggle hands-free mode. Detected, never asked: the wizard turns voice on only when a server answers |
 | Multi-task | `multi` (arena) | Open ReAct loop over the widest tool set, incl. the owner-only Gmail/Calendar reads; natural stop. Replaced the plan pipeline 2026-08-21 (DECISIONS "The Arena Duel": 7/7 vs 7/7 at 4.7× the cost) |
 | Data files | `code_session`, `read_file` | Upload CSV/Excel/JSON → pandas analysis in a persistent code session → charts + interpretation on request |
 | Experience Memory | *(automatic)* | Graph-stored approach memory judged by the user's ACTUAL reactions (👍/👎, steering, denials — code-detected, never model self-assessment). Experience informs execution; it never expands authority |
@@ -36,6 +36,8 @@ Setup and usage detail for Invarail's features. The [README](README.md) is the f
 | Browser Companion | Chrome Extension | Side panel rides shotgun while you browse — summarize pages, ask about selected text, right-click context menus. Page content injected directly, no fetching |
 | Self-Improvement | *(automatic)* | Error learning store, tool-specific recovery guidance, drift detection, observation summarization, learning promotion via heartbeat |
 | CLI | `npm run cli` | Terminal interface with streaming, slash commands, markdown rendering, session persistence |
+| Setup + Doctor | `npm run setup`, `npm run doctor` | Detect-first wizard (probes Ollama, Docker, FalkorDB, SearXNG, LibreOffice, Python, Obsidian, voice servers; ranks installed models by measured eval score + fit; writes `promptProfile`) and a doctor that checks what the config enables → PASS/WARN/FAIL + the fix. Sidecars are offered; system software is never installed unasked |
+| Specialist reroute | `router.reroute` *(automatic, default on)* | An arena answer that claims, or ends announcing, an action whose tool the specialist lacks gets one re-dispatch through the full security path (never cron/forced/twice). Category descriptions state what each specialist cannot do (2026-09-29) |
 
 ## Channels
 
@@ -64,6 +66,7 @@ The console REST API lives at `/console/api/`:
 | GET | `/status` | System health, model count, channel statuses |
 | GET | `/models` | List available models |
 | GET | `/config` | Running configuration (secrets redacted) |
+| GET | `/doctor` | The doctor's PASS/WARN/FAIL checks against the running config |
 | GET | `/channels` · POST `/channels/:id/reconnect` | Channel status / reconnect |
 | GET/DELETE | `/sessions[/:agent/:key]` | List, load, delete transcripts |
 | GET/POST/PATCH/DELETE | `/tasks[/:id]` | Task CRUD |
@@ -71,10 +74,13 @@ The console REST API lives at `/console/api/`:
 | GET | `/facts/all` · POST `/facts/consolidate` | Memory browse + consolidate |
 | GET | `/tools` | Registered tools with schemas |
 | POST | `/chat` | SSE-streaming chat (with image extraction) |
+| GET · POST | `/chat/history` · `/chat/reset` | Load / reset the console chat session |
+| GET | `/facts` · POST `/facts` · GET `/memory/senders` | Fact search / write, senders with memory |
 | GET | `/files/:path` | Serve workspace files (charts, etc.) |
-| GET | `/research[/:id]` | Research run listing / report metadata |
-| GET | `/code/builds[/:id]` | Pi build records |
-| GET | `/metrics/runs/:id/steps` | Tool-loop run steps (the run journal) |
+| GET · DELETE | `/research` · `/research/:id` | Research run listing / delete a run |
+| GET | `/code/builds[/:id]` · POST `/code/build` | Pi build records / start a build |
+| GET | `/metrics/overview` · `/metrics/stats` · `/metrics/runs[/:id/steps]` | Metrics, run list, per-run tool-loop steps |
+| GET | `/logs` · `/quality` | Recent log lines · quality-judge scores |
 
 ## Voice (TTS/STT)
 
@@ -84,6 +90,8 @@ The console REST API lives at `/console/api/`:
 - **TTS** — Kokoro (`af_bella`) via mlx-audio (~0.3s warm for a short reply). Voice responses get a TTS-friendly prompt injection (no emojis, no markdown).
 
 The rule: **voice in → voice out, text in → text out.** Adapters without audio support ignore it gracefully.
+
+Voice is detected, not asked: the setup wizard probes the usual local ports for an OpenAI-shaped TTS (Kokoro) and STT (faster-whisper) server, turns each on only when one answers, and otherwise prints the install command (e.g. the `kokoro-fastapi` and `faster-whisper-server` Docker images) and leaves voice off — no voice path exists without a server.
 
 Any OpenAI-shaped `/v1/audio/speech` + `/v1/audio/transcriptions` server works. The reference deployment (2026-09-25) is **mlx-audio on the Mac mini** — Kokoro and Whisper on Apple silicon, one process, no GPU node:
 
@@ -183,7 +191,7 @@ session: { contextSize: 32768, recentTurnsToKeep: 6, maxHistoryTurns: 100 },
 
 ## Workspace System
 
-Per-agent markdown injected into context: `SOUL.md` (persona + per-channel behavior), `USER.md`, `IDENTITY.md`, `MEMORY.md`, `HEARTBEAT.md`, `TOOLS.md`, `TASKS.md` (protected). Channel-aware: the bot knows its source channel per message, so SOUL.md can define different rules per platform. Tool-using specialists get minimal workspace context to preserve token budget; chat gets full.
+Per-agent markdown injected into context: `SOUL.md` (persona + per-channel behavior), `USER.md`, `IDENTITY.md`, `MEMORY.md`, `HEARTBEAT.md`, `TOOLS.md`, `TASKS.md` (protected). Channel-aware: the bot knows its source channel per message, so SOUL.md can define different rules per platform. Tool-using specialists get minimal workspace context to preserve token budget; chat gets the chat set (adds TOOLS.md, USER.md, AGENTS.md). With `promptProfile: "small"` (the wizard writes it for a ≤14B foreground) chat gets the minimal set too and every injected file is capped at 4K chars; a specialist's explicit `contextLevel: 'full'` still wins.
 
 ## CLI
 
@@ -205,4 +213,4 @@ It has since done its job: a 421M Laya encoder fine-tuned on the cleaned set (pl
 
 ## Shadow Router
 
-`router.shadow { enabled, url }` asks a System-One decision server (Laya at `/v1/systemone`) the same routing question beside the live router on every message and logs both to `data/router-shadow.jsonl` — `[RouterShadow] live=chat(model) shadow=chat conf=0.97 AGREE 71ms` in the console, with a running agreement rate every 25 messages. The shadow never decides and never delays a message. Server: `~/laya-eval/serve_router.py` (`LAYA_CKPT=<dir> LAYA_PORT=8010`).
+`router.shadow { enabled, url }` asks a System-One decision server (Laya at `/v1/systemone`) the same routing question beside the live router on every message and logs both to `data/router-shadow.jsonl` — `[RouterShadow] live=chat(model) shadow=chat conf=0.97 AGREE 71ms` in the console, with a running agreement rate every 25 messages. The shadow never decides and never delays a message. Server: `serve_router.py` from the separate Laya eval project, not this repo (`LAYA_CKPT=<dir> LAYA_PORT=8010`).

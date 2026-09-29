@@ -10,7 +10,10 @@ registry, the real stores and pipelines, in a scratch install. Only the web is s
 the workspace, the stores, the routed category and the answer — never a judge — and every
 oracle is validated by a scripted perfect performer (`--selftest`) before a model is scored.
 
-Harness: `scripts/e2e-eval.ts`. Host: the A5000 (Ollama). One rep per task.
+Harness: `scripts/e2e-eval.ts` (since the 2026-09-29 cleanup an entry point over
+`scripts/e2e/` — `install.ts` the scratch install, `corpus.ts` the stubbed web, `tasks.ts`
+the tasks, oracles and reference performers, `report.ts`, `stats.ts`, `redact.ts`). Host: the
+A5000 (Ollama). One rep per task.
 
 ## The board (run 3 — every fix below in place)
 
@@ -128,9 +131,11 @@ not doing: call the tool now. If you are not going to act, say so plainly."* Rer
 task under the nudge: **3/3** (`task-board-after-intent-nudge.log`) — two reps needed it,
 one went straight to the tools.
 
-Reliability, then, for a 9B through the real front door: 30/33 task-reps before the nudge,
-with the three misses being one behaviour that is now guarded, plus one routing flip in
-three on a request that is defensibly either category.
+Reliability, then, for a 9B through the real front door: 29/33 task-reps before the nudge,
+with three of the four misses being one behaviour that is now guarded, plus one routing flip in
+three on a request that is defensibly either category. *(Corrected 2026-09-29 from "30/33":
+`reliability/results-qwen3.5-9b-3reps.json` has 29 full passes — task-board 0/3 plus one
+web-fact-to-file rep.)*
 
 ### Three reps, all three small-tier models, corrected harness (2026-09-28)
 
@@ -153,15 +158,39 @@ and summarize the changes") and, on the 7B, one announced-intent stall AFTER a s
 tool call — a shape the nudge does not cover, since it fires only after the premature-answer
 repair. Both are engine/config levers, measurable per model with `--task`, not model swaps.
 
+*(Correction, 2026-09-29, against `reliability/results-gemma4-12b-qwen2.5-7b-3reps.json`:
+"every exec rep passed" is not quite right — qwen2.5:7b's two exec-csv-revenue misses in the
+table above are exec reps, the model computing or fabricating the wrong total (`123456` once,
+an empty file once), not a plumbing failure. And research was 9/9 reps across the three
+models, all seven checks each (63/63 checks), PDF included; the "45/45" figure does not
+correspond to any count in the result files.)*
+
+## Routing levers (2026-09-29, `routing/`)
+
+The reliability runs located the small tier's losses at the router, so the next night
+measured routing levers on the two requests that need two specialists' tools. Shipped: default
+category descriptions that say what each specialist cannot do, and a specialist reroute (one
+re-dispatch when an arena answer claims or ends announcing an action whose tool it lacks).
+Two-specialist requests went from **18/30** to **30/30** across the three models; the full
+12-task battery × 3 reps on the final code scored qwen3.5:9b **36/36**, gemma4:12b **36/36**,
+qwen2.5:7b **30/36** (its misses: a memory request the 7B now routes to `cron`, reproduced on
+the previous day's code, plus exec-csv-revenue noise). A `handoff` tool was built, measured
+harmful to small models, and removed. Details, arms and caveats:
+[`routing/README.md`](routing/README.md).
+
 ## Reading the numbers
 
 - **Prompt tokens per battery are ~77K for 11 tasks** on the 9B/12B — the system prompt is
   ~950 tokens on a fresh install (1.6K workspace + engine scaffolding), plus tool schemas
   (multi carries 13). That is the cost the *small profile* is meant to cut; this run is the
-  `full` profile baseline it will be measured against.
+  `full` profile baseline it will be measured against. *(Since measured: see the prompt
+  profile A/B above — the chat turn shrinks 5.5×, the battery total barely moves.)*
 - **gemma4:12b at 100% is the small-tier foreground pick** when it fits; qwen3.5:9b at
   94% is the floor with one disciplined miss; qwen2.5:7b at 92% is a real fallback for an
-  8GB machine, with the caveat that when it fails it may fabricate.
+  8GB machine, with the caveat that when it fails it may fabricate. *(Superseded 2026-09-28
+  by three reps on the corrected harness — qwen3.5:9b 36/36, gemma4:12b 35/36, qwen2.5:7b
+  31/36 — and on 2026-09-29 by the routing levers: 36/36, 36/36, 30/36. The single-rep
+  ranking between the 9B and the 12B did not hold up.)*
 - One rep. Flips exist (task-board on qwen3.5). Treat single-task differences under ~10
   points as noise; the category pattern is the signal.
 
@@ -174,9 +203,11 @@ confirm must execute the STORED call, and a second confirm of the same id must d
 (single-use). It is the one thing the harness adds to the wizard's config, and it is the
 only task that talks to `handleConfirmation` the way the console path does.
 
-The `--selftest` now runs in CI on every push: it boots the real registry, stores and
-pipelines in a scratch install and pushes a scripted perfect performer through every
-oracle — no model, no Ollama. On a box without LibreOffice (CI) the research PDF check is
+The `--selftest` now runs in CI on every push and pull request to main, on Linux and on
+Windows: it boots the real registry, stores and pipelines in a scratch install and pushes a
+scripted perfect performer through every oracle — no model, no Ollama. Since 2026-09-29 the
+harness itself is also type-checked in CI (`npm run typecheck` includes
+`tsc -p tsconfig.scripts.json`). On a box without LibreOffice (CI) the research PDF check is
 skipped with that reason rather than failed; the pipeline cannot render one there either.
 
 ## Reproduce
@@ -184,4 +215,25 @@ skipped with that reason rather than failed; the pipeline cannot render one ther
 ```bash
 npx tsx scripts/e2e-eval.ts --selftest                      # oracles vs the reference performer
 OLLAMA_URL=http://<host>:11434 npx tsx scripts/e2e-eval.ts qwen3.5:9b gemma4:12b qwen2.5:7b
+
+# the reliability runs: three reps of the full battery
+OLLAMA_URL=http://<host>:11434 npx tsx scripts/e2e-eval.ts qwen3.5:9b --reps=3
+
+# the prompt profile A/B arms
+OLLAMA_URL=http://<host>:11434 npx tsx scripts/e2e-eval.ts qwen3.5:9b gemma4:12b --profile=full --workspace=lived
+OLLAMA_URL=http://<host>:11434 npx tsx scripts/e2e-eval.ts qwen3.5:9b gemma4:12b --profile=small --workspace=lived
 ```
+
+Flags: `--reps=N` (default 1) · `--task=a,b` (comma list of task ids; also honoured by
+`--selftest`) · `--profile=wizard|full|small` (default `wizard`: whatever the wizard writes
+for the model) · `--workspace=fresh|lived` · `--label=name` (suffix on the output directory,
+so A/B arms don't overwrite each other) · `--reroute=off` · `--descriptions=legacy` (the
+routing A/B levers, see `routing/`). `OLLAMA_URL` picks the host (default
+`http://localhost:11434`).
+
+Output lands in `data/model-eval/e2e-<date>-<profile>-<workspace>[-<label>]/` (`report.md`
++ `results.json`). Since the 2026-09-29 cleanup the report adds, beside the mean check score,
+the full-pass rate (task-reps with every check passed) with a 95% Wilson interval, and the
+provenance block redacts a non-loopback model host to `<host>` and records every A/B flag
+(`profile`, `workspace`, `label`, `reroute`, `descriptions`). Result files published here
+before that date were redacted by hand and do not carry the flag fields.

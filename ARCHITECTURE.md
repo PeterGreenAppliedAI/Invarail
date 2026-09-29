@@ -2,9 +2,9 @@
 
 ## Overview
 
-Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on ONE swappable model (currently qwen3.8:27B on a 24GB A5000, Ollama-native, selected by a single `defaultModel` config line; glm-5.3-flash on the Spark keeps coding only); the utility tier (router, extraction, NER, voice) runs on a 3060, and the embedder runs alone on a Mac Mini. It uses a **Router + Specialist** architecture where the default execution mode is the **arena** — an open ReAct loop inside rigid walls — and **deterministic pipelines** survive only where their stages are verification (research claim-checking, system heartbeat). Doctrine, measured not asserted (DECISIONS "The Arena Duel" / "The Harness Duel"): *the loop is a commodity; the walls are the product.*
+Invarail is a local-model-first AI agent framework running entirely on personal hardware. Foreground reasoning runs on ONE swappable model (currently qwen3.8:27B on a 24GB A5000, Ollama-native, selected by a single `defaultModel` config line; glm-5.3-flash on the Spark keeps coding only); the utility tier (router, extraction, NER, voice) runs on a 3060, and the embedder runs alone on a Mac Mini. It uses a **Router + Specialist** architecture where the default execution mode is the **arena** — an open ReAct loop inside rigid walls — and **deterministic pipelines** survive only where their stages are verification (research claim-checking, code_gen's build → test → fix loop, system heartbeat). Doctrine, measured not asserted (DECISIONS "The Arena Duel" / "The Harness Duel"): *the loop is a commodity; the walls are the product.*
 
-Three inference backend kinds (OpenAI-compat, Ollama-native hosts, primary Ollama), ~75 tools (incl. MCP), 2 deterministic pipelines + arena for everything else, 4 channel adapters + Chrome extension with browser control, FalkorDB graph memory with epistemic provenance and continuous capture, live self-modification rail (SIP), read-only email steward, a System-One shadow router, ~970 tests across ~95 suites. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
+Three inference backend kinds (OpenAI-compat, Ollama-native hosts, primary Ollama), ~75 tools (incl. MCP), deterministic pipelines for research and code_gen (plus the system heartbeat) + arena for everything else, 4 channel adapters + Chrome extension with browser control, FalkorDB graph memory with epistemic provenance and continuous capture, live self-modification rail (SIP), read-only email steward, a System-One shadow router, 1,100+ tests across ~140 files. Web search runs on a self-hosted **SearXNG** metasearch instance (no API key, no rate limit); Brave/Perplexity/Grok/Tavily remain config-selectable fallbacks.
 
 ## Design Principles
 
@@ -29,15 +29,19 @@ resolveRoute() → agentId + sessionKey
   ↓
 dispatchMessage()
   - Load session history (budget-aware compaction)
-  - Router classification (pre-model overrides → phi4 → keywords → default; a System-One shadow logged beside it)
+  - Router classification (bare URL → pre-model overrides → sticky → phi4 → keywords → default;
+    a System-One shadow logged beside it)   ┐ in parallel
+  - Memory priming (FalkorDB vector KNN + entity traversal, bounded at 8s)   ┘
   - 6-layer security filtering
-  - Memory auto-injection (FalkorDB vector KNN + entity traversal)
-  - Conversational guard (prevents pipeline misroutes mid-conversation)
+  - Conversational guard (short ambiguous fragments mid-conversation → chat)
   ↓
-Deterministic pipeline            OR          Arena (open ReAct loop, natural stop)
-  - research (claim verification)              - everything else: chat, web_search, memory,
-  - heartbeat (system maintenance)               exec, cron, message, website, task, image,
-                                                 code_gen, multi — same walls, no choreography
+Bare chat (no tools)   OR   Deterministic pipeline        OR   Arena (open ReAct loop, natural stop)
+  - chat                      - research (claim verification)    - web_search, memory, exec, cron,
+                              - code_gen (build → verify → fix)    message, task, multi (+ website,
+                              - heartbeat (system maintenance)     image: same loop, default mode)
+  ↓
+Post-dispatch re-route (at most one): chat capability gap → re-classify;
+  arena specialist claims/announces an action it has no tool for → specialist reroute
   ↓
 Response → channel (thinking stripped) → transcript (thinking preserved)
 ```
@@ -79,6 +83,8 @@ A `MultiBackendClient` routes each call by model id: OpenAI-compatible servers (
 the 17.7GB of weights) budgets compaction; `research` is the slot to watch and a one-line `model:`
 override moves it to GLM's 262K if verification depth drops. Per-specialist `contextSize` override lets small-context models stay low.
 
+**Prompt profile:** top-level `promptProfile: "full" | "small"` (default `full`). `small` — written by the setup wizard for a ≤14B foreground and checked by the doctor, never inferred from the model name at runtime — gives bare chat the `minimal` workspace set (SOUL.md + IDENTITY.md + LEARNINGS.md) instead of the `chat` set and caps every injected workspace file at 4K chars. A specialist's explicit `contextLevel: 'full'` still wins.
+
 **Prompt order is a prefix-cache contract** — `[static system][append-only history][volatile state+memory][user]` in both the tool loop and bare chat. On a plain transformer any divergence only re-prefills what follows it. The 27B is a **hybrid** (`qwen35`: Gated-DeltaNet SSM layers with full attention every 4th), whose recurrent state restores only from checkpoints: measured 2026-09-26, an exact extension costs 283ms, a tail-side change ~850ms, and a history window slid by one exchange 4036ms — the same as cold. Hence the voice window is anchored with hysteresis (`voiceWindowStart`), the per-turn memory block is bounded (a user-model node that had drifted to 41 keys was ~2K tokens of it), and every foreground call passes `num_ctx` explicitly (a call without it takes the host default and Ollama reloads the model at that size — 7s each way). Bare chat prints `[Chat] … prompt=Ntok/Xms gen=Ntok/Yms load=Zms`; read it before theorizing about latency.
 
 Long completions stream by construction (`chat()` rides SSE internally) so generation length can
@@ -116,24 +122,25 @@ JSON5 repair) stay active in both modes as a safety net.
 
 ## Router Classification (4-tier)
 
-1. **Pre-model overrides** — bare URLs → website (a URL inside a larger request does NOT hijack routing), explicit task/image commands, speculative language → chat
-2. **Model** — `router.model` (phi4:latest on the 3060) classifies into the 12 configured categories, enum-grammar-constrained when the backend supports `format`; bounded by an ENFORCED `router.timeout` (a dead backend costs the timeout, not the client's retry loop)
+1. **Pre-model overrides** — bare URLs → website (a URL inside a larger request does NOT hijack routing), explicit task/image commands, research/analyze + stock/market/data → research, speculative language and "did you…/have you…" meta-questions → chat. (Sticky routing sits between this tier and the model — see below.)
+2. **Model** — `router.model` (phi4:latest on the 3060) classifies into the 12 configured categories, enum-grammar-constrained when the backend supports `format`, always with `think: false` (on a thinking model the answer landed in the thinking field and every message fell to keywords); bounded by an ENFORCED `router.timeout` (a dead backend costs the timeout, not the client's retry loop). The category descriptions are the router's whole world; the wizard defaults (`ROUTER_CATEGORIES`) say what each specialist CANNOT do, and `multi`'s says to pick it whenever no single category has every tool the request needs.
 3. **Keywords** — Pattern matching when model fails or times out
 4. **Default** — Falls back to `chat`
 
 **Shadow tier (2026-09-25, observation only):** with `router.shadow` enabled, the final decision — whatever produced it — is compared against a System-One decision model (`src/router/shadow.ts` → `/v1/systemone`, Jev wire protocol) asked the identical question with `router.categories` descriptions as its option text. Both land in `data/router-shadow.jsonl`; the shadow never decides and is never awaited. A fine-tuned Laya (421M) beat phi4 80.8% vs 76.9% at 63ms vs 270ms on the held-out set; the switch (`router.backend`) waits on the disagreement rate over real traffic (DECISIONS "A 421M Encoder Out-Routes phi4").
 
-Post-classification layers: sticky routing (keeps follow-ups on chat), conversational guard (blocks pipeline misroutes), silent re-route (if chat specialist admits capability gap). Sticky is the incumbent's main leak in the shadow log — it carries a fragment into the previous turn's *category* without knowing the previous turn's *state* ("Awesome." after "Done, scheduled" is chat, not cron). A System-One router fed the previous turn as state makes that distinction zero-shot (DECISIONS 2026-09-26); the planned v4 fine-tune trains on it.
+Around the model: sticky routing (keeps follow-ups on `chat`, `cron`, and briefing replies → chat), the conversational guard (a short <30-char fragment mid-conversation that the model sent to a tool specialist → chat; sticky, forced, cron and console dispatches exempt), silent re-route (the chat specialist admits a capability gap → re-classify), and the **specialist reroute** (2026-09-29, `src/router/reroute.ts`, `router.reroute.enabled`, default on): an arena specialist whose answer CLAIMS an action whose tool it does not hold, or ENDS announcing one, gets ONE re-dispatch. The router — never the specialist — is re-asked with the gap as a leading hint, a same-category or chat answer is refused, and the re-dispatch re-enters `dispatchMessage` so all six security layers apply; never in cron, never for an owner-forced category, never twice; the transcript keeps the user's words and the second specialist is told what the first already did. Two-specialist requests went 18/30 → 30/30 with this plus the new descriptions (evals/2026-09-e2e/routing/). A `handoff` tool offered to every specialist was built first and removed: one extra tool made qwen3.5:9b emit malformed tool calls (2/5 vs 5/5). Details in ROUTING.md. Sticky is the incumbent's main leak in the shadow log — it carries a fragment into the previous turn's *category* without knowing the previous turn's *state* ("Awesome." after "Done, scheduled" is chat, not cron). A System-One router fed the previous turn as state makes that distinction zero-shot (DECISIONS 2026-09-26); the planned v4 fine-tune trains on it.
 
 ## Dispatch Modes (arena fleet-wide, 2026-08-21)
 
-**Arena (the default)** — categories `chat`, `web_search`, `memory`, `exec`, `cron`, `message`, `website`, `task`, `code_gen`, `multi` run an open ReAct loop (`dispatchMode: "arena"`): the model sequences its configured tools with session history and stops naturally, bounded by iteration caps, drift/streak guards, observation budgets + spill, the crash-durable run journal, and `!stop`. Measured basis: the arena duel (plan pipeline 7/7 vs arena 7/7 at 4.7× the cost) and a week of production. The former per-category pipelines (extract→tool choreography) and the plan/foreman pipeline are retired from dispatch; each category's old flow is preserved in git history and the `pipeline:` config fields remain as one-line reverts. `multi` additionally carries `pi_build` — code-shaped subtasks delegate to the Pi substrate in one call instead of tool-per-turn chains.
+**Arena (the default)** — categories `web_search`, `memory`, `exec`, `cron`, `message`, `task`, `multi` run an open ReAct loop (`dispatchMode: "arena"`); `website` and `image` set no pipeline and run the same loop by default; `chat` has no tools and runs as bare chat (one call, no loop). In the loop the model sequences its configured tools with session history and stops naturally, bounded by iteration caps, drift/streak guards, observation budgets + spill, the crash-durable run journal, and `!stop`. Measured basis: the arena duel (plan pipeline 7/7 vs arena 7/7 at 4.7× the cost) and a week of production. `code_gen` ran as arena from 2026-08-21 until the 2026-09-26 doc audit found that arena was skipping its verify → fix → commit stages; neither the current config nor the wizard template sets `dispatchMode` on it now, so its pipeline runs. The former per-category pipelines (extract→tool choreography) and the plan/foreman pipeline are retired from dispatch; each category's old flow is preserved in git history and the `pipeline:` config fields remain as one-line reverts. In the reference build `multi` additionally carries `pi_build` — code-shaped subtasks delegate to the Pi substrate in one call instead of tool-per-turn chains.
 
-**Deterministic pipelines (the two survivors — stages as ORACLES, not choreography):**
+**Deterministic pipelines (the survivors — stages as ORACLES, not choreography):**
 
 | Category | Pipeline | Flow |
 |----------|----------|------|
 | research | Complex | [flow_gather] → decompose → per-facet research (search+fetch+synthesize) → gap-fill → analytical synthesis → claim verification (cited-source + Tier-1 cross-check) → charts → render PDF. `flow_gather` fires only when the request EXPLICITLY names an available flow tool (code gate): the flow's `##` sections become the facets, its links the source pool, decompose is skipped, and everything downstream is unchanged — verification works on flow-gathered pages because the fetch/cache path is identical. Flow failure degrades to normal decompose+search. |
+| code_gen | Build + verify | list_projects → enrich → build (`pi_build`) → verify → bounded fix → re_verify → local commit → report. The gate is the actual test outcome, not the model's self-assessment |
 | heartbeat | Deterministic | fact diff (code) → LLM reasoning → task board (code) → SIP proposal step → email-steward digest → LLM summary |
 
 ## Workers — Pi, FlowMCP, MCP, ReAct
@@ -146,7 +153,7 @@ All coding runs through the [Pi coding agent](https://pi.dev) (`@earendil-works/
 
 - **Bounded arena** — sessions are cwd-scoped to an isolated build directory; context-file discovery is suppressed so unrelated builds never inherit this repo's instructions; the tool surface is the config-declared allowlist.
 - **Observed, not trusted** — lifecycle events (agent/turn boundaries, tool executions with durations and error flags) stream to metrics; every session's full JSONL transcript path is recorded, so "why do we believe this build worked" has provenance all the way down.
-- **Validated externally** — the `code_gen` pipeline definition owns the workflow (enrich → build → verify → bounded fix loop → local commit → report); the gate is the actual test outcome, never the model's self-assessment. Remote push is opt-in and off by default. **As configured 2026-09-26 this loop is bypassed:** `code_gen` runs `dispatchMode: "arena"` with `pi_build` as its only tool, and arena skips the pipeline even when one is set — Pi builds, nothing verifies. Decision pending (DECISIONS 2026-09-26).
+- **Validated externally** — the `code_gen` pipeline definition owns the workflow (enrich → build → verify → bounded fix loop → local commit → report); the gate is the actual test outcome, never the model's self-assessment. Remote push is opt-in and off by default. **History:** from the 2026-08-21 arena melt until the 2026-09-26 doc audit, `code_gen` ran `dispatchMode: "arena"` with `pi_build` as its only tool, and arena skips a pipeline even when one is set — Pi built, nothing verified. The field is gone from both the running config and the wizard template, so the loop runs again.
 
 ```json5
 // invarail.config.json5
@@ -168,7 +175,7 @@ Repeatable multi-step workflows live as [FlowMCP](https://github.com/PeterGreenA
 
 ### ReAct loop — governed freedom for open categories
 
-Open-ended categories (`chat` and, since the arena melt, every arena category) use a ReAct tool loop with guardrails learned from measured failure modes: hallucinated-action detection, drift detection with re-anchoring, repair prompts that always offer a no-tool exit (the eval showed 13/16 models will fabricate tool calls rather than defy a coercive order), one calling convention per model, and error-learning hints injected before execution.
+Open-ended categories (every arena category, plus `website` and `image`; tool-free `chat` is a single bare call) use a ReAct tool loop (`runToolLoop`, `src/tool-loop/engine.ts`) with guardrails learned from measured failure modes: hallucinated-action detection, drift detection with re-anchoring, a same-tool streak guard (5 consecutive calls to one tool with varying params → one reconsider prompt), repair prompts that always offer a no-tool exit (the eval showed 13/16 models will fabricate tool calls rather than defy a coercive order), an **announced-intent nudge** (after that repair, a short answer that announces an action in its own voice with no call — "let me add them now" — gets one more nudge: announcing is not doing; qwen3.5:9b stalled 3/3 on the task board before it, passed 3/3 after), an empty-completion retry, repairs that extend the budget instead of consuming it, one calling convention per model, and error-learning hints injected before execution. Around the loop: observation spill (an oversized result persists whole to workspace `.spill/` and the model is told to grep it rather than re-read slices), a one-shot hard-compact retry when the server reports context overflow, a crash-durable run journal (`data/run-journal/`, swept into transcripts as "interrupted" notes at boot), and `!stop` cancellation at iteration boundaries. When the loop ends with a claimed or announced action whose tool the specialist lacks, dispatch's specialist reroute (above) takes over.
 
 ## Research Claim Verification
 
@@ -229,12 +236,12 @@ Models that emit thinking blocks (`<think>` for Qwen, `<|channel>thought` for Ge
 
 ### Autonomy Ladder (structural, code-enforced)
 
-Tools carry `autonomy: {tier, reversible, blastRadius}` metadata. The ladder, keyed to reversibility + blast radius:
+The ladder, keyed to reversibility + blast radius:
 - **silent** — reversible, internal (draft, organize)
 - **act_then_notify** — low-risk, undoable (task auto-complete, file writes)
 - **propose_confirm** — irreversible or visible to others (send_message starts here)
 
-Effective confirm set = channel `confirmTools` ∪ metadata `propose_confirm` tools − channel `autoApproveTools` (the per-channel promotion lever). Every autonomous action logs to metrics (`autonomous_action` events: action/tier/source/reversible/outcome) — the track record promotions are earned against. Bounds are structural: code decides what may run autonomously; the model only decides whether to, inside the envelope.
+On the tool itself this is ONE bit: `requiresConfirm` (`src/tools/types.ts`). An earlier `autonomy: {tier, reversible, blastRadius}` tool field collapsed into it; the tier names survive as the `tier` column of the autonomous-action log. Rule of thumb: anything irreversible AND visible to other people asks first (`send_message`; MCP tools without `readOnlyHint`). Effective confirm set = channel `confirmTools` ∪ tools declaring `requiresConfirm` − channel `autoApproveTools` (the per-channel promotion lever; an explicit `confirmTools` entry always wins). Every autonomous action logs to metrics (`autonomous_action` events: action/tier/source/reversible/outcome) — the track record promotions are earned against. Bounds are structural: code decides what may run autonomously; the model only decides whether to, inside the envelope.
 
 ### Pending-Action Ledger
 
@@ -246,7 +253,7 @@ The ladder rung between propose_confirm and blanket `autoApproveTools`. Tools de
 
 ### Lessons (negative procedural memory, `src/learnings/lesson-*.ts`)
 
-The runtime agent's own DECISIONS.md: "approach X failed for task-shape Y; the boundary is Z." **Code detects** — candidates harvested from on-disk evidence (max-iteration dispatches with request previews, repeated tool failures, repair clusters, rejected autonomous actions, dead letters), never model self-assessment. **Model explains** — heartbeat-only grammar-constrained synthesis with stale-facts guards (max 3 new/cycle, batch distrust) and a dedup ladder that reinforces existing lessons. **Recurrence is the code gate:** lessons auto-save at evidence:1 (listed in the heartbeat report, `!lessons drop` reverses) but only steer at evidence ≥ 2 — injected as floor-gated one-liners (max 2) in user priming plus tool-tagged boundaries through findHints. Each lesson records the model that produced the failure; a model swap makes it a staleness candidate. Together: FalkorDB remembers the user, skills remember what worked, lessons remember where the boundaries are.
+The runtime agent's own DECISIONS.md: "approach X failed for task-shape Y; the boundary is Z." **Code detects** — candidates harvested from on-disk evidence (max-iteration dispatches with request previews, repeated tool failures, repair clusters, rejected autonomous actions, dead letters), never model self-assessment. **Model explains** — heartbeat-only grammar-constrained synthesis with stale-facts guards (max 3 new/cycle, batch distrust) and a dedup ladder that reinforces existing lessons. **Recurrence is the code gate:** lessons auto-save at evidence:1 (listed in the heartbeat report, `!lessons drop` reverses) but only steer at evidence ≥ 2 — injected as floor-gated one-liners (max 2) in user priming plus tool-tagged boundaries through findHints. Each lesson records the model that produced the failure; a model swap makes it a staleness candidate. Together: FalkorDB remembers the user, experiences remember what worked (graph experience memory, `src/learnings/experience-*.ts` — the successor to skills), lessons remember where the boundaries are.
 
 ### Skill System — retired 2026-08-10
 
@@ -258,10 +265,12 @@ Every message passes six layered filters in `src/dispatch.ts` before any model s
 
 1. `allowedCategories` — what this channel may do at all
 2. `restrictedCategories` — blocked for untrusted users
-3. `ownerOnlyTools` — **invisible** to everyone but the owner (stripped from the model's vocabulary — prompt injection cannot request what the model cannot see)
-4. `blockedTools` — stripped for everyone on the channel
+3. `blockedTools` — stripped for everyone on the channel
+4. `ownerOnlyTools` — **invisible** to everyone but the owner (stripped from the model's vocabulary — prompt injection cannot request what the model cannot see)
 5. `restrictedTools` — stripped for untrusted users
 6. `confirmTools` — preview first, execute only on confirmation (pending-action ledger; applies to pipeline dispatches as well as the ReAct loop — see Autonomy Ladder above)
+
+`mcp:<server>` tokens are expanded to concrete tool names before the tool filters (3–5), so a rule naming one MCP tool cannot be sidestepped by the server token. Every re-route — the chat capability gap and the specialist reroute — re-enters `dispatchMessage`, so the new category passes all six layers as a fresh message would; a reroute never widens authority.
 
 On top of the filters:
 
@@ -293,7 +302,7 @@ tools.mcp.servers[] → McpManager
 
 Stdio servers accept a `cwd` (servers that resolve their own relative paths — config files, downstream child processes — need their repo root, not Invarail's). Reference downstream: [FlowMCP](https://github.com/PeterGreenAppliedAI/FlowMCP) — a workflow-first MCP server whose compiled flows power the research pipeline's `flow_gather` stage (see README "Add an MCP server" for setup).
 
-**Explicit tool mentions (code gate):** at pipeline dispatch, `findExplicitToolMentions` scans the message against the allowed tool names (word-boundary, case-insensitive; MCP-prefixed tools also match their bare downstream name — "weekly_gather" finds `flows_weekly_gather`). Hits are injected as `_explicitToolMentions`/`_explicitFlowMentions`. Two consumers: the research `flow_gather` gate, and the plan pipeline's skill guard — a matched skill whose steps never mention an explicitly named tool is ignored (explicit instruction outranks learned habit). Deliberately strict: no semantic flow-matching — "close enough" selection is the skill-hijack bug class, one layer up.
+**Explicit tool mentions (code gate):** at pipeline dispatch, `findExplicitToolMentions` scans the message against the allowed tool names (word-boundary, case-insensitive; MCP-prefixed tools also match their bare downstream name — "weekly_gather" finds `flows_weekly_gather`). Hits are injected as `_explicitToolMentions`/`_explicitFlowMentions`. Consumers: the research `flow_gather` gate, and (historical — the plan pipeline and skills are retired) the plan pipeline's skill guard, where a matched skill whose steps never mention an explicitly named tool was ignored (explicit instruction outranks learned habit). The same scan also sends an exec-pipeline dispatch that names an MCP tool to the ReAct loop, the only place that tool exists. Deliberately strict: no semantic flow-matching — "close enough" selection is the skill-hijack bug class, one layer up.
 
 Deliberately NOT the official SDK — ~10% of the protocol (initialize/tools-list/tools-call), owned end to end; swap path stays behind `McpManager`. Failing servers never block boot; crashed servers lazily respawn (3×, 5s backoff). Specialists opt in per server with the `mcp:<server>` token (expanded at dispatch). Remote auth is OAuth 2.1 + PKCE + **Dynamic Client Registration**, fully local (no broker); tokens in the 0600 SecretStore, silent refresh at runtime — the browser-opening flow exists ONLY in `scripts/mcp-oauth-setup.ts`, so background paths can never pop an authorize page.
 
@@ -359,4 +368,4 @@ Resource limits          CPU/memory per exec           Roadmap
 | Scheduling | croner |
 | Config | JSON5 + Zod |
 | Chrome Extension | WXT + React + TypeScript (Manifest V3) |
-| Testing | Vitest (993 tests, 104 files) |
+| Testing | Vitest (1,100+ tests, ~140 files) |

@@ -4,6 +4,17 @@ Raw material for the follow-up post. Charts in this directory are screenshot-rea
 (leaderboard.png is the hero image; think_ab.png is the argument; cost_vs_score.png
 is the economics).
 
+> **Note (2026-09-29), before quoting any number below:** this was drafted against the
+> 2026-08-12 board. Since then: (1) the 2026-08-15 Qwen3.8 addendum made the board **41
+> rows / 24 models** and added a **fourth** perfect row (`qwen3.8:27b@think=on`, thinking
+> ON) — "three perfect scorecards" is now four, still no default among them;
+> (2) the obedience audit moved gpt-oss from "load-bearing" to its own archetype,
+> *"wants a dial, not a switch"* (see [README](./README.md#the-thinking-ab--the-headline-result));
+> (3) "The #1 model … a mid-tier 17GB model" describes the pre-addendum board, where
+> `qwen3.6:27b@think=off` was #1; on the final board it is #2 behind
+> `gpt-oss:120b@think=low` (the ending section below is the final-board story). The
+> draft text is left as written.
+
 ---
 
 ## What the eval was

@@ -53,7 +53,7 @@ export async function runModelsStep(models: OllamaModel[], report?: DetectReport
   if (addBackend) {
     let more = true;
     while (more) {
-      const url = await askText('  Backend URL (OpenAI-compatible, e.g. http://10.9.8.15:8000)', 'http://localhost:8000');
+      const url = await askText('  Backend URL (OpenAI-compatible, e.g. http://gpu-box.local:8000)', 'http://localhost:8000');
       const modelsCsv = await askText('  Model id(s) served here (comma-separated, e.g. cyankiwi/MiniMax-M2.7-AWQ-4bit)', specialistModel);
       const backendModels = modelsCsv.split(',').map(m => m.trim()).filter(Boolean);
       inferenceBackends.push({ url, models: backendModels });

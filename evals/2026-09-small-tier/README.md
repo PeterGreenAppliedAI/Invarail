@@ -81,8 +81,17 @@ whole battery × 3 reps.
 ## Provenance
 
 Runs `data/model-eval/run-2026-09-27T17-23-28` (3060; report.md / results.json) and
-`run-2026-09-27T18-08-…` (A5000, deepseek-r1:1.5b + qwen3.5:9b; report-a5000.md /
-results-a5000.json), copied here verbatim. Invarail was stopped for both. Harness `scripts/model-eval.ts`; tool-loop tasks run at `contextSize: 16384`;
+`run-2026-09-27T18-08-39` (A5000, deepseek-r1:1.5b + qwen3.5:9b; report-a5000.md /
+results-a5000.json), copied here verbatim — harness commits `4251383` and `16b147e`
+respectively, clean trees. (The generated reports' title and "Serving stack" paragraph are
+the August template's boilerplate — "20-33B Field", Spark gateway, deepseek via ds4 — and
+do not describe these runs; the serving host for both was a single Ollama, redacted `<host>`.) Invarail was stopped for both. Harness `scripts/model-eval.ts`; tool-loop tasks run at `contextSize: 16384`;
 mock tools; temperatures 0.3 tool/chat, 0.1 extract. The starter preset was changed on
 the strength of the top rows: `qwen3.5:9b` with `think: false` (gemma4:12b as the named
 alternate) replaces the never-measured `qwen3:8b`.
+
+> **Later result (2026-09-28/29):** the same three candidates run end to end through the
+> real front door (router → dispatch → arena, wizard-generated config) in
+> [2026-09-e2e](../2026-09-e2e/README.md#three-reps-all-three-small-tier-models-corrected-harness-2026-09-28):
+> qwen3.5:9b 36/36, gemma4:12b 35/36, qwen2.5:7b 31/36 — the 7B's losses are at the router,
+> not in execution. This board's engine-only numbers stand as measured.

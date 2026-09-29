@@ -1,4 +1,6 @@
-> Written 2026-08-08 — dated synthesis, kept as record.
+> Written 2026-08-08 — dated synthesis, kept as record. The body is unchanged and describes the system as it stood that day.
+>
+> **What changed after it was written (note added 2026-09-29):** LocalClaw is now **Invarail**. The "thirteen deterministic pipelines" collapsed: since 2026-08-21 nine categories run an open arena tool-loop behind the same security layers and confirm ledger, and only research (claim verification) and the heartbeat remain pipelines — position A narrowed to "determinism where the stages are an oracle," with the doctrine *constrain the arena, not every move*. The skills store was retired 2026-08-10 (the hijack pattern in §2), succeeded by experience memory and lessons that stay advisory and never gain routing or permission authority. The WhatsApp adapter was removed as planned in §3. Memory gained provenance, incremental capture and tiers that run without a graph database or an embedder. See DECISIONS.md for the receipts.
 
 # Working Notes: What Six Months of Building Agents Actually Showed
 

@@ -7,7 +7,7 @@
 > (glm-5.3-flash) is served directly by vLLM — not through the gateway — so the
 > P0 requirements below apply to utility models only.
 
-Audience: the gateway service at `http://10.9.8.20:8001` (custom FastAPI proxy
+Audience: the gateway service at `http://<host>:8001` (custom FastAPI proxy
 fronting Ollama on the DGX Spark). Invarail treats this endpoint as a stock
 Ollama API. Everything below is either a gap observed in live testing on
 2026-07-06 or a contract Invarail actively depends on.
@@ -72,7 +72,8 @@ streamed response must survive.
 ### 5. `options` passthrough
 Forward all of: `temperature`, `num_predict`, `num_ctx`, `stop`, `top_k`,
 `top_p`, `repeat_penalty`. **`num_ctx` matters most** — Invarail sets it from
-`session.contextSize` (131072); if the gateway drops it, models run at
+`session.contextSize` (131072 when this was written; 32768 as of 2026-09, sized to
+the serving backend); if the gateway drops it, models run at
 Ollama's small default and silently truncate the prompt head (the system
 prompt is what falls off first).
 
@@ -93,6 +94,9 @@ qwen3-embedding:8b powers the entire graph-memory system (4096-dim).
   either way, but consistent shape helps debugging).
 - If the gateway rate-limits, use **429** — Invarail backs off exponentially
   on 429 specifically (600/1200/2400ms) instead of failing the call.
+  (2026-09 update: the backoff is now jittered ±30%, capped at 8s, applies to
+  429 and transient 502/503/504, and honors a sane `Retry-After` — so item 2's
+  `Retry-After` on 503 is used when present. `src/ollama/client.ts`.)
 
 ### 9. Misc passthrough
 - `keep_alive` (Invarail sends `"30m"`) — forward so models stay warm.
@@ -112,7 +116,7 @@ qwen3-embedding:8b powers the entire graph-memory system (4096-dim).
 
 ## Acceptance tests
 
-Run from any box that can reach the gateway (`$GW` = http://10.9.8.20:8001):
+Run from any box that can reach the gateway (`$GW` = http://<host>:8001):
 
 ```bash
 # 1a. format as schema object — MUST return 200 and a bare enum value

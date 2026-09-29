@@ -29,8 +29,10 @@ What actually happened.
 - **OS:** (e.g., Ubuntu 24.04)
 - **Node.js version:** (e.g., 22.x)
 - **Ollama version:**
-- **Models used:** (e.g., phi4-mini, qwen3-coder:30b)
-- **Channel:** (e.g., Discord, WhatsApp, Web Voice UI)
+- **Models used:** (e.g., qwen3.5:9b foreground, phi4-mini utility)
+- **Channel:** (e.g., Discord, Telegram, web console, Chrome extension, CLI)
+- **Memory tier:** (`memory.backend`: graph / flat / vault / markdown)
+- **`npm run doctor` output:** (paste any WARN/FAIL lines)
 
 ## Logs
 

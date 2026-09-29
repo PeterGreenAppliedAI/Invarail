@@ -35,13 +35,20 @@ Correct outcomes, meaning routed or rerouted to `multi` with every check passed:
 | Descriptions | qwen3.5:9b | gemma4:12b | qwen2.5:7b | Total |
 |---|---|---|---|---|
 | Legacy (`--descriptions=legacy`) | 10/10 | 7/10 | 5/10 | **22/30** |
-| New | 10/10 | 10/10 | 7/10 | **27/30** |
+| New | 10/10 | 10/10 | 6/10 | **26/30** |
 
 Under the old wording gemma4 sent the Node.js request to `exec` three times and wrote the
 year from memory, without a word the reroute could catch. The 7B's remaining release-notes
-misses were one silent omission, where the task was never mentioned, and two claims in forms
-the patterns didn't cover yet: "Task added to your task board" and a done-list line "2. Added
-a task … to your task board". Both forms are now covered and tested. See the rerun below.
+misses (4 of 5 in `results-h2h-two-new.json`): three reps stayed on `exec` and claimed the task
+in forms the patterns didn't cover yet — each with a done-list line "2. Added a task … to your
+task board", one also with "Task added to your task board" — and one rep was rerouted
+correctly but its summary covered fewer than two changes (score 0.8). Both claim forms are
+now covered and tested. See the rerun below.
+
+*(Corrected 2026-09-29: this row first read 7/10 and 27/30, which counted the score-0.8
+rerouted rep as correct and described one of the misses as a silent omission. Scored as the
+table says — routed or rerouted to `multi` AND every check passed — the file gives 6/10 and
+26/30, and every miss mentions the task.)*
 
 Baseline for reference, before any change (`results-route-baseline.json`): **18/30**.
 
@@ -60,7 +67,9 @@ every arm with the new descriptions, so the final total is 30/30.
 
 Three reroutes fired, all correct, and there were no parser errors. The 7B's misses were
 memory-save-recall 0/3, the environmental `cron` flip that yesterday's code reproduces today
-(see below), and exec-csv-revenue 2/3, which is noise. Release notes went from 0/3 to 2/3.
+(see below), exec-csv-revenue 1/3 (two misses), which is noise, and one release-notes rep.
+*(Corrected 2026-09-29 from "exec-csv-revenue 2/3": `results-full-final.json` has one pass in
+three; 3 + 2 + 1 = the six misses.)* Release notes went from 0/3 to 2/3.
 Leaving out the memory flip, the 7B improved.
 
 ## Built, measured, removed: the `handoff` tool
@@ -94,7 +103,7 @@ changed. No arm is judged on it.
 ## Reproduce
 
 ```
-npx tsx scripts/e2e-eval.ts qwen3.5:9b gemma4:12b qwen2.5:7b --reps=5 \
+OLLAMA_URL=http://<host>:11434 npx tsx scripts/e2e-eval.ts qwen3.5:9b gemma4:12b qwen2.5:7b --reps=5 \
   --task=multi-release-notes,web-fact-to-file --descriptions=legacy --label=h2h-two-legacy
 ```
 
@@ -102,4 +111,14 @@ npx tsx scripts/e2e-eval.ts qwen3.5:9b gemma4:12b qwen2.5:7b --reps=5 \
 `--reroute=off` disables the reroute. `--descriptions=legacy` restores the old wording of
 the four categories.
 
-The earlier arms (`route-*`) include the removed tool and are kept for the record.
+Output lands in `data/model-eval/e2e-<date>-<profile>-<workspace>-<label>/`; the files here
+were copied from those directories and renamed by arm. Every arm's provenance records commit `018e019`; the reroute, the new descriptions and the
+flags that select them shipped in the next commit, `b23e312`, so the arms ran on a working
+tree ahead of the recorded commit. These
+results predate the 2026-09-29 harness cleanup, so their provenance blocks do not yet
+record the A/B flags (`label`, `reroute`, `descriptions`) — the arm name is the record.
+
+The earlier arms (`route-*`) include the removed tool and are kept for the record. Their
+two-task tallies, same scoring: baseline 18/30, `route-desc` 24/30, `route-reroute` 27/30,
+`route-reroute2` 29/30. `full-reroute` (the full battery with the tool): qwen3.5:9b 34/36,
+gemma4:12b 36/36, qwen2.5:7b 28/36.

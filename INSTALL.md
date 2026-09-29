@@ -26,9 +26,15 @@ Two runs of the same harness — [20B–124B in August](evals/2026-08-local-mode
 
 Those are engine numbers. The same models were also run **as Invarail** — a wizard-generated
 config through the real router, specialists, stores and pipelines
-([evals/2026-09-e2e](evals/2026-09-e2e/)): gemma4:12b 100%, qwen3.5:9b 94%, qwen2.5:7b 92%,
-research at 100% on all three. Where a small model misses, it is discipline (answering in
-prose instead of calling the tool, or inventing a number when its code fails), not capability.
+([evals/2026-09-e2e](evals/2026-09-e2e/)). The first single-rep board read gemma4:12b 100%,
+qwen3.5:9b 94%, qwen2.5:7b 92%, research at 100% on all three. The current three-rep
+battery (12 tasks × 3, after the routing levers of 2026-09-29 — category descriptions that
+say what each specialist cannot do, and the specialist reroute): **qwen3.5:9b 36/36,
+gemma4:12b 36/36, qwen2.5:7b 30/36** ([routing](evals/2026-09-e2e/routing/)). qwen3.5:9b is
+the recommended small foreground; qwen2.5:7b is a workable fallback. Where a small model
+misses, it is at the router (the wrong specialist, hence the wrong toolset) or discipline
+(answering in prose instead of calling the tool, or inventing a number when its code
+fails), not capability.
 
 Native tool use begins at 9–12B; qwen2.5:7b (81%) is the fallback for an 8GB machine.
 phi4 and the gemma3 small models cannot native-tool-call on Ollama at all (their chat
@@ -120,13 +126,19 @@ docker compose up -d      # FalkorDB (graph memory) + SearXNG (web search)
 ```
 
 Then in your config:
-- Graph memory needs **no config** — Invarail finds FalkorDB on localhost:6379
-  and upgrades memory in place (flat files remain the automatic fallback).
-- Web search: add `tools.web.search` pointing at SearXNG
-  (`http://localhost:8080`) and a `web_search` router category + specialist.
+- Graph memory: set `memory.backend: "graph"` and an `embeddingModel` (e.g.
+  `qwen3-embedding:4b`, pulled into Ollama). The Starter preset writes
+  `backend: "flat"` + `embeddingModel: "none"`, and the flat tier never connects a
+  graph. Under `backend: "graph"` the doctor FAILs if FalkorDB (localhost:6379) is
+  unreachable; the legacy `"markdown"` value (the schema default when the key is
+  absent) means "graph if FalkorDB answers, else flat" and upgrades in place.
+- Web search: add `tools.web.search: { provider: "searxng", baseUrl:
+  "http://localhost:8080" }` (the schema default provider is `brave`) and a
+  `web_search` router category + specialist — or let the wizard write it.
   **Read [SEARXNG.md](SEARXNG.md) first** — a metasearch instance spends *your*
   IP's reputation with every engine it queries. The compose file mounts a
-  suggested `searxng/settings.yml`; set `dailyQueryCeiling` in the search config.
+  suggested `searxng/settings.yml`; set `dailyQueryCeiling` in the search config
+  (the wizard writes 250; absent, it is 0 = unlimited).
   A hosted provider key (Brave, Perplexity, Grok, Tavily) avoids the issue.
 - A chat channel: `channels.discord: { enabled: true, token: "${DISCORD_TOKEN}" }`
   (token in `.env`). Telegram follows the same shape; Gmail is read-only and uses OAuth (see FEATURES.md).
@@ -141,9 +153,12 @@ Then in your config:
 ## Tier 2 — power user
 
 - **Sandboxed execution:** `tools.exec` with the Docker backend (or a strict
-  command allowlist).
-- **Email/calendar (read-only):** Google OAuth via `scripts/` setup; tools are
-  owner-gated in code — only `ownerId` ever sees them.
+  command allowlist). With `security: "docker"`, code sessions run inside the
+  sandbox container too; if Docker is not available, `exec` and `code_session`
+  are simply not registered — nothing silently falls back to the host.
+- **Email/calendar (read-only):** Google OAuth via `npx tsx scripts/google-auth.ts`
+  (one-time consent → `GOOGLE_REFRESH_TOKEN` in `.env`); tools are owner-gated in
+  code — only `ownerId` ever sees them, and they are served by the `multi` specialist.
 - **Documents:** LibreOffice headless gives PDF/DOCX/XLSX creation. Models
   write markdown; code owns the styling.
 - **Vision:** any Ollama vision model in the `vision` block; the Chrome
@@ -166,7 +181,13 @@ it demands.
 
 - `npm test` — the suite includes a starter-preset boot check: the Tier 0
   config must always parse and boot with zero sidecars running.
-- `npx tsc --noEmit` — type check.
+- `npm run typecheck` — type check (the app, plus the e2e harness under
+  `scripts/` via `tsconfig.scripts.json`).
+- `npx tsx scripts/e2e-eval.ts --selftest` — the front-door harness against a
+  scripted perfect performer: real registry, stores and pipelines, no model.
+  CI runs it on Linux and Windows.
+- `npm run doctor` — every dependency your config enables, PASS/WARN/FAIL with
+  the fix (also served at `GET /console/api/doctor`).
 - The web console's status page shows which subsystems found their
   dependencies (graph vs. flat memory, which channels connected, which tools
   registered).
