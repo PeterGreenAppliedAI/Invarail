@@ -2,7 +2,7 @@
   "provenance": {
     "date": "2026-09-29T05:50:16.417Z",
     "gitCommit": "07a2326",
-    "ollamaUrl": "http://<lan-ollama>:11434",
+    "ollamaUrl": "http://<host>:11434",
     "reps": 10,
     "profile": "wizard",
     "workspace": "fresh",

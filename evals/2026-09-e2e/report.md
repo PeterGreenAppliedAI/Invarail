@@ -330,4 +330,4 @@ By 2026, consumer GPUs like the RTX 3060 and 4090 support local LLM inference wi
 </details>
 
 ---
-Provenance: {"date":"2026-09-27T19:19:29.915Z","gitCommit":"198058d","ollamaUrl":"http://<lan-ollama>:11434","reps":1,"profile":"full","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}
+Provenance: {"date":"2026-09-27T19:19:29.915Z","gitCommit":"198058d","ollamaUrl":"http://<host>:11434","reps":1,"profile":"full","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}

@@ -1,4 +1,4 @@
-E2E eval — 1 model(s) × 1 task(s) × 10 rep(s) · profile=wizard workspace=fresh → /private/tmp/claude-501/-Users-petergreen-LocalClaw/09763521-2df9-47fd-b913-9b8adb478144/scratchpad/wt-f859/data/model-eval/e2e-2026-09-29-wizard-fresh
+E2E eval — 1 model(s) × 1 task(s) × 10 rep(s) · profile=wizard workspace=fresh → <worktree-at-f859bd5>/data/model-eval/e2e-2026-09-29-wizard-fresh
 
 ================ qwen2.5:7b ================
 [Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)
@@ -275,5 +275,5 @@ I will add this to yo...)
   memory-save-recall: 60% routed=cron calls=8 ptok=12068 15s — ✗ routed to memory, fact persisted
   OVERALL: 60% · memory 60% · 1.5m
 
-E2E COMPLETE — report: /private/tmp/claude-501/-Users-petergreen-LocalClaw/09763521-2df9-47fd-b913-9b8adb478144/scratchpad/wt-f859/data/model-eval/e2e-2026-09-29-wizard-fresh/report.md
+E2E COMPLETE — report: <worktree-at-f859bd5>/data/model-eval/e2e-2026-09-29-wizard-fresh/report.md
 E2E_DONE

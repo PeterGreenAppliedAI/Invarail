@@ -5,7 +5,7 @@
    "date": "2026-08-12T07:34:43.458Z",
    "gitCommit": "6b9b22f",
    "gitDirty": false,
-   "gatewayUrl": "http://10.9.8.20:8001",
+   "gatewayUrl": "http://<host>:8001",
    "reps": 3,
    "models": [
     {
@@ -152,7 +152,7 @@
    "date": "2026-08-12T19:03:42.681Z",
    "gitCommit": "6b547ea",
    "gitDirty": false,
-   "gatewayUrl": "http://10.9.8.20:8001",
+   "gatewayUrl": "http://<host>:8001",
    "reps": 3,
    "models": [
     {

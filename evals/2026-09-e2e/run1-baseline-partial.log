@@ -3,7 +3,7 @@
 [config] ${MSGRAPH_USER_ID} is not set — resolved to an empty string
 [config] ${BLUEBUBBLES_URL} is not set — resolved to an empty string
 [config] ${BLUEBUBBLES_PASSWORD} is not set — resolved to an empty string
-E2E eval — 3 model(s) × 11 task(s) × 1 rep(s) → /Users/petergreen/LocalClaw/data/model-eval/e2e-2026-09-27
+E2E eval — 3 model(s) × 11 task(s) × 1 rep(s) → <repo>/data/model-eval/e2e-2026-09-27
 
 ================ qwen3.5:9b ================
 [Tools] Google tools registered (gmail_search, gmail_read, calendar_list, calendar_search)

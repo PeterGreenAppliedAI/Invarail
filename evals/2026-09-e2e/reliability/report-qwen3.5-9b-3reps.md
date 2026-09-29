@@ -105,4 +105,4 @@ By 2026, local LLM inference is strictly limited by VRAM capacity rather than ra
 </details>
 
 ---
-Provenance: {"date":"2026-09-27T20:53:18.602Z","gitCommit":"f3d07ba","ollamaUrl":"http://<lan-ollama>:11434","reps":3,"profile":"wizard","workspace":"fresh","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}
+Provenance: {"date":"2026-09-27T20:53:18.602Z","gitCommit":"f3d07ba","ollamaUrl":"http://<host>:11434","reps":3,"profile":"wizard","workspace":"fresh","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}

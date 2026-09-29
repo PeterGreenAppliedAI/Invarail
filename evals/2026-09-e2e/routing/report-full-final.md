@@ -368,4 +368,4 @@ By 2026, consumer GPUs have evolved in their ability to run local Large Language
 </details>
 
 ---
-Provenance: {"date":"2026-09-29T06:16:04.474Z","gitCommit":"018e019","ollamaUrl":"http://<lan-ollama>:11434","reps":3,"profile":"wizard","workspace":"fresh","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","confirm-ledger","research-report"]}
+Provenance: {"date":"2026-09-29T06:16:04.474Z","gitCommit":"018e019","ollamaUrl":"http://<host>:11434","reps":3,"profile":"wizard","workspace":"fresh","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","confirm-ledger","research-report"]}

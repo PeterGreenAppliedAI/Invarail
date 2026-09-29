@@ -3,7 +3,7 @@
     "date": "2026-09-27T17:23:28.080Z",
     "gitCommit": "ccd0052",
     "gitDirty": false,
-    "gatewayUrl": "http://10.9.8.14:11434",
+    "gatewayUrl": "http://<host>:11434",
     "reps": 3,
     "models": [
       {

@@ -47,4 +47,4 @@ The year Node.js was first released, 2009, has been written to `node-year.txt` i
 </details>
 
 ---
-Provenance: {"date":"2026-09-29T17:54:33.963Z","gitCommit":"018e019","ollamaUrl":"http://<lan-ollama>:11434","reps":5,"profile":"wizard","workspace":"fresh","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","confirm-ledger","research-report"]}
+Provenance: {"date":"2026-09-29T17:54:33.963Z","gitCommit":"018e019","ollamaUrl":"http://<host>:11434","reps":5,"profile":"wizard","workspace":"fresh","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","confirm-ledger","research-report"]}

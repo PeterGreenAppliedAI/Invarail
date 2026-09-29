@@ -2,7 +2,7 @@
 
 **Run:** data/model-eval/run-2026-08-12T07-34-43 · **Date:** 2026-08-12T07:34:43.458Z · **Harness:** `scripts/model-eval.ts` @ d998931 · **Reps per task:** 3
 
-**Serving stack:** http://10.9.8.20:8001. All throughput/latency figures reflect THIS serving topology only — TWO distinct paths: (1) Ollama fleet (DGX Spark cluster) behind a FastAPI gateway proxy (per-box Ollama 0.32.9/0.30.8; one legacy 0.12.5 box), Q4_K_M/MXFP4 quantizations; (2) deepseek-v4-flash served DIRECTLY by ds4/DwarfStar (github.com/antirez/ds4, OpenAI-compat, no gateway in path) — cross-comparisons with it span different stacks. None of these figures are intrinsic model properties; they will not transfer to other hardware, quants, or serving engines.
+**Serving stack:** http://<host>:8001. All throughput/latency figures reflect THIS serving topology only — TWO distinct paths: (1) Ollama fleet (DGX Spark cluster) behind a FastAPI gateway proxy (per-box Ollama 0.32.9/0.30.8; one legacy 0.12.5 box), Q4_K_M/MXFP4 quantizations; (2) deepseek-v4-flash served DIRECTLY by ds4/DwarfStar (github.com/antirez/ds4, OpenAI-compat, no gateway in path) — cross-comparisons with it span different stacks. None of these figures are intrinsic model properties; they will not transfer to other hardware, quants, or serving engines.
 
 **Scoring:** deterministic code checks only, averaged over 3 repetitions. Failure taxonomy separates model behavior from infrastructure: PROVIDER_OUTAGE reps are retried once, then excluded from means (UNSCORED) — never counted as model failures. TIMEOUT and SERVING_INCOMPATIBLE score 0 but are labeled (operationally real, causally different). Subjective prose quality is intentionally unscored — raw outputs below.
 

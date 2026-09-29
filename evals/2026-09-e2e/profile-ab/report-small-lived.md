@@ -202,4 +202,4 @@ Local LLM inference in 2026 is characterized by a clear distinction between high
 </details>
 
 ---
-Provenance: {"date":"2026-09-27T20:12:26.779Z","gitCommit":"65fe730","ollamaUrl":"http://<lan-ollama>:11434","reps":1,"profile":"small","workspace":"lived","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}
+Provenance: {"date":"2026-09-27T20:12:26.779Z","gitCommit":"65fe730","ollamaUrl":"http://<host>:11434","reps":1,"profile":"small","workspace":"lived","tasks":["chat-plain","chat-exact-word","task-board","memory-save-recall","exec-csv-revenue","exec-fib-script","multi-release-notes","cron-schedule","web-fact-to-file","website-summarize","research-report"]}
