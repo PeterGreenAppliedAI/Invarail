@@ -9,9 +9,9 @@
 import { writeFileSync, mkdirSync, readFileSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const IMAGE_GEN_URL = process.env.IMAGE_GEN_URL ?? 'http://192.168.77.170:11434';
+const IMAGE_GEN_URL = process.env.IMAGE_GEN_URL ?? 'http://localhost:11434';
 const IMAGE_GEN_MODEL = process.env.IMAGE_GEN_MODEL ?? 'x/flux2-klein:4b-fp8';
-const REVIEW_URL = process.env.OLLAMA_URL ?? 'http://10.9.8.20:8001';
+const REVIEW_URL = process.env.OLLAMA_URL ?? 'http://localhost:11434';
 const REVIEW_MODEL = 'qwen3.6:35b';
 const OUTPUT_DIR = 'data/assets/backgrounds';
 const METADATA_FILE = join(OUTPUT_DIR, 'catalog.json');

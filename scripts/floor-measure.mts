@@ -7,7 +7,7 @@ function cos(a: number[], b: Float32Array): number {
 }
 
 async function embed(text: string): Promise<number[]> {
-  const r = await fetch('http://10.9.8.20:8001/api/embed', {
+  const r = await fetch(`${process.env.OLLAMA_URL ?? 'http://localhost:11434'}/api/embed`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: 'qwen3-embedding:8b', input: text }),
   });

@@ -9,7 +9,7 @@ import { FalkorDB } from 'falkordb';
 import { OllamaClient } from '../src/ollama/client.js';
 
 async function main() {
-  const url = process.env.OLLAMA_URL ?? 'http://10.9.8.20:8001';
+  const url = process.env.OLLAMA_URL ?? 'http://localhost:11434';
   console.log(`Using Ollama at: ${url}`);
   const client = new OllamaClient(url, '30m');
   const db = await FalkorDB.connect({ socket: { host: 'localhost', port: 6379 } });

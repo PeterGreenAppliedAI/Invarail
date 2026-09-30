@@ -19,7 +19,7 @@ async function main() {
     return;
   }
 
-  const client = new OllamaClient('http://10.9.8.20:8001', '30m');
+  const client = new OllamaClient(process.env.OLLAMA_URL ?? 'http://localhost:11434', '30m');
   const factStore = new FactStore(workspacePath);
   const graphStore = new GraphMemoryStore(client, { graphName: 'invarail_memory' });
   await graphStore.connect();

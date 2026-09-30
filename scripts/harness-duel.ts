@@ -2,7 +2,7 @@
  * Harness duel: Invarail arena loop vs DeepSeek Harness (dsh) headless.
  *
  * FAIRNESS PROTOCOL:
- * - Same model both arms: qwen3.8-27b on SGLang (10.9.8.64:8000, OpenAI-compat).
+ * - Same model both arms: qwen3.8-27b on SGLang (<host>:8000, OpenAI-compat).
  * - Same prompts, same fresh workspace fixtures, same computed-oracle checks.
  * - Neutral task set only: file/shell/python. No Invarail-only tools (task board,
  *   memory) — those tasks would be rigged. Both arms get file read/write + shell.

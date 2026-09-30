@@ -2,7 +2,7 @@ import { OllamaClient } from '../src/ollama/client.js';
 import { GraphMemoryStore } from '../src/memory/graph-store.js';
 
 async function main() {
-  const client = new OllamaClient('http://10.9.8.20:8001', '30m');
+  const client = new OllamaClient(process.env.OLLAMA_URL ?? 'http://localhost:11434', '30m');
   const store = new GraphMemoryStore(client, { graphName: 'test_advanced' });
   await store.connect();
 

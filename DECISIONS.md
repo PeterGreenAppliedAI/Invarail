@@ -38,6 +38,16 @@ Peter read the weekly AI-news report and called it "not bad at all". It was — 
 
 ---
 
+## The Router Prompt's "Wrong" Rule Was Load-Bearing (September 30 2026)
+
+Last night's disproven theory left a new suspect for qwen2.5:7b sending "Remember this: my deployment freeze starts on 2026-09-01" to `cron`: the router prompt's fixed rule "personal, memory, and web_search can only READ", which is false (memory holds `memory_save`) and names two retired categories. Corrected text: "memory and web_search cannot create files… memory saves and recalls facts ('remember that…' is memory)". Measured against the live phi4 first (the live check now builds its client the way the app does — it had been asking the primary Ollama for a model that lives on a routed backend — and gained the exact memory sentence): **54/54 before and after**. qwen3.5:9b and gemma4:12b: memory 10/10 each. qwen2.5:7b: `cron` 10/10.
+
+Then a same-day A/B, because this model had already flipped with nothing changed: alternating new / old / new / old, ten reps each, the 7B alone on the same card. **New text: 0/20 to memory. Old text: 16/20.** The false rule is load-bearing for the 7B — plausibly because "can only READ" never fires on a sentence that plainly writes, while the corrected sentence puts "run anything" and a date-bearing save next to each other. Reverted to the known-good text exactly, with a comment at the rules block: *a measured artifact, change it only with an A/B.* Kept: the `DEFAULT_CATEGORIES` fallback list (used only when a config defines no categories) no longer offers retired categories.
+
+Also measured on the same card, and not the prompt's doing: the 7B now often routes the release-notes request straight to `multi` under either prompt, and there it writes shell syntax (`Evaluate version $(cat releases.txt)`) into the task title and summary file, then claims success — 2/5 under both texts. Last night the same request went to `exec` and was rerouted, 10/10. The 7B's route for that request drifts day to day; its execution inside `multi` is the weaker path. A limit of the fallback tier, recorded, not chased.
+
+---
+
 ## Misroutes Make a Mess: Three Levers, One Removed the Same Night (September 29 2026)
 
 Peter: "the big issue is that mis routed items turn into a huge freakin mess." The reliability runs agreed — the small tier lost at the router, not in execution — and showed *why* it is a mess: the category decides the toolset, and a misrouted specialist does not stop, it improvises. qwen2.5:7b sent "read releases.txt, add a task, write notes/release-summary.md" to `task` (no file tools), added the task, announced "Next, I will read the releases.txt file", and stopped. In `exec` (no task board) it wrote the summary and **claimed** "I have added a task … to your task board"; one rep saved a markdown file and called it the task board. A confident half-job is worse than a wrong answer. Three levers were agreed, in order; the pre-model compound override was questioned by Peter ("How does it know which tools it needs before it reasons about the request") and dropped — only the specialist, while working, knows what it lacks.

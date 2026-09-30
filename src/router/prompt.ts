@@ -3,6 +3,13 @@ import type { RouterConfig } from '../config/types.js';
 /**
  * Build the ~300 token classifier prompt for the router model.
  */
+/*
+ * The Rules block names retired categories (analytics, personal) and calls memory READ-only,
+ * though the memory specialist holds memory_save. It is LEFT AS IS on measurement: a corrected
+ * version routed qwen2.5:7b's "Remember this: …" to cron 0/20 against 16/20 for this text,
+ * alternating arms on the same card (DECISIONS 2026-09-30). phi4 scored 54/54 on both.
+ * Wording here is a measured artifact, not documentation — change it only with an A/B.
+ */
 export function buildRouterPrompt(message: string, config: RouterConfig): string {
   const categoryList = Object.keys(config.categories).length > 0
     ? Object.entries(config.categories)
@@ -25,19 +32,18 @@ User message: ${message}
 Category:`;
 }
 
+/** Used only when config.router.categories is empty. Retired categories (document, config,
+ *  personal, analytics — DECISIONS 2026-08-10) are not offered: the router cannot pick a
+ *  specialist that no longer exists. */
 const DEFAULT_CATEGORIES = `- chat: Talk — conversation, opinions, explanations, questions about the user. No tools; use when the user is discussing, not asking to produce/fetch/do something.
-- web_search: Look something up on the live internet now (search + read pages). READ-only.
-- memory: Recall past conversations or stored facts about the user. READ-only.
+- web_search: Look something up on the live internet now (search + read pages). Answers in the reply; cannot write files.
+- memory: Save or recall facts about the user and past conversations ("remember that…", "what did I tell you about…").
 - exec: Run shell commands, scripts, and file operations in a sandbox.
 - cron: Schedule, list, or manage recurring tasks, heartbeats, and reminders — including one-time reminders for a future date ("remind me on Sept 15 to renew the token"), even when the reminder content is personal or business context.
 - message: Send a message to another channel or user.
 - website: Fetch and summarize a specific web page or teaching material.
 - task: Create, list, update, or complete to-do tasks.
-- document: Turn PROVIDED content into a formatted PDF/DOCX/spreadsheet file (the user gives you the text, you format and render it). Route "make this a PDF", "turn this into a doc", "format this".
-- multi: Full-toolset worker for COMPLEX multi-step tasks needing several different tools chained (search + save + send, browse + extract + file). Not for a single artifact.
-- config: Edit settings, cron jobs, workspace files, agent configuration.
+- multi: Full-toolset worker for requests that combine different kinds of action (search + save + send, read a file + add a task). The only specialist with the owner's email and calendar read tools.
 - research: Deep multi-source research that PRODUCES a polished PDF report with citations and charts.
-- personal: READ-ONLY access to the user's Gmail + Google Calendar (search/read email, list/search events). CANNOT create files, PDFs, run commands, or schedule anything — scheduling and reminders are cron.
 - image: Generate an image, picture, or illustration.
-- code_gen: Build, scaffold, or write code for a project or feature.
-- analytics: Analyze an uploaded data file (CSV/Excel/JSON) — stats, charts, insights.`;
+- code_gen: Build, scaffold, or write code for a project or feature.`;
