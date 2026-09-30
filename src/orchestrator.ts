@@ -531,7 +531,7 @@ export class Orchestrator {
             '  1 = ephemeral: one-off mentions, passing comments',
             '',
             'Examples:',
-            '  User: "My partner has been dealing with back pain" → imp:5 (family + health)',
+            '  User: "My wife Nicole has been dealing with back pain" → imp:5 (family + health)',
             '  User: "I work at DevMesh as an ML engineer" → imp:4 (identity)',
             '  User: "I prefer dark mode in all my editors" → imp:3 (preference)',
             '  User: "I have a meeting with the team tomorrow" → imp:2 (context)',

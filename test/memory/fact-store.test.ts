@@ -112,7 +112,7 @@ describe('FactStore char bound (importance-aware)', () => {
     await store.writeFactsBatch(filler, 'u_bound');
 
     // Two critical identity facts with only MODERATE confidence — old logic would evict these first
-    await store.writeFact({ text: "Peter's wife's name is Alex", category: 'stable', confidence: 0.6, importance: 5 }, 'u_bound');
+    await store.writeFact({ text: "Peter's wife's name is Nicole", category: 'stable', confidence: 0.6, importance: 5 }, 'u_bound');
     await store.writeFact({ text: "Peter's father is in critical care", category: 'stable', confidence: 0.6, importance: 5 }, 'u_bound');
 
     store.rebuildFacts('u_bound');
@@ -125,7 +125,7 @@ describe('FactStore char bound (importance-aware)', () => {
     expect(factsJson.length).toBeLessThan(252);
     // ...but BOTH imp-5 identity facts must survive despite low confidence.
     const texts = factsJson.map(f => f.text);
-    expect(texts).toContain("Peter's wife's name is Alex");
+    expect(texts).toContain("Peter's wife's name is Nicole");
     expect(texts).toContain("Peter's father is in critical care");
     // No protected fact should ever be dropped.
     expect(factsJson.filter(f => (f.importance ?? 2) >= 4).length).toBe(2);

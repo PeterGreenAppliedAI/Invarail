@@ -14,19 +14,19 @@ describe('renderPrimingFacts', () => {
   });
 
   it('marks nothing when everything is stated', () => {
-    const { lines, note } = renderPrimingFacts([{ text: 'Wife is Alex', provenance: 'stated' }]);
-    expect(lines).toEqual(['- Wife is Alex']);
+    const { lines, note } = renderPrimingFacts([{ text: 'Wife is Nicole', provenance: 'stated' }]);
+    expect(lines).toEqual(['- Wife is Nicole']);
     expect(note).toBe('');
   });
 
   it('marks the weak classes once the set is mixed, leaving stated bare', () => {
     const { lines, note } = renderPrimingFacts([
-      { text: 'Wife is Alex', provenance: 'stated' },
+      { text: 'Wife is Nicole', provenance: 'stated' },
       { text: 'Peter prefers terse replies', provenance: 'observed' },
       { text: 'Peter works late', provenance: 'inferred' },
     ]);
     expect(lines).toEqual([
-      '- Wife is Alex',
+      '- Wife is Nicole',
       '- Peter prefers terse replies [observed, unconfirmed]',
       '- Peter works late [inferred]',
     ]);

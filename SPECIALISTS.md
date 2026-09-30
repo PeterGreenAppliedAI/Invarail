@@ -177,7 +177,7 @@ For image requests: call image_generate with a detailed, descriptive prompt on y
 ## message
 
 1. **User story:** User wants the assistant to send a message somewhere else — another channel, a user, a Discord channel id — on their behalf.
-2. **In scope:** "tell the team about the release in #general", "send Alex the address", "notify me on Telegram when done" (as a one-off send).
+2. **In scope:** "tell the team about the release in #general", "send Nicole the address", "notify me on Telegram when done" (as a one-off send).
 3. **Out of scope:** Replying in the current conversation (that is every specialist's normal output), email (no send capability exists — the steward is read-only forever), scheduled sends (→ cron with category message).
 4. **Data requirements:** Channel registry (which adapters are connected), a resolvable destination (channel + channelId/target), the pending-action ledger, the standing-grants store.
 5. **Tools:** send_message (`requiresConfirm: true`, `targetArgs: ['channel','channelId']`).

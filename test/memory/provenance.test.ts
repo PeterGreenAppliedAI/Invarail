@@ -44,7 +44,7 @@ describe('FactStore persists provenance', () => {
   it('round-trips a stated fact through the index', async () => {
     const store = new FactStore(testDir);
     const entry = await store.writeFact(
-      { text: 'Peter is married to Alex', category: 'stable', provenance: 'stated' },
+      { text: 'Peter is married to Nicole', category: 'stable', provenance: 'stated' },
       'user1',
       'user/approved',
     );
@@ -52,7 +52,7 @@ describe('FactStore persists provenance', () => {
 
     store.rebuildFacts('user1');
     const loaded = store.loadFactsJson('user1');
-    expect(loaded.find(f => f.text.includes('Alex'))!.provenance).toBe('stated');
+    expect(loaded.find(f => f.text.includes('Nicole'))!.provenance).toBe('stated');
   });
 
   it('a fact written without a declared class reads back as observed', async () => {
