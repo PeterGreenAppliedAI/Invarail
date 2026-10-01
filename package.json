@@ -1,6 +1,6 @@
 {
   "name": "invarail",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-model-first agent framework with Router + Specialist architecture",
   "type": "module",
   "engines": {

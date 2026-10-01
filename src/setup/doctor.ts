@@ -202,7 +202,7 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
       const perRun = 5 + 6 + maxCross;
       push('Search pacing', ceiling > 0 ? 'PASS' : 'WARN',
         `outbound 1 query / 1.5s · a research run spends up to ~${perRun} queries (+retries) · daily ceiling ${ceiling > 0 ? ceiling : 'NONE'}`,
-        ceiling > 0 ? undefined : 'set tools.web.search.dailyQueryCeiling (e.g. 250) — a metasearch spends YOUR IP\'s reputation with every engine it fans out to (SEARXNG.md)');
+        ceiling > 0 ? undefined : 'set tools.web.search.dailyQueryCeiling (e.g. 250) — a metasearch spends YOUR IP\'s reputation with every engine it fans out to (docs/SEARXNG.md)');
       if (existsSync('searxng/settings.yml') && readFileSync('searxng/settings.yml', 'utf-8').includes('REPLACE-ME')) {
         push('SearXNG secret', 'WARN', 'searxng/settings.yml still has the placeholder secret_key', 'openssl rand -hex 32 → server.secret_key');
       }

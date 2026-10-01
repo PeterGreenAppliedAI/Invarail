@@ -19,7 +19,7 @@ services:
       - "8080:8080"
     volumes:
       # searxng/settings.yml is Invarail's SUGGESTED profile (JSON API on, a modest
-      # engine set, no autocomplete). Read SEARXNG.md before running this: every query
+      # engine set, no autocomplete). Read docs/SEARXNG.md before running this: every query
       # fans out to the engines from YOUR IP. The container writes limiter.toml etc. here.
       - ./searxng:/etc/searxng
     restart: unless-stopped

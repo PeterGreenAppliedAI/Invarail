@@ -84,7 +84,7 @@ Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primar
 3. **Heartbeat (autonomous)** — Every 2 hours, `reviewTranscripts()` scans sessions, extracts facts with existing facts shown to prevent re-extraction. Writes to both flat FactStore and GraphMemory. Owns reconciliation (consolidation, contradictions, review).
 4. **`memory_forget`** — Removes from both graph and flat store. Records removal to prevent re-extraction.
 
-**Memory tiers (2026-09-27):** `memory.backend` = `markdown` (legacy: graph if FalkorDB answers, else flat) | `graph` (required — doctor FAILs without FalkorDB or with `embeddingModel: "none"`) | `flat` (never connects a graph) | `vault` (flat facts + the markdown vault as the knowledge side, lexical FTS5 without an embedder; `vault.okf: true` mirrors facts as Open Knowledge Format concept notes with provenance front matter, keeps `index.md`/`log.md`, and registers `docs_read`). `src/memory/policy.ts` is the only reader of these fields; `src/knowledge/okf.ts` is the format. The flat tier primes bare chat with identity facts (≤5) plus keyword-relevant facts (≤3) — it was identity-only before. See MEMORY-SYSTEM.md "Memory Tiers".
+**Memory tiers (2026-09-27):** `memory.backend` = `markdown` (legacy: graph if FalkorDB answers, else flat) | `graph` (required — doctor FAILs without FalkorDB or with `embeddingModel: "none"`) | `flat` (never connects a graph) | `vault` (flat facts + the markdown vault as the knowledge side, lexical FTS5 without an embedder; `vault.okf: true` mirrors facts as Open Knowledge Format concept notes with provenance front matter, keeps `index.md`/`log.md`, and registers `docs_read`). `src/memory/policy.ts` is the only reader of these fields; `src/knowledge/okf.ts` is the format. The flat tier primes bare chat with identity facts (≤5) plus keyword-relevant facts (≤3) — it was identity-only before. See docs/MEMORY-SYSTEM.md "Memory Tiers".
 
 **Memory priming query (2026-09-21):** `primingQueryFrom(message)` strips `[PAGE_CONTENT]` and attached-PDF bodies (the PDF prefix is end-delimited for this) and caps at 800 chars before ALL four priming embeds (facts, multi-hop, lessons, experiences) — an attached 9K-char PDF embedded on the Mini blew the 8s cap.
 
@@ -252,7 +252,7 @@ src/
     registry.ts             #   ToolRegistry class
     register-all.ts         #   registerAllTools() — wires all tools
     ssrf.ts                 #   SSRF protection for URL-fetching tools
-    search-quota.ts         #   Daily outbound search ceiling (tools.web.search.dailyQueryCeiling) — volume gate beside the rate throttle; SEARXNG.md
+    search-quota.ts         #   Daily outbound search ceiling (tools.web.search.dailyQueryCeiling) — volume gate beside the rate throttle; docs/SEARXNG.md
     document.ts             #   LibreOffice headless document creation/conversion (markdown in → code-owned styling; models never write HTML/CSS)
     document-templates.ts   #   HTML templates (report/memo/invoice/letter/simple) for document tool
     docs.ts                 #   Vault tools: docs_search (hybrid, or lexical-only without an embedder), docs_store, docs_read (index.md navigation on an OKF vault)

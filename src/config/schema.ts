@@ -344,7 +344,7 @@ export const WebSearchConfigSchema = z.object({
   cacheTtlMs: z.number().default(15 * 60 * 1000),
   /** Max outbound search queries per local day, all providers (0 = unlimited). Rate is
    *  throttled per provider already; this bounds VOLUME — a self-hosted metasearch
-   *  spends the host IP's reputation with every engine it fans out to (SEARXNG.md).
+   *  spends the host IP's reputation with every engine it fans out to (docs/SEARXNG.md).
    *  The wizard writes 250; an existing config without it keeps unlimited. */
   dailyQueryCeiling: z.number().int().nonnegative().default(0),
 });

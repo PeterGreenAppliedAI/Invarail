@@ -1,6 +1,6 @@
 # Feature Guides
 
-Setup and usage detail for Invarail's features. The [README](README.md) is the front door — this is the reference. How things work internally lives in [ARCHITECTURE.md](ARCHITECTURE.md); install tiers in [INSTALL.md](INSTALL.md).
+Setup and usage detail for Invarail's features. The [README](../README.md) is the front door — this is the reference. How things work internally lives in [ARCHITECTURE.md](ARCHITECTURE.md); install tiers in [INSTALL.md](../INSTALL.md).
 
 ## Capabilities at a Glance
 

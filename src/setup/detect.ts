@@ -260,7 +260,7 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     memory,
     docker,
     falkordb: { ...falkor, reachable: falkorUp, start: 'docker compose up -d falkordb' },
-    searxng: { baseUrl: searxngUrl, state: searxngState, start: 'docker compose up -d searxng   (read SEARXNG.md first)' },
+    searxng: { baseUrl: searxngUrl, state: searxngState, start: 'docker compose up -d searxng   (read docs/SEARXNG.md first)' },
     libreoffice,
     python,
     obsidian,

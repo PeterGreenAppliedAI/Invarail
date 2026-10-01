@@ -15,7 +15,7 @@ export const SEARXNG_WARNING = [
   'earned this project a DuckDuckGo CAPTCHA flag and Brave/Wikidata suspensions.',
   'Invarail paces itself (1 query / 1.5s) and caps volume (250 queries/day, in config), and',
   'the shipped searxng/settings.yml is a conservative SUGGESTED profile. Keep the instance',
-  'private, point nothing else at it, and read SEARXNG.md — it explains what being flagged',
+  'private, point nothing else at it, and read docs/SEARXNG.md — it explains what being flagged',
   'looks like and the alternatives that do not spend your IP (a hosted key, the local index).',
 ].join('\n  ');
 

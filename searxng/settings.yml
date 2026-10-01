@@ -2,7 +2,7 @@
 # instance. Every key here is documented at https://docs.searxng.org/admin/settings/
 # (checked 2026-09-27). Mounted by docker-compose.yml at /etc/searxng/settings.yml.
 #
-# READ SEARXNG.md FIRST. A metasearch instance answers Invarail by fanning each query
+# READ docs/SEARXNG.md FIRST. A metasearch instance answers Invarail by fanning each query
 # out to the engines below FROM YOUR IP. Engines rate-limit and CAPTCHA-flag IPs that
 # search faster than a human. Invarail paces itself (1 query / 1.5s, daily ceiling in
 # tools.web.search.dailyQueryCeiling); nothing else should be pointed at this instance.

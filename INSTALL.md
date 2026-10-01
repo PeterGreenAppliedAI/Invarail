@@ -117,7 +117,7 @@ per folder the model navigates, a `log.md` history). For the vault tiers it crea
 folder if it is new, detects Obsidian, and offers the install command if it is missing
 (never runs it unasked — the vault is plain markdown and works with any editor). Details
 and the trade-offs:
-[MEMORY-SYSTEM.md](MEMORY-SYSTEM.md#memory-tiers-the-same-memory-on-a-machine-that-is-not-this-one).
+[MEMORY-SYSTEM.md](docs/MEMORY-SYSTEM.md#memory-tiers-the-same-memory-on-a-machine-that-is-not-this-one).
 
 ## Tier 1 — the daily driver
 
@@ -135,13 +135,13 @@ Then in your config:
 - Web search: add `tools.web.search: { provider: "searxng", baseUrl:
   "http://localhost:8080" }` (the schema default provider is `brave`) and a
   `web_search` router category + specialist — or let the wizard write it.
-  **Read [SEARXNG.md](SEARXNG.md) first** — a metasearch instance spends *your*
+  **Read [SEARXNG.md](docs/SEARXNG.md) first** — a metasearch instance spends *your*
   IP's reputation with every engine it queries. The compose file mounts a
   suggested `searxng/settings.yml`; set `dailyQueryCeiling` in the search config
   (the wizard writes 250; absent, it is 0 = unlimited).
   A hosted provider key (Brave, Perplexity, Grok, Tavily) avoids the issue.
 - A chat channel: `channels.discord: { enabled: true, token: "${DISCORD_TOKEN}" }`
-  (token in `.env`). Telegram follows the same shape; Gmail is read-only and uses OAuth (see FEATURES.md).
+  (token in `.env`). Telegram follows the same shape; Gmail is read-only and uses OAuth (see docs/FEATURES.md).
 - **Reaching the console from another device** (phone, the Chrome extension on
   a laptop): the starter binds `127.0.0.1`. To open it to your LAN, set
   `host: "0.0.0.0"` AND `token: "${WEB_TOKEN}"` on `channels.web`, put a

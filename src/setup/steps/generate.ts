@@ -214,7 +214,7 @@ export function buildConfig(state: WizardState): string {
       search: {
         provider: "searxng",
         baseUrl: "${ws.baseUrl ?? 'http://localhost:8080'}",
-        dailyQueryCeiling: ${ceiling},   // outbound queries per day — a metasearch spends YOUR IP's reputation (SEARXNG.md)
+        dailyQueryCeiling: ${ceiling},   // outbound queries per day — a metasearch spends YOUR IP's reputation (docs/SEARXNG.md)
       },`;
     } else {
       const envVar = `${provider.toUpperCase()}_API_KEY`;
