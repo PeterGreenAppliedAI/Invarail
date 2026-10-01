@@ -6,6 +6,10 @@ export interface ToolContext {
   config?: Record<string, unknown>;
   /** Source channel — used by tools that behave differently per channel (e.g., browser remote bridge for extension) */
   channel?: string;
+  /** The conversation the request came from (a Discord channel or DM channel id, a Telegram chat id, …).
+   *  The natural default for "send the result back here" — cron_add uses it when the model gives no
+   *  usable target (the cron PIPELINE used to fill it in; the arena move left the tool without it). */
+  channelId?: string;
 }
 
 /** Structured parameter definition for Ollama tool calling */

@@ -38,6 +38,17 @@ Peter read the weekly AI-news report and called it "not bad at all". It was — 
 
 ---
 
+## Red Lines in the Terminal: a Reminder Addressed to "dm" (October 1 2026)
+
+Peter saw failures scrolling in the live terminal and didn't know why. Three sources, one real:
+
+- **The real one.** The Laya shadow-check reminder had been saved with delivery target `"dm"` — the model's word for "send it to me". `cron_add` required a "Channel ID" and validated nothing, so it stored the word; Discord can resolve neither a channel nor a user called "dm", all three attempts failed, and the failure notice went to the same dead target, so the only place it surfaced was the terminal. The cron PIPELINE used to fill an empty target from the conversation the request came from (`definitions/cron.ts`); the arena move (2026-08-21) took the tool out of the pipeline and the defaulting stayed behind. Now `ToolContext` carries the source `channelId`, and `resolveCronDelivery` keeps a target only if it has the channel's id shape (Discord snowflake, Telegram chat id) and is not a placeholder word; otherwise it delivers to the requesting conversation, or refuses to save a job that cannot deliver. Channel and target are optional in the schema — "leave both out to deliver here".
+- **A lesson from one incident, live on arrival.** The heartbeat harvested the failure twice — the cron dead-letter and the rejected action for the same job — so one cycle created the lesson AND reinforced it to evidence 2, the injection gate, with a wrong diagnosis ("ensure the bot has permissions"). Now a cycle adds at most one piece of evidence per lesson; reaching 2 takes a recurrence in a later cycle. The lesson was dropped the way `!lessons drop` does it.
+- **A doctor FAIL that was a doctor bug — and my misdiagnosis.** I first called the TTS failure a startup race. It wasn't: voice detection probed only the default ports (Kokoro on 5005/8880 for TTS) and never the configured `tts.url`, so mlx-audio serving TTS on :8000 read as absent on every boot while it answered. Detection now probes the configured server first. The doctor run inside `lab` is clean: 24 passed, 0 failed.
+- **Noise left on purpose.** The Blender MCP server logs connection errors whenever Blender isn't open on the Windows PC — a deliberate cross-LAN setup, so not disabled.
+
+---
+
 ## The Router Prompt's "Wrong" Rule Was Load-Bearing (September 30 2026)
 
 Last night's disproven theory left a new suspect for qwen2.5:7b sending "Remember this: my deployment freeze starts on 2026-09-01" to `cron`: the router prompt's fixed rule "personal, memory, and web_search can only READ", which is false (memory holds `memory_save`) and names two retired categories. Corrected text: "memory and web_search cannot create files… memory saves and recalls facts ('remember that…' is memory)". Measured against the live phi4 first (the live check now builds its client the way the app does — it had been asking the primary Ollama for a model that lives on a routed backend — and gained the exact memory sentence): **54/54 before and after**. qwen3.5:9b and gemma4:12b: memory 10/10 each. qwen2.5:7b: `cron` 10/10.

@@ -262,6 +262,7 @@ export async function runDoctor(opts: { configPath?: string; quiet?: boolean; of
     ollamaBackendUrls: (config?.inference?.ollamaBackends ?? []).map(b => b.url),
     falkordb: config?.memory?.falkordb ? { host: config.memory.falkordb.host, port: config.memory.falkordb.port } : undefined,
     searxngUrl: config?.tools?.web?.search?.baseUrl,
+    voiceUrls: { tts: config?.tts?.url, stt: config?.stt?.url },
   });
   const checks = doctorChecks(report, config, configError);
   return {

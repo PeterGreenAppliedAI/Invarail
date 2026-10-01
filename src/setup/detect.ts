@@ -51,6 +51,9 @@ export interface DetectOptions {
   /** URLs of inference.ollamaBackends[] to probe. */
   ollamaBackendUrls?: string[];
   configPath?: string;
+  /** The voice servers the config names (tts.url / stt.url). Probed FIRST — a server on a
+   *  non-default port is still the one the owner configured. */
+  voiceUrls?: { tts?: string; stt?: string };
   /** Skip network probes (tests, CI without services). */
   offline?: boolean;
 }
@@ -158,9 +161,23 @@ async function firstReachable(urls: string[]): Promise<string | undefined> {
   return undefined;
 }
 
-export async function detectVoice(p: Platform = detectPlatform(), opts?: { offline?: boolean }): Promise<DetectReport['voice']> {
-  const tts = opts?.offline ? undefined : await firstReachable(TTS_CANDIDATES);
-  const stt = opts?.offline ? undefined : await firstReachable(STT_CANDIDATES);
+/** A configured voice URL may carry an endpoint path (…/v1/audio/speech); probe the server's root. */
+function originOf(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try { return new URL(url).origin; } catch { return undefined; }
+}
+
+/**
+ * The configured server first, then the usual ports. Only the defaults used to be tried, so a
+ * configured server on another port read as absent: mlx-audio serves TTS AND STT on :8000, which
+ * is in the STT list only — the doctor FAILed "no server answers at http://127.0.0.1:8000" on every
+ * boot while that server answered (2026-10-01).
+ */
+export async function detectVoice(p: Platform = detectPlatform(), opts?: { offline?: boolean; ttsUrl?: string; sttUrl?: string }): Promise<DetectReport['voice']> {
+  const candidates = (configured: string | undefined, defaults: string[]) =>
+    [...new Set([originOf(configured), ...defaults].filter((u): u is string => !!u))];
+  const tts = opts?.offline ? undefined : await firstReachable(candidates(opts?.ttsUrl, TTS_CANDIDATES));
+  const stt = opts?.offline ? undefined : await firstReachable(candidates(opts?.sttUrl, STT_CANDIDATES));
   return {
     tts: { url: tts, reachable: !!tts, install: INSTALL_HINTS.kokoro[p] },
     stt: { url: stt, reachable: !!stt, install: INSTALL_HINTS.whisper[p] },
@@ -249,7 +266,7 @@ export async function detect(opts: DetectOptions = {}): Promise<DetectReport> {
     detectLibreOffice(p),
     detectPython(p),
     detectObsidian(p),
-    detectVoice(p, { offline: opts.offline }),
+    detectVoice(p, { offline: opts.offline, ttsUrl: opts.voiceUrls?.tts, sttUrl: opts.voiceUrls?.stt }),
   ]);
 
   return {

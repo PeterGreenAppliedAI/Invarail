@@ -47,7 +47,7 @@ describe('cron category list stays in sync', () => {
     const tool = createCronAddTool(fakeCronService());
     for (const category of ['task', 'research', 'personal']) {
       const result = await tool.execute(
-        { name: 'j', schedule: '0 9 15 9 *', category, message: 'm', channel: 'discord', target: '1' },
+        { name: 'j', schedule: '0 9 15 9 *', category, message: 'm', channel: 'discord', target: '123456789012345678' },
         {} as never,
       );
       expect(result).not.toContain('Invalid category');
@@ -95,7 +95,7 @@ describe('cron_add confirmation semantics', () => {
   it('labels one-shot vs recurring and includes the next run', async () => {
     const tool = createCronAddTool(fakeCronService());
     const oneShot = await tool.execute(
-      { name: 'Token Reminder', schedule: '0 9 15 9 *', category: 'message', message: 'm', channel: 'discord', target: '1', once: true },
+      { name: 'Token Reminder', schedule: '0 9 15 9 *', category: 'message', message: 'm', channel: 'discord', target: '123456789012345678', once: true },
       {} as never,
     );
     expect(oneShot).toContain('one-shot');
@@ -103,7 +103,7 @@ describe('cron_add confirmation semantics', () => {
     expect(oneShot).toContain('next run');
 
     const recurring = await tool.execute(
-      { name: 'Weekly', schedule: '0 9 * * 5', category: 'message', message: 'm', channel: 'discord', target: '1' },
+      { name: 'Weekly', schedule: '0 9 * * 5', category: 'message', message: 'm', channel: 'discord', target: '123456789012345678' },
       {} as never,
     );
     expect(recurring).toContain('recurring');

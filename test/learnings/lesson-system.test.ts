@@ -178,6 +178,19 @@ describe('synthesizeLessons', () => {
     expect(result.skipped).toBe(1);
   });
 
+  it('one incident is one piece of evidence: two candidates from the same failure in one cycle do not reach the injection gate (2026-10-01)', async () => {
+    const metricsPath = join(dir, 'metrics.jsonl');
+    const deadLetterPath = join(dir, 'unrouted.jsonl');
+    writeFileSync(metricsPath, JSON.stringify({ timestamp: '2026-10-01T03:00:00.000Z', type: 'autonomous_action', action: 'cron:Laya shadow run stats check', outcome: 'rejected', detail: 'Channel "discord" failed to send' }) + '\n');
+    writeFileSync(deadLetterPath, JSON.stringify({ at: '2026-10-01T03:01:00.000Z', source: 'cron', detail: 'Laya shadow run stats check', error: 'Channel "discord" failed to send' }) + '\n');
+    const same = '{"name": "cron-job-discord-channel-failure", "situation": "cron job sending via Discord", "boundary": "Check the Discord target before scheduling.", "worth_keeping": true}';
+    const client = synthClient([same, same]);
+    const result = await synthesizeLessons({ client, model: 'test', workspacePath: dir, metricsPath, deadLetterPath });
+    expect(result.newLessons).toEqual(['cron-job-discord-channel-failure']);
+    expect(result.reinforced).toEqual([]);
+    expect(new LessonStore(dir).get('cron-job-discord-channel-failure')!.evidenceCount).toBe(1);   // not live yet: it has not recurred
+  });
+
   it('duplicate slug reinforces instead of minting a sibling', async () => {
     const paths = writeFailureEvidence();
     new LessonStore(dir).save(makeLesson({ slug: 'multi-research-boundary', name: 'multi-research-boundary' }));

@@ -129,6 +129,12 @@ export async function synthesizeLessons(opts: {
   }
   result.skipped = synthesized.length - keepers.length;
 
+  // One cycle adds at most ONE piece of evidence per lesson. Evidence >= 2 is the injection gate and
+  // means "it recurred"; two candidates harvested from the same incident are not a recurrence
+  // (2026-10-01: a cron job's failure line and its trigger line created a lesson AND reinforced it
+  // in one heartbeat, putting a single, misdiagnosed failure straight into future prompts).
+  const touched = new Set<string>();
+
   for (const { candidate, lesson } of keepers) {
     if (result.newLessons.length >= MAX_NEW_LESSONS_PER_CYCLE) break;
     const slug = slugify(lesson.name ?? lesson.situation ?? 'lesson');
@@ -136,6 +142,8 @@ export async function synthesizeLessons(opts: {
 
     // Dedup ladder: exact slug → semantic → new
     if (store.get(slug)) {
+      if (touched.has(slug)) { result.skipped++; continue; }
+      touched.add(slug);
       store.recordEvidence(slug, trigger);
       const refreshed = store.get(slug);
       if (refreshed) await upsertLessonEmbedding(opts.client, refreshed, opts.embeddingModel);
@@ -145,6 +153,8 @@ export async function synthesizeLessons(opts: {
     }
     const similar = await findLessonBySimilarity(opts.client, store, `${lesson.situation}. ${lesson.boundary}`, undefined, opts.embeddingModel);
     if (similar) {
+      if (touched.has(similar.slug)) { result.skipped++; continue; }
+      touched.add(similar.slug);
       store.recordEvidence(similar.slug, trigger);
       const refreshed = store.get(similar.slug);
       if (refreshed) await upsertLessonEmbedding(opts.client, refreshed, opts.embeddingModel);
@@ -170,6 +180,7 @@ export async function synthesizeLessons(opts: {
       boundary: lesson.boundary!,
     };
     store.save(newLesson);
+    touched.add(slug);
     await upsertLessonEmbedding(opts.client, newLesson, opts.embeddingModel);
     result.newLessons.push(slug);
     logAutonomousAction({ action: 'lesson_recorded', tier: 'act_then_notify', source: 'heartbeat', reversible: true, outcome: 'success', detail: `${slug} (${candidate.kind})` });
