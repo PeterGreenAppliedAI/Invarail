@@ -47,7 +47,10 @@ function config(overrides: Partial<{ selfModEnabled: boolean; piEnabled: boolean
   } as unknown as InvarailConfig;
 }
 
-describe('SelfModService', () => {
+// These tests build real git repositories and run real merges and rebases. On the Windows CI
+// runner git is slow enough that the retry test crossed vitest's 5s default once (2026-10-05,
+// green on rerun) — a timing budget, not a behaviour change.
+describe('SelfModService', { timeout: 30_000 }, () => {
   let repo: string;
   let pendingStore: PendingActionStore;
   let restart: ReturnType<typeof vi.fn>;
