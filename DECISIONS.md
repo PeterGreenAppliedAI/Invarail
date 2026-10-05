@@ -38,6 +38,25 @@ Peter read the weekly AI-news report and called it "not bad at all". It was — 
 
 ---
 
+## Memory Polluted Itself, and Forgetting Didn't Stick (October 5 2026)
+
+Peter: "So the memory self polutes" — a friend testing a fresh install had seen it too — and then: "I told it to forget something … then memory reextracts it." Both true, both measured, one root cause: extraction had no code-side memory of what it already held or had been told to drop. That was left to the model, via a prompt line.
+
+**What the flat store held.** The owner's index: 445 facts, **151 near-duplicate pairs** — the same fact re-extracted in fresh words on every path (capture every 8 turns, heartbeat review, `!save`). The capped 92-fact view spent 20% on restatements (DevMesh role 4×, Nicole's back pain 4×). Identity facts are never evicted, and every rewording inherited that protection, so preferences and context were the ones left out. The graph store was clean (32 facts, 0 near-duplicates) — its write-time dedup and SUPERSEDES do their job; the flat store is the only store on the starter install, which has no embedder and runs no consolidation, so a fresh install had the least protection of all.
+
+**Three mechanisms, all fixed:**
+- **Dedup read the view, not the store.** Substring dedup compared new facts to `facts.json` — the char-bounded view — so anything the bound left out was invisible and was written again next pass. Now the full index.
+- **Consolidation multiplied what it merged.** An LLM MERGE appended the merged fact to the index and filtered the originals out of `facts.json` only; the next rebuild restored them. Two copies became three, every cycle, while the heartbeat logged "cleaned up 16 duplicates". Originals now leave the index first; a merge keeps the higher importance (it had fallen to default and become evictable) and never touches a `stated` fact.
+- **Forgetting was a prompt line.** `!forget` recorded the words typed, expired in 30 days, the extractor was shown the *oldest* ten removals, and the graph had no check at all. The forgotten wedding-ring fact came back reworded on 10-05. Now: the removal records the texts actually removed; the owner's forget is permanent (lifted only by `!save`); every write in both stores is checked in code (`isSuppressed`, wired into the graph's `addFact` before it connects); the prompt shows the newest ten.
+
+**The rule is lexical, on purpose** — the default install has no embedder. Same fact = ≥55% word overlap and ≥5 shared content words. Calibrated on the owner's index: every sampled pair at that level was a rewording or an *update* ("needs to add a high-fiber diet" → "has added"), so a match REPLACES the older entry with the newer wording rather than rejecting it — unless the older one has stronger provenance. Short facts sharing topic words ("son does Taekwondo on Tuesdays" / "…swimming…") fall under the shared-word floor. Among protected facts, only the newest of several rewordings keeps protection.
+
+**A mistake caught in the dry run, before the live data was touched.** Compaction first clustered by chaining (A≈B, B≈C ⇒ C joins A), and the dry run showed a tech-stack fact swallowed into a job-title cluster. Clusters now require every member to match the seed directly; a regression test pins it. Applied to the live workspace with a backup (`data/workspaces/main/memory.backup-2026-10-05T23-32-41-710Z`): 94 reworded duplicates across four profiles, the owner's 235 → 187; the view now holds 47 preferences (was 36) beside 42 protected facts (was 56). `npm run memory:compact` is the hand tool; the heartbeat's `memory_cleanup` runs the same compaction every cycle on every tier.
+
+**Also:** the flat store's paraphrase check now embeds with the configured `embeddingModel` (it used the hardcoded default — the lesson-path bug class of 2026-09-28, again). Housekeeping the same day: dead Slack / MS Graph / WhatsApp / iMessage blocks out of the live config (51 lines, ten boot warnings), the redundant `dev` branch deleted, local logs and the old LocalClaw tarball moved to an archive folder, twelve finished scripts to `scripts/archive/`.
+
+---
+
 ## Red Lines in the Terminal: a Reminder Addressed to "dm" (October 1 2026)
 
 Peter saw failures scrolling in the live terminal and didn't know why. Three sources, one real:

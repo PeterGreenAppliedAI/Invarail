@@ -271,7 +271,7 @@ principal-bound confirmation.
 
 **Slice status (July 7):** Pillar 1 (identity) BUILT — `src/identity/
 principal.ts`, `config.principals`, wired at every identity-bearing point,
-live stores migrated (`scripts/migrate-to-principal.ts`), cross-channel
+live stores migrated (`scripts/archive/migrate-to-principal.ts`), cross-channel
 memory verified unified. Pillar 3 partially built (ledger is principal-bound;
 full one-inbox grammar still item 8 below). Pillar 4 partially built
 (briefings append to the owner's session). One confirm entry point built

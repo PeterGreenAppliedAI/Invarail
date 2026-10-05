@@ -65,8 +65,9 @@ Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primar
 **Flat store fallback (`src/memory/fact-store.ts`):**
 - JSONL index + facts.json, used when FalkorDB is unavailable
 - Still handles heartbeat diffing, review candidates, removed.jsonl tracking
-- Embedding dedup (cosine > 0.85) + hash + substring checks
-- **Char bound is importance-aware** (`enforceCharBound`): `MAX_FACTS_CHARS=20000`; eviction drops lowest *importance* first, then confidence as tiebreak. Tiers imp≥4 (identity/critical) are NEVER evicted. (Fixed a bug where a confidence-only trim at a 3000-char cap silently deleted identity facts like a spouse's name.)
+- Hash + substring checks against the FULL index (not the capped view), then the **write gate** (`src/memory/fact-similarity.ts`, 2026-10-05): a same-fact match (≥55% word overlap, ≥5 shared content words — lexical, no embedder needed) is REPLACED by the newer wording keeping the higher importance, unless an older version has stronger provenance (an extraction never overwrites a `stated` fact); embedding dedup (cosine > 0.85, configured `embeddingModel`) only when the lexical rule doesn't match. Forgotten facts are refused in code before any write, in BOTH stores (`FactStore.isSuppressed`, wired into `GraphMemoryStore.addFact` via `setSuppression`)
+- **Index is the source of truth:** consolidation, substring dedup and `compactDuplicates` remove from the JSONL index (`removeByIds`) — filtering only `facts.json` was undone by the next rebuild, so every LLM MERGE had turned two copies into three. `memory_cleanup` runs lexical compaction every heartbeat on every tier; `npm run memory:compact` (dry run; `--apply` backs up first) does it by hand
+- **Char bound is importance-aware** (`enforceCharBound`): `MAX_FACTS_CHARS=20000`; eviction drops lowest *importance* first, then confidence as tiebreak. Tiers imp≥4 (identity/critical) are NEVER evicted — but only the newest of several protected rewordings keeps protection (protected restatements had crowded preferences out). (Fixed a bug where a confidence-only trim at a 3000-char cap silently deleted identity facts like a spouse's name.)
 
 **Importance tiers on FactEntry:**
 - 5=critical (health/family, never expires), 4=identity (job/projects, never expires)
@@ -82,7 +83,7 @@ Memory uses a **dual-backend** architecture: **FalkorDB graph database** (primar
 1. **`!reset` (user-approved)** — On session clear, `extractFacts` runs on ONLY the turns incremental capture has not read (`MemoryCapture.takeSessionTail`), bounded to `memory.extractionContextSize` (oldest turns dropped loudly — an 80-turn transcript at Ollama's 4096 default front-truncated the instructions away and phi4 continued the chat, 2026-09-20), with the "do NOT infer" rule and the USER.md block; the reply lists new candidates AND the session's captures. On `!save`, candidates are written `stated` and captures are PROMOTED `observed → stated` (graph by id via `setProvenance`, flat store by text via `setProvenanceByText` — the stores mint different ids). `!discard` leaves captures as they are.
 2. **Incremental capture (autonomous, 2026-09-20)** — `src/services/memory-capture.ts`: every `memory.capture.everyTurns` (8) unprocessed turns, after the reply is delivered (`finally` in `handleMessage`), fire-and-forget on the utility tier with a timeout; code-triggered on purpose (a model judging topic shifts = a model call deciding whether to spend a model call). Marker advances on empty extraction, rewinds on `!reset`; one run per session at a time; state in `<workspace>/memory/capture-state.json` (records `{processed, captured:[{id,text}]}`). Closed the two-hour hole that had left the graph at 24 facts.
 3. **Heartbeat (autonomous)** — Every 2 hours, `reviewTranscripts()` scans sessions, extracts facts with existing facts shown to prevent re-extraction. Writes to both flat FactStore and GraphMemory. Owns reconciliation (consolidation, contradictions, review).
-4. **`memory_forget`** — Removes from both graph and flat store. Records removal to prevent re-extraction.
+4. **`memory_forget`** — Removes from both graph and flat store. Records the removal WITH the texts actually removed; the owner's forget (`user_denied`) never expires, is enforced in code on every write path in both stores, and lifts only when the owner `!save`s the fact again. The extraction prompt lists the newest ten removals as a soft layer.
 
 **Memory tiers (2026-09-27):** `memory.backend` = `markdown` (legacy: graph if FalkorDB answers, else flat) | `graph` (required — doctor FAILs without FalkorDB or with `embeddingModel: "none"`) | `flat` (never connects a graph) | `vault` (flat facts + the markdown vault as the knowledge side, lexical FTS5 without an embedder; `vault.okf: true` mirrors facts as Open Knowledge Format concept notes with provenance front matter, keeps `index.md`/`log.md`, and registers `docs_read`). `src/memory/policy.ts` is the only reader of these fields; `src/knowledge/okf.ts` is the format. The flat tier primes bare chat with identity facts (≤5) plus keyword-relevant facts (≤3) — it was identity-only before. See docs/MEMORY-SYSTEM.md "Memory Tiers".
 
@@ -329,7 +330,8 @@ src/
   memory/                   # Memory system
     policy.ts               #   Memory TIERS (memory.backend graph|flat|vault, embeddingModel "none"): what the process may assume — read here, nowhere else
     extraction-window.ts    #   fitLinesToTokenBudget — bound the extraction transcript, newest-first, loudly
-    fact-store.ts           #   FactStore (JSONL index, dedup, TTL, consolidation, removeFact, setProvenanceByText) — fallback
+    fact-store.ts           #   FactStore (JSONL index, write gate, suppression, compactDuplicates, TTL, removeFact, setProvenanceByText) — fallback
+    fact-similarity.ts      #   sameFact / matchesRemoval — the one lexical definition of "same fact" (no embedder needed)
     graph-store.ts          #   GraphMemoryStore (FalkorDB, vector search, entity linking, SUPERSEDES)
     embeddings.ts           #   EmbeddingStore (SQLite + vectors, used for knowledge_import); generateEmbedding takes the configured model, "none" → no call
     semantic-helpers.ts     #   Source-scoped embed/search over the EmbeddingStore (lessons)
@@ -391,6 +393,8 @@ scripts/
   e2e-eval.ts                 # e2e harness entry (flags, runner, selftest)
   e2e/                        #   install.ts (scratch install), corpus.ts (stubbed web), tasks.ts (battery + oracles + reference performers), report.ts, stats.ts (Wilson), redact.ts
   supervisor-lib.mjs          # Node supervisor logic (npm run supervise); supervisor.mjs is the thin entry
+  memory-compact.ts           # npm run memory:compact — collapse reworded duplicate facts in the index (dry run; --apply backs up)
+  archive/                    # finished migrations and one-time probes (README lists them)
 
 chrome-extension/             # Browser companion (separate npm project)
   entrypoints/
@@ -534,7 +538,7 @@ The skills system is retired (2026-08-10), but the rule it taught stands: heartb
 - **Framework:** Vitest (`npm test` / `vitest run`)
 - **Type checking:** `npx tsc --noEmit`
 - **CI:** GitHub Actions runs type check (src + harness) + tests + the e2e harness `--selftest` (real registry/pipelines, no model) + build + console build on every push/PR to main — on ubuntu AND a blocking windows-latest job (which also runs the wizard smokes)
-- **Current:** 1217 tests across 142 files
+- **Current:** 1234 tests across 143 files
 - **Live checks (real models, no config changes):** `scripts/router-live-check.ts`, `scripts/tool-loop-live-check.ts`, `scripts/arena-duel.ts` (arm-vs-arm eval with computed oracles), `scripts/harness-duel.ts` (cross-harness: our arena vs external harnesses on identical model+tasks — the dsh duel), `scripts/model-eval.ts` (the ENGINE on mock tools — evals/), **`scripts/e2e-eval.ts`** (the FRONT DOOR: a wizard-generated config for the model under test through `dispatchMessage` in a scratch install, real registry/stores/pipelines, web stubbed over a fixed corpus, code oracles + `--selftest`; found the one-model-install reload + thinking-router bugs 2026-09-27). Modules in `scripts/e2e/` (install, corpus, tasks, report, stats, redact); flags `--reps --task=a,b --profile --workspace --label --reroute=off --descriptions=legacy`; the report adds the full-pass rate with a 95% Wilson interval and provenance redacts the model host. `npm run typecheck` also checks the harness (`tsconfig.scripts.json`) — the build tsconfig is src-only. NOTE: node spawned from SSH sessions is silently denied LAN access by macOS (EHOSTUNREACH) — run live checks inside the `lab` tmux session (`tmux send-keys -t lab '...' Enter`), see DECISIONS.md
 - **What needs tests** (Tier 2+ per code_rubric):
   - Auth/authz logic (owner-only tier, security filtering)

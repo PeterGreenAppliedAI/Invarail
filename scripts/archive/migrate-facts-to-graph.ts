@@ -4,9 +4,9 @@
  * Usage: npx tsx scripts/migrate-facts-to-graph.ts
  */
 
-import { OllamaClient } from '../src/ollama/client.js';
-import { GraphMemoryStore } from '../src/memory/graph-store.js';
-import { FactStore } from '../src/memory/fact-store.js';
+import { OllamaClient } from '../../src/ollama/client.js';
+import { GraphMemoryStore } from '../../src/memory/graph-store.js';
+import { FactStore } from '../../src/memory/fact-store.js';
 import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 

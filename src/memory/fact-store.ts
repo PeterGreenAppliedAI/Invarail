@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, appendFileSync, unlinkSync } from 'node:fs';
+import { factWords, sameFact, matchesRemoval, provenanceRank } from './fact-similarity.js';
 import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FactEntrySchema, FactInputSchema } from '../config/schema.js';
@@ -60,10 +61,14 @@ export class FactStore {
   /** OKF mirror: when set, every fact is also a concept document at <vaultPath>/memory/<id>.md. */
   private okf?: { vaultPath: string; owner?: string };
 
-  constructor(workspacePath: string, client?: OllamaClient, options?: { okf?: { vaultPath: string; owner?: string } }) {
+  /** config.memory.embeddingModel — the paraphrase check used to embed on the hardcoded default. */
+  private embeddingModel?: string;
+
+  constructor(workspacePath: string, client?: OllamaClient, options?: { okf?: { vaultPath: string; owner?: string }; embeddingModel?: string }) {
     this.basePath = join(workspacePath, 'memory');
     this.client = client;
     this.okf = options?.okf;
+    this.embeddingModel = options?.embeddingModel;
   }
 
   private mirrorConcept(entry: FactEntry): void {
@@ -99,18 +104,42 @@ export class FactStore {
     // Dedup: exact hash match
     if (this.hashExistsInIndex(memDir, hash)) return null;
 
-    // Dedup: substring match — skip if an existing fact already covers this meaning
-    // (Skip during migration to avoid recursive loadFactsJson → migrateFromLegacy loop)
+    // The write gate (2026-10-05) — code, not a prompt line, decides two things before anything is
+    // written: was this fact forgotten, and do we already hold it? Both used to be left to the
+    // extraction model, which re-extracted a forgotten fact in new words nine days later and
+    // re-wrote identity facts in fresh phrasing every pass (151 near-duplicate pairs in 445 facts).
+    // (Skipped during migration to avoid the recursive loadFactsJson → migrateFromLegacy loop.)
+    let inheritedImportance = 0;
     if (!this.migrating) {
+      if (parsed.provenance === 'stated') {
+        // The owner saying it again overrides an earlier forget of it.
+        this.clearRemovalsMatching(parsed.text, senderId);
+      } else if (this.isSuppressed(parsed.text, senderId)) {
+        console.log(`[FactStore] Suppressed (the owner forgot this): "${parsed.text.slice(0, 60)}..."`);
+        return null;
+      }
+
+      // Against the FULL index, not the capped view: a fact trimmed out of facts.json was invisible
+      // to dedup and came back on the next extraction pass.
+      const existing = this.loadIndexEntries(senderId);
       const normalized = this.normalizeText(parsed.text);
-      const existing = this.loadFactsJson(senderId);
       for (const e of existing) {
         const existingNorm = this.normalizeText(e.text);
         if (existingNorm.includes(normalized) || normalized.includes(existingNorm)) return null;
       }
 
-      // Dedup: embedding similarity — catch paraphrased duplicates that substring misses
-      if (this.client && existing.length > 0) {
+      // Same fact reworded or updated: the newer wording replaces the older — one fact, latest
+      // phrasing — unless an older version has stronger provenance (the owner's word is not
+      // overwritten by an extraction).
+      const words = factWords(parsed.text);
+      const matches = existing.filter(e => sameFact(words, e.text));
+      if (matches.length > 0) {
+        if (matches.some(m => provenanceRank(m.provenance) > provenanceRank(parsed.provenance))) return null;
+        inheritedImportance = Math.max(...matches.map(m => m.importance ?? 2));
+        this.removeByIds(new Set(matches.map(m => m.id)), senderId, { rebuild: false });
+        console.log(`[FactStore] Replaced ${matches.length} reworded fact(s) with the newer wording: "${parsed.text.slice(0, 60)}..."`);
+      } else if (this.client && existing.length > 0) {
+        // Dedup: embedding similarity — catches paraphrases the lexical rule misses (with an embedder)
         try {
           const isDup = await this.checkEmbeddingSimilarity(parsed.text, existing);
           if (isDup) {
@@ -153,7 +182,7 @@ export class FactStore {
       senderId,
       tags: parsed.tags,
       entities: parsed.entities,
-      importance: parsed.importance ?? 2,
+      importance: Math.max(parsed.importance ?? 2, inheritedImportance),
     });
 
     // Write raw file
@@ -193,41 +222,76 @@ export class FactStore {
    * Rewrites JSONL index files to exclude matching entries, then rebuilds.
    */
   removeFact(query: string, senderId?: string): number {
+    return this.removeFactTexts(query, senderId).length;
+  }
+
+  /** removeFact, returning the texts it removed — a forget records them so a rewording is caught. */
+  removeFactTexts(query: string, senderId?: string): string[] {
+    const queryLower = query.toLowerCase();
+    return this.removeWhere(e => !!e.text?.toLowerCase().includes(queryLower), senderId).map(e => e.text);
+  }
+
+  /** Delete entries from the INDEX (the source of truth) — not just the rebuilt view. */
+  removeByIds(ids: Set<string>, senderId?: string, opts?: { rebuild?: boolean }): number {
+    if (ids.size === 0) return 0;
+    return this.removeWhere(e => ids.has(e.id), senderId, opts).length;
+  }
+
+  private removeWhere(pred: (e: { id: string; text: string }) => boolean, senderId?: string, opts?: { rebuild?: boolean }): Array<{ id: string; text: string }> {
     const memDir = this.memDir(senderId);
     const indexDir = join(memDir, 'index');
-    if (!existsSync(indexDir)) return 0;
+    if (!existsSync(indexDir)) return [];
 
-    const queryLower = query.toLowerCase();
-    let removed = 0;
-
+    const removed: Array<{ id: string; text: string }> = [];
     const indexFiles = readdirSync(indexDir).filter(f => f.endsWith('.jsonl'));
     for (const file of indexFiles) {
       const filePath = join(indexDir, file);
       const lines = readFileSync(filePath, 'utf-8').split('\n');
       const kept: string[] = [];
+      let touched = false;
 
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
           const entry = JSON.parse(line);
-          if (entry.text?.toLowerCase().includes(queryLower)) {
-            removed++;
+          if (pred(entry)) {
+            removed.push({ id: entry.id, text: entry.text });
             if (entry.id) this.unmirrorConcept(entry.id, entry.text);
+            touched = true;
             continue; // skip this fact
           }
         } catch { /* keep malformed lines to avoid data loss */ }
         kept.push(line);
       }
 
-      writeFileSync(filePath, kept.join('\n') + (kept.length > 0 ? '\n' : ''));
+      if (touched) writeFileSync(filePath, kept.join('\n') + (kept.length > 0 ? '\n' : ''));
     }
 
-    if (removed > 0) {
+    if (removed.length > 0) {
       this.factsCache.delete(senderId ?? '__shared__');
-      this.rebuildFacts(senderId);
+      if (opts?.rebuild !== false) this.rebuildFacts(senderId);
     }
 
     return removed;
+  }
+
+  /** Every unexpired entry in the index — what the store actually holds, before the char-bound view. */
+  loadIndexEntries(senderId?: string): FactEntry[] {
+    const indexDir = join(this.memDir(senderId), 'index');
+    if (!existsSync(indexDir)) return [];
+    const now = Date.now();
+    const out: FactEntry[] = [];
+    for (const file of readdirSync(indexDir).filter(f => f.endsWith('.jsonl')).sort()) {
+      for (const line of readFileSync(join(indexDir, file), 'utf-8').split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const entry = FactEntrySchema.parse(JSON.parse(line));
+          if (entry.expiresAt && new Date(entry.expiresAt).getTime() < now) continue;
+          out.push(entry);
+        } catch { /* skip malformed */ }
+      }
+    }
+    return out;
   }
 
   /**
@@ -368,15 +432,10 @@ export class FactStore {
 
     if (removed.size === 0) return 0;
 
-    const kept = entries.filter((_, i) => !removed.has(i));
-    const memDir = this.memDir(senderId);
-    const factsDir = join(memDir, 'facts');
-    mkdirSync(factsDir, { recursive: true });
-    writeFileSync(join(factsDir, 'facts.json'), JSON.stringify(kept, null, 2));
-    writeFileSync(join(factsDir, 'facts.md'), this.formatFactsMd(kept));
-    this.invalidateCache(senderId);
+    // From the INDEX: filtering only facts.json was undone by the next rebuild.
+    this.removeByIds(new Set([...removed].map(i => entries[i].id)), senderId);
 
-    console.log(`[FactStore] Consolidated: removed ${removed.size} duplicate(s), ${kept.length} facts remain`);
+    console.log(`[FactStore] Consolidated: removed ${removed.size} duplicate(s), ${entries.length - removed.size} facts remain`);
     return removed.size;
   }
 
@@ -614,7 +673,7 @@ export class FactStore {
     // This limits API calls to 2: one for new fact, one batch for recent facts
     const recent = existing.slice(-10);
     const allTexts = [newText, ...recent.map(e => e.text)];
-    const embeddings = await this.client.embed(allTexts);
+    const embeddings = this.embeddingModel ? await this.client.embed(allTexts, this.embeddingModel) : await this.client.embed(allTexts);
     if (!embeddings || embeddings.length < 2) return false;
 
     const newEmb = embeddings[0];
@@ -685,9 +744,23 @@ export class FactStore {
     // Eviction order: lowest IMPORTANCE first, then lowest confidence as tiebreak.
     // Identity/critical tiers (imp >= PROTECTED_IMPORTANCE) are never evicted — a
     // spouse's name must not be dropped to make room for an ephemeral context fact.
-    const evictable = entries
-      .filter(e => (e.importance ?? 2) < FactStore.PROTECTED_IMPORTANCE)
-      .sort((a, b) => (a.importance ?? 2) - (b.importance ?? 2) || a.confidence - b.confidence);
+    // Protection covers a FACT, not every rewording of it: among protected entries that say the
+    // same thing, only the newest keeps its protection — the rest are evicted first. Protected
+    // restatements had been crowding preferences and context out of the view (2026-10-05).
+    const keptWords: Array<Set<string>> = [];
+    const redundantProtected: FactEntry[] = [];
+    for (const e of entries.filter(e => (e.importance ?? 2) >= FactStore.PROTECTED_IMPORTANCE)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      const w = factWords(e.text);
+      if (keptWords.some(k => sameFact(w, k))) { redundantProtected.push(e); continue; }
+      keptWords.push(w);
+    }
+    const evictable = [
+      ...redundantProtected,
+      ...entries
+        .filter(e => (e.importance ?? 2) < FactStore.PROTECTED_IMPORTANCE)
+        .sort((a, b) => (a.importance ?? 2) - (b.importance ?? 2) || a.confidence - b.confidence),
+    ];
 
     const kept = [...entries];
     while (md.length > FactStore.MAX_FACTS_CHARS && evictable.length > 0) {
@@ -858,15 +931,20 @@ export class FactStore {
    * Record a fact removal for re-extraction prevention.
    * Stored in removed.jsonl with a 30-day rolling window.
    */
-  recordRemoval(text: string, reason: string, senderId?: string): void {
+  recordRemoval(text: string, reason: string, senderId?: string, facts?: string[]): void {
     const memDir = this.memDir(senderId);
     mkdirSync(memDir, { recursive: true });
     const filePath = join(memDir, 'removed.jsonl');
+    // The owner's own forget is permanent (it lifts only when the owner states the fact again via
+    // !save); automatic removals (date_expired) keep the 30-day window. A 30-day forget let a fact
+    // come back a month later from the same transcripts.
+    const permanent = reason === 'user_denied';
     const entry = {
       text,
       reason,
+      ...(facts && facts.length > 0 ? { facts: facts.slice(0, 20) } : {}),
       removedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: permanent ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     };
     try {
       appendFileSync(filePath, JSON.stringify(entry) + '\n');
@@ -878,7 +956,7 @@ export class FactStore {
   /**
    * Load recently-removed facts (last 30 days). Cleans expired entries on read.
    */
-  loadRecentlyRemoved(senderId?: string): Array<{ text: string; reason: string }> {
+  loadRecentlyRemoved(senderId?: string): Array<{ text: string; reason: string; facts?: string[] }> {
     const memDir = this.memDir(senderId);
     const filePath = join(memDir, 'removed.jsonl');
     if (!existsSync(filePath)) return [];
@@ -886,13 +964,13 @@ export class FactStore {
     try {
       const now = Date.now();
       const lines = readFileSync(filePath, 'utf-8').split('\n').filter(l => l.trim());
-      const entries: Array<{ text: string; reason: string; removedAt: string; expiresAt: string }> = [];
+      const entries: Array<{ text: string; reason: string; facts?: string[]; removedAt: string; expiresAt: string | null }> = [];
       const kept: string[] = [];
 
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
-          if (new Date(entry.expiresAt).getTime() > now) {
+          if (entry.expiresAt == null || new Date(entry.expiresAt).getTime() > now) {
             entries.push(entry);
             kept.push(line);
           }
@@ -904,10 +982,90 @@ export class FactStore {
         writeFileSync(filePath, kept.join('\n') + (kept.length > 0 ? '\n' : ''));
       }
 
-      return entries.map(e => ({ text: e.text, reason: e.reason }));
+      return entries.map(e => ({ text: e.text, reason: e.reason, ...(e.facts ? { facts: e.facts } : {}) }));
     } catch {
       return [];
     }
+  }
+
+  /** Would writing this fact undo something the owner removed? Checks this principal's removals
+   *  and the shared ones (a forget records both). The graph store asks the same question. */
+  isSuppressed(text: string, senderId?: string): boolean {
+    const removals = [...this.loadRecentlyRemoved(senderId), ...(senderId ? this.loadRecentlyRemoved(undefined) : [])];
+    return removals.some(r => matchesRemoval(text, r));
+  }
+
+  /** The owner stated a fact again (via !save): lift the forgets it matches. */
+  clearRemovalsMatching(text: string, senderId?: string): number {
+    let cleared = 0;
+    for (const sid of senderId ? [senderId, undefined] : [undefined]) {
+      const filePath = join(this.memDir(sid), 'removed.jsonl');
+      if (!existsSync(filePath)) continue;
+      const lines = readFileSync(filePath, 'utf-8').split('\n').filter(l => l.trim());
+      const kept = lines.filter(line => {
+        try {
+          const r = JSON.parse(line);
+          if (r.reason === 'user_denied' && matchesRemoval(text, r)) { cleared++; return false; }
+        } catch { /* keep */ }
+        return true;
+      });
+      if (kept.length !== lines.length) writeFileSync(filePath, kept.join('\n') + (kept.length > 0 ? '\n' : ''));
+    }
+    if (cleared > 0) console.log(`[FactStore] The owner re-stated a forgotten fact — lifted ${cleared} forget(s)`);
+    return cleared;
+  }
+
+  /**
+   * Collapse the same fact written in several wordings into one entry — in the INDEX. Per cluster
+   * the winner is the strongest provenance, then the newest; it keeps the cluster's highest
+   * importance. dryRun reports without writing.
+   */
+  compactDuplicates(senderId?: string, opts?: { dryRun?: boolean }): { clusters: Array<{ keep: string; drop: string[] }>; removed: number } {
+    const entries = this.loadIndexEntries(senderId);
+    const words = entries.map(e => factWords(e.text));
+    const used = new Set<number>();
+    const clusters: Array<{ keep: FactEntry; drop: FactEntry[] }> = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (used.has(i)) continue;
+      const group = [i];
+      for (let j = i + 1; j < entries.length; j++) {
+        // Every member must match the SEED directly. Chaining (A~B, B~C ⇒ C joins A) merged a
+        // tech-stack fact into a job-title fact on the owner's data — caught in the dry run.
+        if (!used.has(j) && sameFact(words[i], words[j])) { group.push(j); used.add(j); }
+      }
+      if (group.length < 2) continue;
+      used.add(i);
+      const members = group.map(k => entries[k])
+        .sort((a, b) => provenanceRank(b.provenance) - provenanceRank(a.provenance) || b.createdAt.localeCompare(a.createdAt));
+      clusters.push({ keep: members[0], drop: members.slice(1) });
+    }
+    const report = { clusters: clusters.map(c => ({ keep: c.keep.text, drop: c.drop.map(d => d.text) })), removed: clusters.reduce((n, c) => n + c.drop.length, 0) };
+    if (opts?.dryRun || clusters.length === 0) return report;
+
+    const dropIds = new Set(clusters.flatMap(c => c.drop.map(d => d.id)));
+    const raise = new Map(clusters.map(c => [c.keep.id, Math.max(...[c.keep, ...c.drop].map(e => e.importance ?? 2))]));
+    const indexDir = join(this.memDir(senderId), 'index');
+    for (const file of readdirSync(indexDir).filter(f => f.endsWith('.jsonl'))) {
+      const filePath = join(indexDir, file);
+      const lines = readFileSync(filePath, 'utf-8').split('\n');
+      let touched = false;
+      const out: string[] = [];
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          if (dropIds.has(entry.id)) { touched = true; if (entry.id) this.unmirrorConcept(entry.id, entry.text); continue; }
+          const imp = raise.get(entry.id);
+          if (imp !== undefined && imp !== (entry.importance ?? 2)) { entry.importance = imp; touched = true; out.push(JSON.stringify(entry)); continue; }
+        } catch { /* keep malformed */ }
+        out.push(line);
+      }
+      if (touched) writeFileSync(filePath, out.join('\n') + (out.length > 0 ? '\n' : ''));
+    }
+    this.factsCache.delete(senderId ?? '__shared__');
+    this.rebuildFacts(senderId);
+    console.log(`[FactStore] Compacted: ${report.removed} reworded duplicate(s) in ${clusters.length} cluster(s)`);
+    return report;
   }
 
   // --- Snapshot-based fact diff for deterministic heartbeat review ---

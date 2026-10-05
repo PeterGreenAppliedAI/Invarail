@@ -6,8 +6,8 @@
  *  4. token meter counts eval_count across calls
  * Read-only. Run inside `lab` tmux. Usage: npx tsx scripts/think-probe-test.ts
  */
-import { loadConfig } from '../src/config/loader.js';
-import { createInferenceClient } from '../src/ollama/multi-backend.js';
+import { loadConfig } from '../../src/config/loader.js';
+import { createInferenceClient } from '../../src/ollama/multi-backend.js';
 
 const THINKER = 'qwen3.6:27b';
 const NON_THINKER = 'devstral:24b';

@@ -6,7 +6,7 @@
  */
 
 import { FalkorDB } from 'falkordb';
-import { OllamaClient } from '../src/ollama/client.js';
+import { OllamaClient } from '../../src/ollama/client.js';
 
 async function main() {
   const url = process.env.OLLAMA_URL ?? 'http://localhost:11434';

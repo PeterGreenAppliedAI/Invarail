@@ -210,6 +210,9 @@ export async function consolidateFactsWithLLM(
   for (const pair of toProcess) {
     // Skip if either fact was already removed in this run
     if (removedIds.has(pair.a.id) || removedIds.has(pair.b.id)) continue;
+    // The owner's own words are not rewritten into model prose: a stated fact is never merged away.
+    // (Exact rewordings of it are collapsed by compactDuplicates, which keeps the stated version.)
+    if (pair.a.provenance === 'stated' || pair.b.provenance === 'stated') continue;
 
     const decision = await decideConsolidation(client, model, pair.a.text, pair.b.text);
 
@@ -220,6 +223,9 @@ export async function consolidateFactsWithLLM(
         text: decision.mergedText,
         category: pair.a.category,
         source: 'consolidation/llm-merge',
+        // A merge of two identity facts is still an identity fact — it used to fall to the default
+        // importance and become evictable.
+        importance: Math.max(pair.a.importance ?? 2, pair.b.importance ?? 2),
         // A merge is model-authored prose, not a sentence anyone said — even when
         // both inputs were 'stated'. Merging must never launder provenance upward.
         provenance: 'inferred',
@@ -235,22 +241,18 @@ export async function consolidateFactsWithLLM(
 
   if (removedIds.size === 0) return 0;
 
-  // Write merged facts as new entries (appends to index files)
+  // Remove the originals from the INDEX first (2026-10-05). The old code appended the merged fact to
+  // the index and filtered the originals out of facts.json only — the next rebuild restored them, so
+  // every MERGE turned two copies into three. Removing first also keeps the write gate from rejecting
+  // the merged text as a rewording of the originals still on disk.
+  factStore.removeByIds(removedIds, senderId, { rebuild: false });
+
   for (const merged of mergedFacts) {
     // Spread, don't re-list fields: the old hand-copied literal silently dropped
     // whatever the writer set that it didn't know about (provenance, most recently).
     await factStore.writeFact({ ...merged, confidence: 0.9 }, senderId, merged.source);
   }
-
-  // Rebuild — this re-reads all index files.
-  // Removed IDs are still in the index, so we need to filter them out.
-  // Use the same pattern as consolidateFacts(): overwrite facts.json directly.
   factStore.rebuildFacts(senderId);
-
-  // Now load the rebuilt facts and remove the IDs we marked for removal
-  const rebuilt = factStore.loadFactsJson(senderId);
-  const final = rebuilt.filter(e => !removedIds.has(e.id));
-  factStore.overwriteFacts(final, senderId);
 
   console.log(`[Consolidation] LLM consolidation complete: ${removedIds.size} removed, ${mergedFacts.length} merged`);
   return removedIds.size;

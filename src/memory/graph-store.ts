@@ -145,6 +145,11 @@ export class GraphMemoryStore {
   private client: OllamaClient;
   private initialized = false;
 
+  /** Set by the orchestrator: does a candidate fact match something the owner forgot? The graph used
+   *  to have no such check — a forget deleted the node, and the next extraction could add it back. */
+  private suppression?: (text: string, senderId: string) => boolean;
+  setSuppression(fn: (text: string, senderId: string) => boolean): void { this.suppression = fn; }
+
   constructor(client: OllamaClient, config?: Partial<GraphMemoryConfig>) {
     this.client = client;
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -219,10 +224,15 @@ export class GraphMemoryStore {
    * Returns the fact ID if stored, null if deduplicated.
    */
   async addFact(input: FactInput, senderId: string, sourceSession?: string): Promise<string | null> {
-    if (!this.graph) await this.connect();
-
     const text = input.text.trim();
     if (!text) return null;
+    // Before connecting: a forgotten fact needs no database round-trip to be refused.
+    if (input.provenance !== 'stated' && this.suppression?.(text, senderId)) {
+      console.log(`[GraphMemory] Suppressed (the owner forgot this): "${text.slice(0, 60)}..."`);
+      return null;
+    }
+
+    if (!this.graph) await this.connect();
 
     // Generate embedding
     const [embedding] = await this.client.embed(text, this.config.embeddingModel);

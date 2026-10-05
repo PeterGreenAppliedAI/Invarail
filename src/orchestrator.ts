@@ -127,6 +127,7 @@ export class Orchestrator {
     // attempted when the tier asks for it.
     this.factStore = new FactStore(defaultWorkspacePath, embeddingsEnabled(this.config.memory) ? this.client : undefined, {
       okf: okfEnabled(this.config) ? { vaultPath: this.config.vault.path, owner: this.config.ownerId } : undefined,
+      embeddingModel: this.config.memory?.embeddingModel,
     });
 
     if (wantsGraph(this.config)) {
@@ -139,6 +140,8 @@ export class Orchestrator {
         ownerNames: ownerNames(this.config),
         ...this.config.memory.falkordb,
       });
+      // One record of what the owner forgot, consulted by both stores before any write.
+      this.graphMemory.setSuppression((text, senderId) => this.factStore?.isSuppressed(text, senderId) ?? false);
       this.graphMemory.connect().then(() => {
         console.log('[Orchestrator] Graph memory connected');
       }).catch(err => {
@@ -458,7 +461,7 @@ export class Orchestrator {
 
   private async extractFacts(
     transcript: import('./sessions/types.js').ConversationTurn[],
-    recentlyRemoved?: Array<{ text: string; reason: string }>,
+    recentlyRemoved?: Array<{ text: string; reason: string; facts?: string[] }>,
     senderId?: string,
   ): Promise<FactInput[]> {
     const userTurns = transcript.filter(t => t.role === 'user');
@@ -565,7 +568,9 @@ export class Orchestrator {
             ...(recentlyRemoved && recentlyRemoved.length > 0 ? [
               '',
               'IMPORTANT: The user has explicitly REMOVED these facts. Do NOT re-extract anything similar:',
-              ...recentlyRemoved.slice(0, 10).map(r => `- "${r.text}" (removed: ${r.reason})`),
+              // The NEWEST ten — slice(0, 10) showed the oldest, so past ten removals a fresh forget never
+              // reached the extractor. (The prompt is the soft layer; the write gate is the wall.)
+              ...recentlyRemoved.slice(-10).map(r => `- "${r.facts?.[0] ?? r.text}" (removed: ${r.reason})`),
             ] : []),
           ].join('\n'),
         },

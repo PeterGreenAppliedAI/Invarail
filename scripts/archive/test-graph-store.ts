@@ -1,5 +1,5 @@
-import { OllamaClient } from '../src/ollama/client.js';
-import { GraphMemoryStore } from '../src/memory/graph-store.js';
+import { OllamaClient } from '../../src/ollama/client.js';
+import { GraphMemoryStore } from '../../src/memory/graph-store.js';
 
 async function main() {
   const client = new OllamaClient(process.env.OLLAMA_URL ?? 'http://localhost:11434', '30m');

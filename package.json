@@ -18,7 +18,8 @@
     "start": "node -e \"require('fs').existsSync('console/dist')||require('child_process').execSync('npm run build:console',{stdio:'inherit'})\" && tsx src/index.ts",
     "doctor": "tsx src/setup/doctor-cli.ts",
     "vault:okf": "tsx scripts/vault-okf.ts",
-    "supervise": "node scripts/supervisor.mjs"
+    "supervise": "node scripts/supervisor.mjs",
+    "memory:compact": "tsx scripts/memory-compact.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.2",

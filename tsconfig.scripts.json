@@ -2,5 +2,5 @@
   "//": "Type-checks the e2e harness alongside src. The build config (tsconfig.json) stays src-only.",
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": true, "rootDir": "." },
-  "include": ["src", "scripts/e2e-eval.ts", "scripts/e2e", "scripts/router-live-check.ts"]
+  "include": ["src", "scripts/e2e-eval.ts", "scripts/e2e", "scripts/router-live-check.ts", "scripts/memory-compact.ts"]
 }

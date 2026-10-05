@@ -28,6 +28,12 @@ export function createMemoryCleanupTool(
       }
       substringRemoved += factStore.consolidateFacts();
 
+      // Phase 1b: the same fact in several wordings → one entry, in the index (lexical, no model —
+      // runs on every tier, including the starter install that has no embedder and no LLM merge).
+      let reworded = 0;
+      if (ctx.senderId) reworded += factStore.compactDuplicates(ctx.senderId).removed;
+      reworded += factStore.compactDuplicates().removed;
+
       // Phase 2: LLM-driven semantic dedup (if available)
       if (ollamaClient && consolidationModel) {
         try {
@@ -40,11 +46,12 @@ export function createMemoryCleanupTool(
         }
       }
 
-      const total = substringRemoved + llmRemoved;
+      const total = substringRemoved + reworded + llmRemoved;
       if (total === 0) return 'Memory is clean — no duplicates found.';
 
       const parts: string[] = [];
       if (substringRemoved > 0) parts.push(`${substringRemoved} substring duplicate(s)`);
+      if (reworded > 0) parts.push(`${reworded} reworded duplicate(s)`);
       if (llmRemoved > 0) parts.push(`${llmRemoved} semantic duplicate(s)`);
       return `Cleaned up ${parts.join(' + ')}.`;
     },

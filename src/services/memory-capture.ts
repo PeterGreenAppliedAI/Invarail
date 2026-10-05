@@ -34,7 +34,7 @@ export interface MemoryCaptureDeps {
    *  owns the prompt, the already-stored suppression list and the model choice. */
   extract: (
     transcript: ConversationTurn[],
-    recentlyRemoved: Array<{ text: string; reason: string }> | undefined,
+    recentlyRemoved: Array<{ text: string; reason: string; facts?: string[] }> | undefined,
     senderId: string,
   ) => Promise<FactInput[]>;
   workspacePathFor: (agentId: string) => string;

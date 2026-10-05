@@ -1,10 +1,10 @@
-import { loadConfig } from '../src/config/loader.js';
-import { createInferenceClient } from '../src/ollama/multi-backend.js';
-import { ToolRegistry } from '../src/tools/registry.js';
-import { registerAllTools } from '../src/tools/register-all.js';
-import { enrichCalendarOutput } from '../src/temporal/urgency.js';
-import { parseCalendarEvents } from '../src/services/prep-proposals.js';
-import { resolveWorkspacePath } from '../src/agents/scope.js';
+import { loadConfig } from '../../src/config/loader.js';
+import { createInferenceClient } from '../../src/ollama/multi-backend.js';
+import { ToolRegistry } from '../../src/tools/registry.js';
+import { registerAllTools } from '../../src/tools/register-all.js';
+import { enrichCalendarOutput } from '../../src/temporal/urgency.js';
+import { parseCalendarEvents } from '../../src/services/prep-proposals.js';
+import { resolveWorkspacePath } from '../../src/agents/scope.js';
 
 const config = loadConfig('invarail.config.json5');
 const client = createInferenceClient(config.ollama.url, config.ollama.keepAlive, config.inference?.backends, config.inference?.ollamaBackends);

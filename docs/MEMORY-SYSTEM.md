@@ -326,13 +326,21 @@ Catches exact rephrasing with different punctuation or capitalization.
 
 ### 3. Substring Inclusion (Flat Store)
 
-If the normalized text of one fact contains the normalized text of another:
+If the normalized text of one fact contains the normalized text of another — checked against the **full index**, not the capped `facts.json` view (until 2026-10-05 it read the view, so a fact the char bound had left out was invisible to dedup and was written again on the next extraction pass):
 
 ```typescript
 if (existingNorm.includes(newNorm) || newNorm.includes(existingNorm)) return null;
 ```
 
 Catches "Peter uses FalkorDB" vs "Peter uses FalkorDB for memory."
+
+### 4. The Write Gate: Reworded or Forgotten (Flat Store + Graph, 2026-10-05)
+
+Extraction runs on every path — capture every 8 turns, the heartbeat's transcript review, `!save` — and a small model rewrites the same fact in fresh words each time. The owner's index had grown to 445 facts with **151 pairs** that were the same fact reworded ("works at DevMesh Services as an ML engineer" / "is the technical founder of DevMesh Services LLC"), and a fact the owner had forgotten came back reworded nine days later. Both had been left to a prompt line asking the model not to; now code decides, in one place (`src/memory/fact-similarity.ts`), with no embedder required:
+
+- **Same fact** = at least 55% word overlap and at least 5 shared content words (subject words like "user" don't count). Calibrated on the owner's data: every sampled pair at that level was a rewording or an update; short facts that share topic words ("son does Taekwondo on Tuesdays" / "son does swimming on Tuesdays") fall below the shared-word floor.
+- **On write**, a same-fact match is **replaced by the newer wording** (an update and a rewording look alike, and the newest is right in both cases), keeping the higher importance — unless an older version has stronger provenance: an extraction never overwrites what the owner `stated`.
+- **Forgotten** facts are refused before anything is written, in **both** stores (`FactStore.isSuppressed`, consulted by `GraphMemoryStore.addFact` before it even connects). A forget now records the texts it actually removed, not only what the owner typed, so a rewording is caught; the owner's own forget never expires (automatic removals keep 30 days); and the owner stating the fact again via `!save` lifts it. The extraction prompt still lists removals as a soft layer — the newest ten (it had been showing the oldest).
 
 ### LLM-Driven Consolidation (Heartbeat)
 
@@ -342,7 +350,17 @@ During heartbeat, an LLM reviews pairs of facts with high word overlap (≥50%) 
 - **REPLACE** — New supersedes old
 - **KEEP_SEPARATE** — Distinct facts, both stay
 
-Bounded to 20 pairs per run to limit compute. The heartbeat runs it through the `memory_cleanup` tool (`src/tools/memory-cleanup.ts` → `src/memory/consolidation.ts`) on the model named by `memory.consolidation.model` (utility tier) at temperature 0.1; a merged fact lands as `inferred` — merging never launders provenance upward.
+Bounded to 20 pairs per run to limit compute. The heartbeat runs it through the `memory_cleanup` tool (`src/tools/memory-cleanup.ts` → `src/memory/consolidation.ts`) on the model named by `memory.consolidation.model` (utility tier) at temperature 0.1; a merged fact lands as `inferred` — merging never launders provenance upward — and keeps the higher importance of the two it replaces. A pair involving a fact the owner `stated` is never merged: the owner's words are not rewritten into model prose.
+
+**Until 2026-10-05 consolidation multiplied what it merged.** It appended the merged fact to the index and filtered the two originals out of `facts.json` only; the next rebuild read the index and brought the originals back. Every MERGE turned two copies into three, and the heartbeat reported "cleaned up N duplicates" each cycle while the index grew. Consolidation now removes the originals from the index before writing the merge.
+
+### Lexical Compaction (Heartbeat, every tier)
+
+`memory_cleanup` also collapses clusters of the same fact in the **index** (`FactStore.compactDuplicates`) — lexical, no model, so it runs on the starter install too, where there is no embedder and LLM consolidation is off. Per cluster the winner is the strongest provenance, then the newest; it keeps the cluster's highest importance. Every member must match the cluster's first fact directly — chained clustering (A≈B, B≈C ⇒ C joins A) merged a tech-stack fact into a job-title fact in the dry run. `npm run memory:compact` runs the same thing by hand (dry run by default, `--apply` takes a backup first); its first run on the reference build collapsed 94 reworded duplicates across four profiles (owner: 235 → 187).
+
+### Char Bound: Protection Covers a Fact, Not Every Rewording
+
+Identity and critical facts (importance ≥ 4) are never evicted from the 20,000-character view — but among protected entries that say the same thing, only the newest keeps its protection. Protected restatements had filled the view: 20% of it restated another entry, while preferences and context were left out to make room.
 
 ---
 

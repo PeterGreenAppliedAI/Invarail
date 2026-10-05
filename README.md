@@ -3,7 +3,7 @@
 **The authority plane for local AI agents — freedom below, governance above.**
 
 [![CI](https://github.com/PeterGreenAppliedAI/Invarail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/PeterGreenAppliedAI/Invarail/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-1217%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1234%20passing-brightgreen)
 ![Platforms](https://img.shields.io/badge/CI-Linux%20%7C%20Windows-blue)
 ![Node](https://img.shields.io/badge/node-22%2B-339933)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -30,7 +30,7 @@ An agent that runs on your own GPUs, built so that a **9B model** can drive it �
 | Requests that need two specialists' tools — where a small model's routing mistake used to become a half-done job | **18/30 → 30/30** after routing descriptions that say what each specialist *cannot* do, plus a code-detected reroute ([routing](evals/2026-09-e2e/routing/)) |
 | The engine, 41 model × thinking-mode configurations, deterministic checks, 3 reps | Four at 100%; one model swings **82% → 100%** on a single thinking flag — there are no universal settings, only measured ones ([model eval](evals/2026-08-local-model-eval/)) |
 | Research reports that check their own claims | Every claim tested against the pages it came from; high-impact ones cross-checked with an independent search; a correction needs evidence that names the claim's own subject ([how](docs/ARCHITECTURE.md#research-claim-verification)) |
-| The codebase | **1,217 tests**, CI on Linux and Windows, an end-to-end harness whose `--selftest` proves every scoring check on a scripted perfect run before any model is graded |
+| The codebase | **1,234 tests**, CI on Linux and Windows, an end-to-end harness whose `--selftest` proves every scoring check on a scripted perfect run before any model is graded |
 
 <img width="1980" height="1260" alt="Cost vs quality across 41 local model configurations: token cost spans 24x and is decoupled from score" src="evals/2026-08-local-model-eval/cost_vs_score.png" />
 
@@ -157,7 +157,7 @@ chrome-extension/      # WXT + React side panel companion
 docs/                  # architecture, routing, specialists, memory, features, SearXNG; docs/history/ for dated records
 evals/                 # published model evals + duel artifacts
 scripts/               # e2e front-door harness (scripts/e2e/), live checks, Node supervisor, vault→OKF converter (`npm run vault:okf`)
-test/                  # 1217 tests across 142 files
+test/                  # 1234 tests across 143 files
 ```
 
 Architecture deep-dives: [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [ROUTING.md](docs/ROUTING.md) · [SPECIALISTS.md](docs/SPECIALISTS.md) · [MEMORY-SYSTEM.md](docs/MEMORY-SYSTEM.md) · decision history with failed experiments: [DECISIONS.md](DECISIONS.md).

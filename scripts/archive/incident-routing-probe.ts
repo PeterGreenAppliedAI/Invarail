@@ -1,6 +1,6 @@
-import { loadConfig } from '../src/config/loader.js';
-import { OllamaClient } from '../src/ollama/client.js';
-import { classifyMessage } from '../src/router/classifier.js';
+import { loadConfig } from '../../src/config/loader.js';
+import { OllamaClient } from '../../src/ollama/client.js';
+import { classifyMessage } from '../../src/router/classifier.js';
 
 const config = loadConfig('invarail.config.json5');
 const client = new OllamaClient(config.ollama.url);

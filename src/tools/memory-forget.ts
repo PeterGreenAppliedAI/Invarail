@@ -38,16 +38,18 @@ export function createMemoryForgetTool(
 
       // Flat store (fallback + keep in sync)
       if (factStore) {
-        if (ctx.senderId) {
-          removed += factStore.removeFact(query, ctx.senderId);
-        }
-        removed += factStore.removeFact(query);
+        // Keep the texts actually removed: the record then catches a REWORDING of the fact, not just
+        // the words the owner typed (the forgotten wedding-ring fact came back reworded, 2026-10-05).
+        const texts: string[] = [];
+        if (ctx.senderId) texts.push(...factStore.removeFactTexts(query, ctx.senderId));
+        texts.push(...factStore.removeFactTexts(query));
+        removed += texts.length;
 
-        // Record removal to prevent heartbeat re-extraction
+        // Record removal — permanent for the owner's forget; checked in code on every write
         if (ctx.senderId) {
-          factStore.recordRemoval(query, 'user_denied', ctx.senderId);
+          factStore.recordRemoval(query, 'user_denied', ctx.senderId, texts);
         }
-        factStore.recordRemoval(query, 'user_denied');
+        factStore.recordRemoval(query, 'user_denied', undefined, texts);
       }
 
       if (removed === 0) {

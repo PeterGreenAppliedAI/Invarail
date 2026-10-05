@@ -54,7 +54,7 @@ export interface CommandHost {
   cancelRequests: Set<string>;
   pendingPath(workspacePath: string, senderId: string): string;
   heartbeatPendingPath(workspacePath: string, senderId: string): string;
-  extractFacts(transcript: ConversationTurn[], recentlyRemoved?: Array<{ text: string; reason: string }>, senderId?: string): Promise<FactInput[]>;
+  extractFacts(transcript: ConversationTurn[], recentlyRemoved?: Array<{ text: string; reason: string; facts?: string[] }>, senderId?: string): Promise<FactInput[]>;
   promoteRecurringLearnings(workspacePath: string): Promise<number>;
   confirmActionsFor(result: { pendingActions?: Array<{ id: string; tool: string }> }): Array<{ command: string; label: string; style?: 'primary' | 'success' | 'danger' }> | undefined;
 }
@@ -567,8 +567,9 @@ export async function runBuiltinCommand(host: CommandHost, msg: InboundMessage, 
     }
     // Flat store
     if (host.factStore) {
-      removed += host.factStore.removeFact(query, principal);
-      host.factStore.recordRemoval(query, 'user_denied', principal);
+      const texts = host.factStore.removeFactTexts(query, principal);
+      removed += texts.length;
+      host.factStore.recordRemoval(query, 'user_denied', principal, texts);
     }
 
     const replyText = removed > 0

@@ -12,9 +12,9 @@
  *   npx tsx scripts/migrate-to-principal.ts --apply    # actually migrate
  */
 import { FalkorDB } from 'falkordb';
-import { loadConfig } from '../src/config/loader.js';
-import { FactStore } from '../src/memory/fact-store.js';
-import { resolveWorkspacePath } from '../src/agents/scope.js';
+import { loadConfig } from '../../src/config/loader.js';
+import { FactStore } from '../../src/memory/fact-store.js';
+import { resolveWorkspacePath } from '../../src/agents/scope.js';
 
 const APPLY = process.argv.includes('--apply');
 

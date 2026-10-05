@@ -6,11 +6,11 @@
  * Usage: npx tsx scripts/format-probe.ts [model]   (default muse-glimmer:latest)
  * Run inside the `lab` tmux session (node LAN access).
  */
-import { loadConfig } from '../src/config/loader.js';
-import { createInferenceClient } from '../src/ollama/multi-backend.js';
-import { extractParams } from '../src/pipeline/extractor.js';
-import { capsFor } from '../src/ollama/model-caps.js';
-import type { ExtractFieldSchema } from '../src/pipeline/types.js';
+import { loadConfig } from '../../src/config/loader.js';
+import { createInferenceClient } from '../../src/ollama/multi-backend.js';
+import { extractParams } from '../../src/pipeline/extractor.js';
+import { capsFor } from '../../src/ollama/model-caps.js';
+import type { ExtractFieldSchema } from '../../src/pipeline/types.js';
 
 const MODEL = process.argv[2] ?? 'muse-glimmer:latest';
 
