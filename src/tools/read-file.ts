@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { resolve, relative, isAbsolute } from 'node:path';
+import { resolve, relative } from 'node:path';
+import { containedPath } from '../security/paths.js';
 import type { InvarailTool, ToolContext } from './types.js';
 
 export function createReadFileTool(): InvarailTool {
@@ -35,9 +36,10 @@ export function createReadFileTool(): InvarailTool {
         cleanPath = cleanPath.slice(workspaceRel.length + 1);
       }
 
-      const fullPath = resolve(workspace, cleanPath);
-      const rel = relative(resolve(workspace), fullPath);
-      if (rel.startsWith('..') || isAbsolute(rel)) {
+      // Decided on the CANONICAL path (the shared policy write_file uses): a lexical check let a
+      // symlink inside the workspace read a file outside it (2026-10-18).
+      const fullPath = containedPath(workspace, cleanPath);
+      if (!fullPath) {
         return 'Error: Path traversal not allowed — must read within workspace';
       }
 
