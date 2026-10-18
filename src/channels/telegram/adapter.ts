@@ -11,12 +11,37 @@ import { channelConnectError, channelSendError } from '../../errors.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
 
+/** Harness commands reachable from Telegram as "/". The "!"-spelling is the single authority. */
+const SLASH_TO_BANG: Record<string, string> = {
+  new: '!new', reset: '!reset', save: '!save', discard: '!discard',
+  cleanup: '!cleanup', promote: '!promote', forget: '!forget',
+};
+
+/**
+ * Translate a Telegram "/"-spelling into the harness "!"-spelling, keeping the arguments.
+ * `/forget coffee` → `!forget coffee`; `/forget@yourbot term` → `!forget term` (the @mention is
+ * the bot's address, not part of the command — only the first whitespace token is consumed).
+ * Returns null when `text` is no known harness command so the caller lets it travel to the model
+ * as an ordinary message.
+ */
+export function translateSlashCommand(text: string): { bang: string; content: string } | null {
+  const first = text.split(/\s+/)[0] ?? '';
+  const name = first.replace(/^\//, '').split('@')[0].toLowerCase();
+  const bang = SLASH_TO_BANG[name];
+  if (!bang) return null;
+  return { bang, content: bang + text.slice(first.length) };
+}
+
 export class TelegramAdapter implements ChannelAdapter {
   readonly id = 'telegram';
   private bot: any = null;
   private handler: ((msg: InboundMessage) => Promise<void>) | null = null;
   private currentStatus: ChannelStatus = 'disconnected';
   private allowFrom: Set<string> | null = null;
+  /** "/" menu registered with Telegram via setMyCommands — see setCommandMenu. */
+  private commandMenu: { command: string; description: string }[] | null = null;
+  /** Commands answered locally, without a model turn — see setLocalCommands. */
+  private localCommands: Map<string, (msg: InboundMessage) => Promise<string>> | null = null;
 
   async connect(config: ChannelAdapterConfig): Promise<void> {
     if (!config.token) {
@@ -54,6 +79,11 @@ export class TelegramAdapter implements ChannelAdapter {
       if (this.allowFrom && !this.allowFrom.has(String(msg.from.id))) {
         return; // silently ignore
       }
+
+      // Slash commands (Telegram users type "/", this harness's own commands are "!-prefixed").
+      // Answered locally or translated — see handleSlash.
+      const slashText = (msg.text ?? '').trim();
+      if (slashText.startsWith('/') && (await this.handleSlash(slashText, msg))) return;
 
       const content = msg.text ?? msg.caption ?? '';
 
@@ -179,6 +209,17 @@ export class TelegramAdapter implements ChannelAdapter {
     bot.start();
     this.currentStatus = 'connected';
     console.log('[Telegram] Bot started');
+
+    // The "/" menu in the Telegram client. Registered here because the adapter is configured
+    // (setCommandMenu) before connect() runs.
+    if (this.commandMenu?.length) {
+      try {
+        await bot.api.setMyCommands(this.commandMenu);
+        console.log(`[Telegram] Command menu: ${this.commandMenu.map(c => '/' + c.command).join(' ')}`);
+      } catch (err) {
+        console.warn('[Telegram] setMyCommands failed —', err instanceof Error ? err.message : err);
+      }
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -207,6 +248,76 @@ export class TelegramAdapter implements ChannelAdapter {
 
   onMessage(handler: (msg: InboundMessage) => Promise<void>): void {
     this.handler = handler;
+  }
+
+  /** Commands offered as the Telegram "/" menu (call before connect()). */
+  setCommandMenu(commands: { command: string; description: string }[]): void {
+    this.commandMenu = commands;
+  }
+
+  /** Commands answered from real harness state, with no model turn in between. */
+  setLocalCommands(commands: Record<string, (msg: InboundMessage) => Promise<string>>): void {
+    this.localCommands = new Map(Object.entries(commands).map(([name, fn]) => [name.toLowerCase(), fn]));
+    console.log(`[Telegram] Local commands: ${[...this.localCommands.keys()].map(c => '/' + c).join(' ')}`);
+  }
+
+  private inboundFrom(msg: any, content: string): InboundMessage {
+    return {
+      id: String(msg.message_id),
+      channel: 'telegram',
+      content,
+      senderId: String(msg.from.id),
+      senderName: msg.from.first_name,
+      channelId: String(msg.chat.id),
+      timestamp: new Date(msg.date * 1000),
+      raw: msg,
+    };
+  }
+
+  /**
+   * Slash commands.
+   *
+   * Telegram users expect the "/" menu, but this harness's commands are "!"-prefixed
+   * (!new, !reset, !save, …). The slash spellings are translated to the bang spelling and
+   * pushed through the normal inbound path, so ONE command implementation stays
+   * authoritative. Commands with no bang equivalent (/tools, /status, /help) are answered
+   * locally, from the orchestrator's real registries and WITHOUT a model turn — a small
+   * local model asked about its own tools invents them, which is the bug this fixes.
+   * Unknown "/" text (e.g. a German sentence starting with "/etc/hosts …") is NOT consumed
+   * and travels to the model as a normal message.
+   */
+  private async handleSlash(text: string, msg: any): Promise<boolean> {
+    const first = text.split(/\s+/)[0] ?? '';
+    const name = first.replace(/^\//, '').split('@')[0].toLowerCase();
+    const bang = SLASH_TO_BANG[name];
+    const local = this.localCommands?.get(name);
+    if (!bang && !local) return false;
+
+    if (bang && !local) {
+      if (!this.handler) return true;
+      console.log(`[Telegram] /${name} → ${bang} (harness command)`);
+      // Carry the rest through: `/forget coffee` must arrive at !forget as `!forget coffee`
+      // (it reads its argument from the message), and `/forget@yourbot term` keeps working —
+      // only the first whitespace token is consumed, so the @suffix never leaks into the term.
+      await this.handler(this.inboundFrom(msg, bang + text.slice(first.length)));
+      return true;
+    }
+
+    let answer: string;
+    try {
+      answer = await local!(this.inboundFrom(msg, text));
+    } catch (err) {
+      answer = `/${name} failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    try {
+      await this.bot.api.sendMessage(String(msg.chat.id), answer.slice(0, TELEGRAM_MAX_LENGTH), {
+        reply_to_message_id: msg.message_id,
+      });
+    } catch (err) {
+      console.warn(`[Telegram] could not send /${name} reply —`, err instanceof Error ? err.message : err);
+    }
+    console.log(`[Telegram] /${name} answered locally (${answer.length} chars, no model turn)`);
+    return true;
   }
 
   async send(target: MessageTarget, content: MessageContent): Promise<void> {

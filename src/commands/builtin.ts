@@ -15,6 +15,7 @@ import type { InboundMessage } from '../channels/types.js';
 import type { ConversationTurn } from '../sessions/types.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { ToolRegistry } from '../tools/registry.js';
+import type { Orchestrator } from '../orchestrator.js';
 import type { ChannelRegistry } from '../channels/registry.js';
 import type { SessionStore } from '../sessions/store.js';
 import type { PipelineRegistry } from '../pipeline/registry.js';
@@ -750,4 +751,97 @@ export async function runBuiltinCommand(host: CommandHost, msg: InboundMessage, 
   }
 
   return false;
+}
+
+/** The catch-all "/" help lines — kept next to the local command handlers. */
+const SLASH_HELP = [
+  'Invarail commands',
+  '/tools - which tools the agent really has (registered, plus per category)',
+  '/status - backend, categories, channels, uptime',
+  '/new - new session, clears the context (same as !new)',
+  '/save - save the session (same as !save)',
+  '/help - this list',
+  '',
+  'Actions are routed by category: terminal/code_exec live in exec, not in chat.',
+].join('\n');
+
+/** Channel security for a message's channel — mirrors dispatch's resolveChannelSecurity. */
+function channelSecurityFor(config: InvarailConfig, channel?: string) {
+  if (!channel) return undefined;
+  const ch = config.channels[channel];
+  if (ch?.security) return ch.security;
+  // The console is hosted by the web adapter; unless a channels.console entry exists, the
+  // web channel's policy governs its /console/api/chat route too (F08).
+  if (channel === 'console') return config.channels.web?.security ?? undefined;
+  return undefined;
+}
+
+/**
+ * Slash commands answered from the harness's own state instead of a model turn (/tools, /status,
+ * /help). A small local model asked "which tools do you have?" does not read its schemas — it
+ * guesses (measured 2026-10-18 on Strata IQ1_M: it claimed read_file/write_file/delete_file/
+ * memory_save/memory_search, a set matching neither its granted tools nor this harness — `delete_file`
+ * does not exist here). Answering from the registry makes the response true by construction.
+ *
+ * The registry includes tools gated to the config owner (ownerOnlyTools), and /status prints backend
+ * LAN URLs. Both are for the owner only (dispatch layer 3c strips owner-only tools for everyone else).
+ * So the commands answer fully only to config.ownerId; everyone else gets a safe subset that never
+ * contains backend URLs or owner-only tool names.
+ */
+export function buildTelegramMenu(
+  orchestrator: Orchestrator,
+  config: InvarailConfig,
+): Record<string, (msg: InboundMessage) => Promise<string>> {
+  const registeredTools = (): string[] => orchestrator.getToolRegistry().list();
+
+  const categorySummary = (): string =>
+    Object.entries(config.specialists ?? {})
+      .map(([name, spec]) => `${name}(${(spec?.tools ?? []).length})`)
+      .join(', ');
+
+  const status = async (msg: InboundMessage): Promise<string> => {
+    if (!isOwner(msg.senderId, config)) {
+      // No LAN backend URLs, no channel internals for non-owners.
+      return [
+        'Invarail status (owner view only)',
+        `- Categories (tools): ${categorySummary()}`,
+        `- Tools registered: ${registeredTools().length}`,
+        `- Uptime: ${Math.round(process.uptime())}s`,
+      ].join('\n');
+    }
+    const backends = config.inference?.backends ?? [];
+    const channels = Object.entries(config.channels ?? {})
+      .filter(([, c]) => c?.enabled)
+      .map(([id]) => id);
+    return [
+      'Invarail status',
+      `- Backend: ${backends.map(b => `${b.url} [${(b.models ?? []).join(', ')}]`).join(' | ') || '-'}`,
+      `- Categories (tools): ${categorySummary()}`,
+      `- Channels: ${channels.join(', ') || '-'}`,
+      `- Tools registered: ${registeredTools().length}`,
+      `- Uptime: ${Math.round(process.uptime())}s`,
+    ].join('\n');
+  };
+
+  const tools = async (msg: InboundMessage): Promise<string> => {
+    const owner = isOwner(msg.senderId, config);
+    const sec = channelSecurityFor(config, msg.channel);
+    const ownerOnly = new Set(sec?.ownerOnlyTools ?? []);
+    const lines = [`Invarail tools (${owner ? 'owner view' : 'owner-only tools hidden'})`];
+    for (const [category, spec] of Object.entries(config.specialists ?? {})) {
+      const granted = (spec?.tools ?? []).filter(t => !ownerOnly.has(t));
+      lines.push(`- ${category}: ${granted.length ? granted.join(', ') : '(none - text only)'}`);
+    }
+    if (owner) {
+      const all = [...registeredTools()].sort();
+      lines.push('', `Registry: ${all.join(', ')}`);
+    } else {
+      lines.push('', 'Owner-only tools are not shown.');
+    }
+    return lines.join('\n');
+  };
+
+  const help = async (): Promise<string> => SLASH_HELP;
+
+  return { tools, status, help, commands: help };
 }
