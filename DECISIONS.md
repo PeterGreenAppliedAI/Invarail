@@ -4,6 +4,37 @@ A log of significant decisions, failed experiments, and why things are the way t
 
 ---
 
+## The First Outside Contributor (October 18 2026)
+
+Peter: *"that's cool though, someone wants to try my product."* GitHub `dropicallus` runs Invarail in German, on Telegram, on a 1-bit quantized model (Strata/Qwen3.8 IQ1_M). It is the hardest test the small-model thesis has had, and it came from a stranger. They opened two PRs (#26, #27) and an issue (#28) in the morning. By evening three PRs had merged, with them as author.
+
+**Merged.**
+- **#32 `router.maxPredict`** (default 256) replaces the hardcoded `num_predict: 20`. On their thinking router model the reasoning pass ate all 20 tokens and every message fell to the keyword fallback. They measured it: 20 → empty content; 256 → 61 reasoning tokens + "exec". This was split out of #26 at our request.
+- **#31 Telegram "typing…" indicator,** refreshed every 4s while the handler runs. We followed up by turning its `.catch(() => {})` into a logged warning (00d802e, the no-silent-catch rule). Known gap: a long paste split by the debouncer stops the indicator early.
+- **#26 `router.mode: 'generative' | 'systemone'`** (default generative) and **`router.keywordHints`**. Under `systemone` the order is keyword hits first (L0), then the Laya decision model (L1), then a confidence gate (L2, `systemone.highConfidence`, default 0.6; below it, `systemone.lowConfidenceFallback`, default `router.defaultCategory`). `keywordHints` is a list of per-install `{pattern, category}` regexes merged after the built-in English hints; an invalid pattern is skipped with a warning.
+
+**What the #26 review changed.** The first version moved keyword-first ahead of the model *for every install*. Ten tests failed (routing corpus, reroute suite, browse-a-named-site), because the keyword table is a fallback: `tell|send|notify|message` → `message` cannot win before the model ("tell me about X"). It also hardcoded German patterns broad enough to hit *Führerschein* and *der Preis der Freiheit*. The revision did four things: kept keyword-first systemone-only, so the generative path routes exactly as before; moved German into `keywordHints`; gave the low-confidence target its own field (a comment had claimed it went to `exec`); and documented that the default fallback, `chat`, has no tools. One leftover: German imperatives that break sticky routing are still hardcoded in `isLikelyFollowUp`, gated to systemone. They offered to move them into config.
+
+**The switch is unchanged.** `mode: 'systemone'` exists now, but it is opt-in and off here. What earns it on this install is still the real-traffic disagreement rate from `router.shadow` ("A 421M Encoder Out-Routes phi4").
+
+**Refused: #27, and why.** It made the contributor's own unsandboxed posture ("er darf überall hin", he may go anywhere) the repo default, and ten security tests failed:
+- `containedPath`, the one containment check `write_file`/`document`/`memory_get` share, returned paths outside the workspace unless `INVARAIL_SANDBOX_PATHS=1`. An env var defaulting to open is a boundary removed.
+- A `terminal`/`code_exec` plugin ran `bash -lc` on the host. It skipped the Docker sandbox, handed the shell the full `process.env` (every API key and the web token), had no `requiresConfirm`, and sat in `exec`, which ordinary chat reaches.
+- Identity files (`SOUL.md`, `IDENTITY.md`, …) became agent-writable.
+
+What we offered instead: the Telegram `/` menu with `/tools`/`/status`/`/help` answered from the real registry (code answers what code knows) as its own PR; the "you have no tools on this turn" prompt lines with an eval behind them; and the shell kept as a local plugin in `~/.invarail/plugins/` on their machine.
+
+**What their bug taught the doctor.** Issue #28 ("the agent claims it has no terminal") was their config: specialists keyed by retired names (`general/creative/hard`). Every routed category found no specialist, and dispatch ran the message as tool-less chat *silently*. The doctor now WARNs when a routed category has no specialist, and names the stray keys (d76cd84). Specialists only a command reaches (`!blender`) never warn on their own. They ran it and it found a *second* gap on their install: cron/message/image/code_gen. Their report also exposed a doctor bug, telling them to `ollama pull none`, because `embeddingModel: "none"` (embedder off) was listed as a referenced model (8610cf3).
+
+**How outside PRs get reviewed** (what worked, kept on purpose):
+- Merge onto current main in a scratch worktree and run the full suite. Their CI may not run until a maintainer approves the fork.
+- Answer in two lists, *would accept* and *won't accept*, each with its reason.
+- Split the mergeable part out so it lands the same day.
+- Fix one-line nits ourselves rather than sending another review round.
+- Security boundaries are not negotiable by default: sandbox, containment, confirm, identity files. A contributor's own posture belongs in their config or a local plugin.
+
+---
+
 ## Where Tool Use Begins — the Small-Tier Eval (September 27 2026)
 
 Peter: *"We'd need to define what models are minimum for some of this."* The August eval covered 20B–124B; the starter preset assumed `qwen3:8b`, which nobody had measured and neither box held. Peter: *"check to see which models are on the GPU node… it should have some smaller ones for you to test with"* — and he stopped Invarail for the run so the 3060 was uncontended. Same harness, same 14 tasks × 3 reps, every small model on the utility box (3.8B–14.7B, Q4_K_M), ~50 minutes. Published: `evals/2026-09-small-tier/`.

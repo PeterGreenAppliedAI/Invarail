@@ -183,7 +183,7 @@ Note: sticky routing governs *classification* (which category the message lands 
 If pre-overrides and sticky routing don't apply, the router model classifies the message.
 
 **Model:** `router.model` — phi4:latest on the 3060 utility box in the reference build (the `:14b` tag does not exist there; a stale tag cost one fact extraction to a 404 on 2026-09-19). The schema default is `phi4-mini`; the setup wizard picks a measured utility model, and on a one-model install the foreground model routes its own requests.
-**Temperature:** 0.1 (very low — same message should always produce the same category), `num_predict` 20, `num_ctx` = `router.contextSize` (default 8192 — matched to extraction so the shared utility model never reloads at a different context size)
+**Temperature:** 0.1 (very low — same message should always produce the same category), `num_predict` = `router.maxPredict` (default 256 — a hardcoded 20 was eaten whole by a thinking router's reasoning and every message fell to keywords, 2026-10-18), `num_ctx` = `router.contextSize` (default 8192 — matched to extraction so the shared utility model never reloads at a different context size)
 **Thinking:** always `think: false`. On a thinking model the constrained answer landed in the `thinking` field with an EMPTY `response`, which read as garbage and sent every message to the keyword fallback — qwen3.5:9b routed 0/11 by model until this was pinned (e2e eval 2026-09-27). A model answer that is not a category is now logged (`[Router] Model returned no category …`) instead of falling through silently.
 **Output:** Single word — enum-grammar-constrained via `format` when the backend supports it (the model physically cannot emit an invalid category); plain generation + sanitize otherwise
 **Latency:** ~200ms warm; up to several seconds when the gateway has evicted the model
@@ -236,9 +236,17 @@ A 78-item eval is not a reason to change routers; an agreement rate on the real 
 
 ---
 
+## Layer 4c: System-One Mode (opt-in, 2026-10-18)
+
+`router.mode` picks the engine: `generative` (the default — everything above) or `systemone`. Under `systemone` the order changes: **(L0)** keyword hints first — free, deterministic, and a confident-but-wrong model answer can never override an exact hit; **(L1)** the decision model at `router.systemone.url` scores the categories in one forward pass; **(L2)** a confidence gate — at or above `systemone.highConfidence` (default 0.6) the choice stands, below it the message goes to `systemone.lowConfidenceFallback` (default `defaultCategory`; note `chat` has no tools, so point it at a broad-tool category if low-confidence calls should keep tools). If the server fails or returns nothing: keywords, then default. Under `systemone` German imperatives also break sticky routing (still hardcoded in `isLikelyFollowUp`; moving them to config is an offered follow-up).
+
+Keyword-first is systemone-ONLY on purpose: the built-in keyword table is a fallback, too coarse to win before a model in general (`tell|send|notify|message` → `message` would take "tell me about X"). The first draft applied it to every install and broke ten routing tests. The reference install stays on `generative`; the shadow log (Layer 4b) is still what earns the switch. Contributed by the project's first outside contributor (DECISIONS, October 18 2026).
+
 ## Layer 5: Keyword Fallback
 
 When the model fails, times out, or returns an invalid category, regex patterns take over.
+
+**Per-install hints (2026-10-18):** `router.keywordHints` — a list of `{pattern, category}` regexes (case-insensitive) checked after the built-in English table. A non-English install steers routing in its own config, never in source; an invalid pattern is skipped with a warning. Under `router.mode: 'systemone'` the same table runs first (Layer 4c).
 
 **Order matters.** Specific patterns match before broad ones. This prevents "search for docker commands" from routing to `web_search` instead of `exec`.
 
