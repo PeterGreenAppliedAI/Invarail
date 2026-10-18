@@ -827,7 +827,7 @@ export function buildTelegramMenu(
     const owner = isOwner(msg.senderId, config);
     const sec = channelSecurityFor(config, msg.channel);
     const ownerOnly = new Set(sec?.ownerOnlyTools ?? []);
-    const lines = [`Invarail tools (${owner ? 'owner view' : 'only tools you can use'})`];
+    const lines = [`Invarail tools (${owner ? 'owner view' : 'owner-only tools hidden'})`];
     for (const [category, spec] of Object.entries(config.specialists ?? {})) {
       const granted = (spec?.tools ?? []).filter(t => !ownerOnly.has(t));
       lines.push(`- ${category}: ${granted.length ? granted.join(', ') : '(none - text only)'}`);

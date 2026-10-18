@@ -11,6 +11,27 @@ import { channelConnectError, channelSendError } from '../../errors.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
 
+/** Harness commands reachable from Telegram as "/". The "!"-spelling is the single authority. */
+const SLASH_TO_BANG: Record<string, string> = {
+  new: '!new', reset: '!reset', save: '!save', discard: '!discard',
+  cleanup: '!cleanup', promote: '!promote', forget: '!forget',
+};
+
+/**
+ * Translate a Telegram "/"-spelling into the harness "!"-spelling, keeping the arguments.
+ * `/forget coffee` → `!forget coffee`; `/forget@yourbot term` → `!forget term` (the @mention is
+ * the bot's address, not part of the command — only the first whitespace token is consumed).
+ * Returns null when `text` is no known harness command so the caller lets it travel to the model
+ * as an ordinary message.
+ */
+export function translateSlashCommand(text: string): { bang: string; content: string } | null {
+  const first = text.split(/\s+/)[0] ?? '';
+  const name = first.replace(/^\//, '').split('@')[0].toLowerCase();
+  const bang = SLASH_TO_BANG[name];
+  if (!bang) return null;
+  return { bang, content: bang + text.slice(first.length) };
+}
+
 export class TelegramAdapter implements ChannelAdapter {
   readonly id = 'telegram';
   private bot: any = null;
@@ -266,19 +287,19 @@ export class TelegramAdapter implements ChannelAdapter {
    * and travels to the model as a normal message.
    */
   private async handleSlash(text: string, msg: any): Promise<boolean> {
-    const name = text.split(/\s+/)[0].replace(/^\//, '').split('@')[0].toLowerCase();
-    const BANG: Record<string, string> = {
-      new: '!new', reset: '!reset', save: '!save', discard: '!discard',
-      cleanup: '!cleanup', promote: '!promote', forget: '!forget',
-    };
-    const bang = BANG[name];
+    const first = text.split(/\s+/)[0] ?? '';
+    const name = first.replace(/^\//, '').split('@')[0].toLowerCase();
+    const bang = SLASH_TO_BANG[name];
     const local = this.localCommands?.get(name);
     if (!bang && !local) return false;
 
     if (bang && !local) {
       if (!this.handler) return true;
       console.log(`[Telegram] /${name} → ${bang} (harness command)`);
-      await this.handler(this.inboundFrom(msg, bang));
+      // Carry the rest through: `/forget coffee` must arrive at !forget as `!forget coffee`
+      // (it reads its argument from the message), and `/forget@yourbot term` keeps working —
+      // only the first whitespace token is consumed, so the @suffix never leaks into the term.
+      await this.handler(this.inboundFrom(msg, bang + text.slice(first.length)));
       return true;
     }
 
