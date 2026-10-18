@@ -5,6 +5,7 @@ import { createInferenceClient } from './ollama/multi-backend.js';
 import { ToolRegistry } from './tools/registry.js';
 import { dispatchMessage } from './dispatch.js';
 import { Orchestrator } from './orchestrator.js';
+import { buildTelegramMenu } from './commands/builtin.js';
 import { registerAllTools } from './tools/register-all.js';
 import type { OllamaMessage } from './ollama/types.js';
 
@@ -86,7 +87,20 @@ async function runOrchestrator(config: ReturnType<typeof loadConfig>) {
         }
         case 'telegram': {
           const { TelegramAdapter } = await import('./channels/telegram/index.js');
-          channelRegistry.register(new TelegramAdapter());
+          const telegram = new TelegramAdapter();
+          // "/" menu in the Telegram client + locally-answered commands. Capability and status
+          // questions must NOT go through a small model: it guesses its own tool set instead of
+          // reading it (see buildTelegramMenu), so /tools, /status and /help answer from the
+          // harness's real registries. Descriptions are English so the menu is locale-neutral.
+          telegram.setCommandMenu([
+            { command: 'tools', description: 'Which tools the agent really has (registry + per category)' },
+            { command: 'status', description: 'Backend, categories, channels, uptime' },
+            { command: 'new', description: 'New session, clears the context' },
+            { command: 'save', description: 'Save the session' },
+            { command: 'help', description: 'Show available commands' },
+          ]);
+          telegram.setLocalCommands(buildTelegramMenu(orchestrator, config));
+          channelRegistry.register(telegram);
           break;
         }
         case 'web': {
