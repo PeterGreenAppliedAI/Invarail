@@ -48,7 +48,9 @@ export function ollamaModelsReferenced(config: InvarailConfig): string[] {
   add((config as { defaultModel?: string }).defaultModel);
   add(config.router.model);
   for (const s of Object.values(config.specialists)) add(s.model);
-  add(config.memory?.embeddingModel);
+  // "none" turns the embedder off — it is not a model to pull (an outside install was told
+  // to `ollama pull none`, 2026-10-18).
+  if (embeddingsEnabled(config.memory)) add(config.memory?.embeddingModel);
   add(config.memory?.nerModel);
   add(config.memory?.extractionModel);
   add(config.vision?.model);

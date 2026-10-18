@@ -37,6 +37,11 @@ describe('doctor', () => {
     expect(ollamaModelsReferenced(c).sort()).toEqual(['phi4:latest', 'qwen3:8b']);
   });
 
+  it('embeddingModel "none" turns the embedder off — it is not a model to pull', () => {
+    expect(ollamaModelsReferenced(cfg({ memory: { embeddingModel: 'none' } }))).not.toContain('none');
+    expect(ollamaModelsReferenced(cfg({ memory: { embeddingModel: 'qwen3-embedding:0.6b' } }))).toContain('qwen3-embedding:0.6b');
+  });
+
   it('a missing model is a WARN with the pull command; a present one passes', () => {
     const checks = doctorChecks(base, cfg({ specialists: { chat: { model: 'gemma4:12b', tools: [] } } }));
     const missing = checks.find(c => c.name === 'Model gemma4:12b')!;
