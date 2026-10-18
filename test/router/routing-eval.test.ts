@@ -130,6 +130,70 @@ describe('Routing Evaluation Corpus', () => {
     });
   }
 
+  // Group 3: Config-driven German keywordHints (systemone Layer-0) — the harness's
+  // keyword-first routing is opt-in (router.mode === 'systemone') and patterns live in
+  // router.keywordHints, NOT in source. These fixtures pin the ORDER: under systemone a
+  // configured hints hit fires BEFORE the decision model (L0 pre-empt), so no network is
+  // needed — the failing client never gets called. Near-misses (generative + failing
+  // client) prove precise patterns don't over-match; broad ones (bare \bterminal\b,
+  // deploy\w*) are exactly what would break these.
+  describe('keywordHints under systemone (Layer-0 hits, no network)', () => {
+    const sysCfg: RouterConfig = {
+      ...config,
+      mode: 'systemone',
+      systemone: { url: 'http://127.0.0.1:8082' },
+      keywordHints: [
+        // exec — compound terminal-command intent / arithmetic, never bare `terminal`
+        { pattern: '\\b(?:f(ü|ue)hr\\w*|ausf(ü|ue)hr\\w*)\\b.*\\b(?:terminal|shell|konsole)\\b|\\b(rechne|berechne)\\s+', category: 'exec' },
+        // web_search — explicit "such im Internet nach" web intent
+        { pattern: '\\bsuch\\w*\\s+(?:im\\s+)?(?:internet|web|netz)\\s+nach\\b', category: 'web_search' },
+        // cron — imperative reminder only, never bare "erinnerung"
+        { pattern: '\\b(erinnere mich|weck mich)\\b', category: 'cron' },
+      ],
+    };
+    const hits: Array<{ message: string; expected: string }> = [
+      { message: 'Führe im Terminal aus: uname -a', expected: 'exec' },
+      { message: 'berechne 3.5 * 2', expected: 'exec' },
+      { message: 'such im Internet nach dem Bitcoin Preis', expected: 'web_search' },
+      { message: 'erinnere mich morgen an den Termin', expected: 'cron' },
+    ];
+    for (const h of hits) {
+      it(`[systemone-hit] "${h.message}" → ${h.expected}`, async () => {
+        const result = await classifyMessage(createFailingClient(), sysCfg, h.message);
+        expect(result.category).toBe(h.expected);
+        expect(result.confidence).toBe('keyword');
+      });
+    }
+  });
+
+  describe('keywordHints near-misses (generative fallback → chat default)', () => {
+    const genCfg: RouterConfig = {
+      ...config,
+      keywordHints: [
+        { pattern: '\\b(?:f(ü|ue)hr\\w*|ausf(ü|ue)hr\\w*)\\b.*\\b(?:terminal|shell|konsole)\\b|\\b(rechne|berechne)\\s+', category: 'exec' },
+        { pattern: '\\bsuch\\w*\\s+(?:im\\s+)?(?:internet|web|netz)\\s+nach\\b', category: 'web_search' },
+        { pattern: '\\b(erinnere mich|weck mich)\\b', category: 'cron' },
+      ],
+    };
+    const nearMisses: Array<{ message: string; expected: string }> = [
+      // "deployment" is a noun, not a terminal command — broad deploy\w* would misroute to exec
+      { message: 'Die deployment dauert noch etwas', expected: 'chat' },
+      // conversational "suche nach" has no web intent
+      { message: 'Ich suche nach einem guten Buch', expected: 'chat' },
+      // bare "Terminal" mention must not over-fire
+      { message: 'Das Terminal-Feeling ist gut', expected: 'chat' },
+      // bare "Erinnerung" noun must not trigger cron
+      { message: 'Deine Erinnerung an gestern war hilfreich', expected: 'chat' },
+    ];
+    for (const nm of nearMisses) {
+      it(`[near-miss] "${nm.message}" → ${nm.expected}`, async () => {
+        const result = await classifyMessage(createFailingClient(), genCfg, nm.message);
+        expect(result.category).toBe(nm.expected);
+        expect(result.confidence).toBe('fallback');
+      });
+    }
+  });
+
   // Summary stats
   it('corpus coverage', () => {
     const layers = new Map<string, number>();

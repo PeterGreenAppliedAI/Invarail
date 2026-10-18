@@ -73,8 +73,48 @@ export const RouterShadowSchema = z.object({
   logPath: z.string().default('data/router-shadow.jsonl'),
 });
 
+/** Decision-model router (native llama.cpp `/v1/systemone`, Laya line) — the opt-in
+ *  routing engine, chosen by `router.mode: 'systemone'`. Both engines' code paths are
+ *  preserved; `router.mode` selects which one classifies.
+ *  systemone: a small decision model (Laya 421M in use) scores the specialist categories
+ *  in one forward pass (no token generation → can't eat a reasoning budget, can't time
+ *  out the way a generative router did — the 7-of-30 / 3.3s router flakiness was that
+ *  bug class). Under systemone the free keyword heuristics run FIRST (Layer 0) so a
+ *  confident-but-wrong decision never overrides an exact keyword hit, then a confidence
+ *  gate (Layer 2) escalates uncertain calls to a broad-toolset default instead of
+ *  guessing at a specialist that might lack the tool (or land tool-less in chat). */
+export const RouterSystemOneSchema = z.object({
+  /** Base URL of the llama.cpp decision server (served at /v1/systemone), e.g. http://127.0.0.1:8082 */
+  url: z.string().optional(),
+  timeoutMs: z.number().int().positive().default(3000),
+  /** Gate: at-or-above this calibrated probability the decision is trusted as-is. */
+  highConfidence: z.number().min(0).max(1).default(0.6),
+  /** Where a below-gate call escalates. Defaults to router.defaultCategory (chat), which
+   *  by default has NO tools (getDefaultSpecialist returns a bare chat specialist) — so a
+   *  low-confidence call escalated to chat lands tool-less. Point this at a category whose
+   *  specialist holds broad tools if you want low-confidence calls to keep their tools. */
+  lowConfidenceFallback: z.string().optional(),
+});
+
 export const RouterConfigSchema = z.object({
   model: z.string().default('phi4-mini'),
+  /** Routing engine: 'generative' (default, classic classifier) or 'systemone'
+   *  (native llama.cpp /v1/systemone decision model). Both code paths are preserved;
+   *  this toggles which engine classifies — not a replacement of either. The two modes
+   *  differ in ORDER: generative = decision model first (keyword heuristics are a
+   *  fallback only); systemone = free keyword heuristics first (Layer 0), then the
+   *  decision model, then a confidence gate. Configured keywordHints are honoured in
+   *  both modes (in generative as fallback, in systemone as Layer-0 pre-empt). */
+  mode: z.enum(['generative', 'systemone']).default('generative'),
+  systemone: RouterSystemOneSchema.default({}),
+  /** Per-install extra keyword→category patterns, merged after the built-in English
+   *  hints. Lets non-English installs (or any site) steer routing deterministically
+   *  without patching source — the built-in hints are intentionally English-only so no
+   *  language leaks into the default. Patterns are applied as regexes, in order. */
+  keywordHints: z.array(z.object({
+    pattern: z.string(),
+    category: z.string(),
+  })).default([]),
   timeout: z.number().default(2000),
   /** num_ctx for the classifier call. The router never set one, so Ollama loaded
    *  phi4 at its 4K default while extraction asked the same model for 8K — and a

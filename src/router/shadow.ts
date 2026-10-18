@@ -14,7 +14,7 @@ import { SystemOneClient } from './systemone-client.js';
  *
  * What it produces is the number the 78-item eval could not: an agreement rate on
  * the real distribution, per decision source (model / keyword / sticky / override).
- * That is the evidence for — or against — the `router.backend` switch.
+ * That is the evidence for — or against — the `router.mode` switch.
  */
 export class RouterShadow {
   private readonly client: SystemOneClient;
