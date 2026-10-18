@@ -81,6 +81,12 @@ export const RouterConfigSchema = z.object({
    *  context change is a model RELOAD (~2.5s). Match memory.extractionContextSize
    *  so the utility model loads once and stays. The prompt is ~600 tokens. */
   contextSize: z.number().int().positive().default(8192),
+  /** max tokens for the classifier call (num_predict). A one-word grammar-constrained
+   *  answer should cost ~3 tokens, but on a THINKING router model the constrained answer
+   *  lands in `thinking` and `response` comes back EMPTY — a 20-token budget is consumed
+   *  by reasoning alone, so every message silently falls back to keywords. A larger budget
+   *  lets the model reason AND still emit its one-word answer. (2026-10-18) */
+  maxPredict: z.number().int().positive().default(256),
   defaultCategory: z.string().default('chat'),
   /** Model that answers whitelisted trivial greetings/acknowledgments ("hi", "thanks")
    *  instead of the chat specialist's model. Unset = no fast path; the chat model answers.

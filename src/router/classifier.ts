@@ -282,7 +282,10 @@ async function classifyMessageInner(
       think: false,
       options: {
         temperature: 0.1,
-        num_predict: 20,
+        // Budget for the reasoning pass PLUS the one-word answer: hardcoding 20 burnt the
+        // whole budget in `thinking` on a thinking router model and left `response` empty
+        // (silent keyword fallback for every message). router.maxPredict keeps it configurable.
+        num_predict: config.maxPredict,
         num_ctx: config.contextSize,
       },
     };
