@@ -46,6 +46,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
     bot.on('message', async (ctx: any) => {
       if (!this.handler) return;
+      const handler = this.handler;
 
       const msg = ctx.message;
 
@@ -135,7 +136,7 @@ export class TelegramAdapter implements ChannelAdapter {
         attachments: attachments.length > 0 ? attachments : undefined,
       };
 
-      await this.handler(inbound);
+      await this.withTyping(inbound.channelId, () => handler(inbound));
     });
 
     // Button presses (inline keyboard) synthesize the equivalent TYPED message
@@ -143,6 +144,7 @@ export class TelegramAdapter implements ChannelAdapter {
     // second security surface. Ledger sender-binding/single-use apply unchanged.
     bot.on('callback_query:data', async (ctx: any) => {
       if (!this.handler) return;
+      const handler = this.handler;
       const from = ctx.callbackQuery.from;
       if (this.allowFrom && !this.allowFrom.has(String(from.id))) return;
       const command = ctx.callbackQuery.data as string;
@@ -161,7 +163,7 @@ export class TelegramAdapter implements ChannelAdapter {
         raw: ctx.callbackQuery,
       };
       try {
-        await this.handler(inbound);
+        await this.withTyping(inbound.channelId, () => handler(inbound));
       } catch (err) {
         console.warn('[Telegram] Button handler failed:', err instanceof Error ? err.message : err);
       }
@@ -185,6 +187,22 @@ export class TelegramAdapter implements ChannelAdapter {
     }
     this.bot = null;
     this.currentStatus = 'disconnected';
+  }
+
+  /** Show Telegram's "typing…" indicator while inbound work runs. The action
+   *  expires after ~5s, so re-send it every 4s; stop once the work resolves. */
+  private async withTyping(chatId: string | undefined, work: () => Promise<void>): Promise<void> {
+    const ping = () => {
+      if (!chatId) return;
+      this.bot?.api?.sendChatAction(chatId, 'typing')?.catch(() => {});
+    };
+    ping();
+    const timer = setInterval(ping, 4000);
+    try {
+      await work();
+    } finally {
+      clearInterval(timer);
+    }
   }
 
   onMessage(handler: (msg: InboundMessage) => Promise<void>): void {
