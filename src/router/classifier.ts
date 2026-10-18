@@ -2,6 +2,8 @@ import { routerTimeout } from '../errors.js';
 import type { OllamaClient } from '../ollama/client.js';
 import type { RouterConfig } from '../config/types.js';
 import { routerShadowFor } from './shadow.js';
+import { SystemOneClient } from './systemone-client.js';
+import { ROUTER_CATEGORIES } from '../setup/defaults.js';
 import { buildRouterPrompt } from './prompt.js';
 
 /**
@@ -155,7 +157,7 @@ const STICKY_CATEGORIES = new Set(['chat', 'briefing', 'cron']);
 /** Sticky target per category — briefing replies land in chat (there is no 'briefing' specialist) */
 const STICKY_TARGET: Record<string, string> = { briefing: 'chat' };
 
-function isLikelyFollowUp(message: string, previousCategory?: string): boolean {
+function isLikelyFollowUp(message: string, previousCategory?: string, systemone = false): boolean {
   const trimmed = message.trim();
   // Commands are never follow-ups
   if (trimmed.startsWith('!')) return false;
@@ -164,8 +166,20 @@ function isLikelyFollowUp(message: string, previousCategory?: string): boolean {
   // Explicit task commands break sticky regardless of message length
   // These are imperative actions ("Build X", "Create X"), not conversational ("I build things").
   // Strip a leading polite prefix first so "Can you create X" / "Please make X" still register.
-  const dePolited = trimmed.replace(/^(can|could|would|will) you\s+|^please\s+|^i (?:need|want|'?d like)(?: you)? to\s+/i, '');
-  const isImperativeTask = /^(build|create|make|generate|write|scaffold|implement|produce|draft|prepare|search for|run|execute|send|schedule)\b/i.test(dePolited);
+  // German imperatives/polite prefixes (systemone mode only, via the German owner) break sticky
+  // too — "Fuehre im Terminal aus: uname -a" would otherwise stay stuck in chat and the model
+  // would answer "I cannot run commands". Gated behind systemone so the generative default's
+  // sticky behaviour stays byte-identical to main.
+  const dePolited = trimmed
+    .replace(/^(can|could|would|will) you\s+|^please\s+|^i (?:need|want|'?d like)(?: you)? to\s+/i, '')
+    .replace(
+      systemone ? /^(kannst|koenntest|könntest|würdest|wuerdest|magst|möchtest|moechtest) du\s+(bitte\s+)?|^bitte\s+|^ich (?:möchte|moechte|will|brauche)\s+(?:dass du\s+)?/i
+        : /(?!)/,
+      '',
+    );
+  const imperative = /^(build|create|make|generate|write|scaffold|implement|produce|draft|prepare|search for|run|execute|send|schedule)\b/i;
+  const germanImperative = /^(bau|baue|erstell|erstelle|mach|mache|generier|generiere|schreib|schreibe|implementier|führ|fuehr|führe|lauf|starte|start|installier|installiere|ausführ|ausfuehr|prüf|pruef|zeig|zeige|lies|sende|schick|plane|rechne|berechne|teste|test|untersuch|analysier|durchsuch|suche)\b/i;
+  const isImperativeTask = (imperative.test(dePolited)) || (systemone && germanImperative.test(dePolited));
   if (isImperativeTask) return false;
   // Long conversational messages without imperative task — keep sticky
   if (trimmed.length > 200) return true;
@@ -248,14 +262,19 @@ async function classifyMessageInner(
     }
   }
 
+  const extraHints = compileKeywordHints(config);
+  const systemOne = routerSystemOneFor(config);
+
   // Sticky category: follow-ups stay on the previous specialist (or the sticky
   // TARGET — briefing replies land in chat, since 'briefing' is not a specialist).
-  // Break out if: strong new-topic signal, long message, OR keywords point to a different category
+  // Break out if: strong new-topic signal, long message, OR keywords point to a different
+  // category (under systemone, German imperatives also break sticky so tool commands reach
+  // Layer 0 instead of sticking to chat).
   const stickyTarget = previousCategory ? (STICKY_TARGET[previousCategory] ?? previousCategory) : undefined;
   if (previousCategory && stickyTarget && validCategories.has(stickyTarget)) {
-    if (isLikelyFollowUp(matchText, previousCategory)) {
+    if (isLikelyFollowUp(matchText, previousCategory, !!systemOne)) {
       // Check if keywords point to a DIFFERENT category — if so, don't stick
-      const keywordHit = applyKeywordHeuristics(matchText, validCategories);
+      const keywordHit = applyKeywordHeuristics(matchText, validCategories, extraHints);
       if (keywordHit && keywordHit !== stickyTarget) {
         console.log(`[Router] Sticky override: "${message.slice(0, 60)}..." keyword="${keywordHit}" beats sticky="${previousCategory}"`);
       } else {
@@ -265,63 +284,109 @@ async function classifyMessageInner(
     }
   }
 
-  // Try model classification (on the capped text — never the full blob).
-  // The configured timeout is enforced HERE: the underlying client retries
-  // connection failures with sleeps (~12s against a dead gateway), which would
-  // otherwise stall every message far past config.timeout before the keyword
-  // fallback kicks in.
-  try {
-    const prompt = buildRouterPrompt(matchText, config);
-    const generateParams = {
-      model: config.model,
-      prompt,
-      // One word, grammar-constrained: thinking is pure cost here — and on a thinking model
-      // the constrained answer lands in `thinking` with an EMPTY `response`, which read as
-      // garbage and sent every message to the keyword fallback on a one-model install
-      // (e2e eval 2026-09-27: qwen3.5:9b routed 0/11 by model until this was false).
-      think: false,
-      options: {
-        temperature: 0.1,
-        // Budget for the reasoning pass PLUS the one-word answer: hardcoding 20 burnt the
-        // whole budget in `thinking` on a thinking router model and left `response` empty
-        // (silent keyword fallback for every message). router.maxPredict keeps it configurable.
-        num_predict: config.maxPredict,
-        num_ctx: config.contextSize,
-      },
-    };
-
-    const attempt = async () => {
-      try {
-        // Grammar-constrained: the model can ONLY emit a valid category name
-        return await client.generate({
-          ...generateParams,
-          format: { type: 'string', enum: [...validCategories] },
-        });
-      } catch {
-        // Backend may not support format — plain generation, validated below
-        return client.generate(generateParams);
-      }
-    };
-    const response = await withTimeout(attempt(), config.timeout);
-
-    const raw = response.response.trim().toLowerCase().replace(/[^a-z_]/g, '');
-
-    if (validCategories.has(raw)) {
-      return { category: raw, confidence: 'model' };
+  // Layer 1 — native decision-model classification (llama.cpp `/v1/systemone`).
+  // Selectable via router.mode === 'systemone'; the generative classifier stays as the
+  // 'generative' alternative — both engines' code paths are preserved. A small decision
+  // model (Laya 421M in use) scores the specialist categories in ONE forward pass, so no
+  // tokens are generated — nothing to time out, no reasoning budget to eat (the 7-of-30 /
+  // 3.3s router flakiness was exactly that bug class).
+  if (systemOne) {
+    // Layer 0 — free keyword heuristics FIRST (built-in + configured keywordHints). A
+    // confident-but-wrong decision-model answer must never override an exact keyword hit.
+    // This ordering is systemone-only: the generative engine keeps the decision model first
+    // (free keywords stay a fallback, matching `main`), so enabling the harness can never
+    // change an existing generative install's routing.
+    const l0 = applyKeywordHeuristics(matchText, validCategories, extraHints);
+    if (l0) {
+      console.log(`[Router] systemone Layer0 keyword: "${matchText.slice(0, 50)}..." → ${l0}`);
+      return { category: l0, confidence: 'keyword' };
     }
+    // Layer 1 — decision model.
+    try {
+      const decision = await systemOne.client.route(matchText, decisionCategories(config));
+      if (decision) {
+        // Layer 2 — confidence gate. Calibrated probability: at/above threshold the decision
+        // is trusted as-is; below it we escalate to a broad-toolset fallback rather than guess
+        // at a specific specialist that might lack the tool (or land tool-less in chat). The
+        // fallback target is systemone.lowConfidenceFallback, defaulting to router.defaultCategory.
+        if (validCategories.has(decision.choice) && decision.confidence >= systemOne.highConfidence) {
+          console.log(`[Router] systemone: ${decision.choice} conf=${decision.confidence.toFixed(3)} (${decision.ms}ms)`);
+          return { category: decision.choice, confidence: 'model' };
+        }
+        const escalate = (systemOne.lowConfidenceFallback && validCategories.has(systemOne.lowConfidenceFallback))
+          ? systemOne.lowConfidenceFallback
+          : config.defaultCategory;
+        console.log(`[Router] systemone gate: top=${decision.choice} conf=${(decision.confidence ?? 0).toFixed(3)} < ${systemOne.highConfidence} → escalate to ${escalate}`);
+        return { category: escalate, confidence: 'fallback' };
+      }
+      console.warn('[Router] systemone returned nothing — fall through to keyword/default');
+    } catch (err) {
+      console.warn('[Router] systemone error — fall through to keyword/default:', err instanceof Error ? err.message : err);
+    }
+    const fbKeyword = applyKeywordHeuristics(matchText, validCategories, extraHints);
+    if (fbKeyword) return { category: fbKeyword, confidence: 'keyword' };
+    return { category: config.defaultCategory, confidence: 'fallback' };
+  } else {
+    // router.mode === 'generative' (the default engine) — the classic generative
+    // classification path. Both router engines are preserved and switchable.
+    // The configured timeout is enforced HERE: the underlying client retries
+    // connection failures with sleeps (~12s against a dead gateway), which would
+    // otherwise stall every message far past config.timeout before the keyword
+    // fallback kicks in.
+    try {
+      const prompt = buildRouterPrompt(matchText, config);
+      const generateParams = {
+        model: config.model,
+        prompt,
+        // One word, grammar-constrained: thinking is pure cost here — and on a thinking model
+        // the constrained answer lands in `thinking` with an EMPTY `response`, which read as
+        // garbage and sent every message to the keyword fallback on a one-model install
+        // (e2e eval 2026-09-27: qwen3.5:9b routed 0/11 by model until this was false).
+        think: false,
+        options: {
+          temperature: 0.1,
+          // Budget for the reasoning pass PLUS the one-word answer: on a thinking model
+          // 20 tokens are consumed by the reasoning alone (content comes back null with
+          // finish_reason "length") and every message silently falls back to keywords.
+          num_predict: config.maxPredict,
+          num_ctx: config.contextSize,
+        },
+      };
 
-    // Model returned garbage — fall through to keyword heuristics. Say so: this path was
-    // silent, and a router that never decides looks exactly like a router that always agrees.
-    console.warn(`[Router] Model returned no category (response=${JSON.stringify(response.response.slice(0, 40))}${response.thinking ? `, thinking=${JSON.stringify(response.thinking.slice(0, 40))}` : ''}) — keyword fallback`);
-  } catch (err) {
-    // Timeout or inference error — fall through
-    console.warn('[Router] OLLAMA_INFERENCE_ERROR: Classification failed —', err instanceof Error ? err.message : err);
-  }
+      const attempt = async () => {
+        try {
+          // Grammar-constrained: the model can ONLY emit a valid category name
+          return await client.generate({
+            ...generateParams,
+            format: { type: 'string', enum: [...validCategories] },
+          });
+        } catch {
+          // Backend may not support format — plain generation, validated below
+          return client.generate(generateParams);
+        }
+      };
+      const response = await withTimeout(attempt(), config.timeout);
 
-  // Keyword heuristic fallback (per ChatGPT feedback)
-  const keywordHit = applyKeywordHeuristics(matchText, validCategories);
-  if (keywordHit) {
-    return { category: keywordHit, confidence: 'keyword' };
+      const raw = response.response.trim().toLowerCase().replace(/[^a-z_]/g, '');
+
+      if (validCategories.has(raw)) {
+        return { category: raw, confidence: 'model' };
+      }
+
+      // Model returned garbage — fall through to keyword heuristics. Say so: this path was
+      // silent, and a router that never decides looks exactly like a router that always agrees.
+      console.warn(`[Router] Model returned no category (response=${JSON.stringify(response.response.slice(0, 40))}${response.thinking ? `, thinking=${JSON.stringify(response.thinking.slice(0, 40))}` : ''}) — keyword fallback`);
+    } catch (err) {
+      // Timeout or inference error — fall through
+      console.warn('[Router] OLLAMA_INFERENCE_ERROR: Classification failed —', err instanceof Error ? err.message : err);
+    }
+    // Model didn't decide (garbage/timeout) — keyword heuristics as a fallback, then default.
+    // Matches `main`'s generative tail; configured keywordHints are honoured here too.
+    const generativeKeyword = applyKeywordHeuristics(matchText, validCategories, extraHints);
+    if (generativeKeyword) {
+      console.log(`[Router] keyword fallback: "${matchText.slice(0, 50)}..." → ${generativeKeyword}`);
+      return { category: generativeKeyword, confidence: 'keyword' };
+    }
   }
 
   return { category: config.defaultCategory, confidence: 'fallback' };
@@ -349,11 +414,68 @@ export function getValidCategories(config: RouterConfig): Set<string> {
   return VALID_CATEGORIES;
 }
 
-function applyKeywordHeuristics(message: string, validCategories: Set<string>): string | null {
-  for (const hint of KEYWORD_HINTS) {
+function applyKeywordHeuristics(
+  message: string,
+  validCategories: Set<string>,
+  extra: Array<{ pattern: RegExp; category: string }> = [],
+): string | null {
+  for (const hint of [...KEYWORD_HINTS, ...extra]) {
     if (hint.pattern.test(message) && validCategories.has(hint.category)) {
       return hint.category;
     }
   }
   return null;
+}
+
+/** Compile router.keywordHints (string regexes from config) into RegExp objects. Invalid
+ *  patterns are skipped with a warning so one bad entry can't disable the rest. */
+function compileKeywordHints(config: RouterConfig): Array<{ pattern: RegExp; category: string }> {
+  return (config.keywordHints ?? []).flatMap((hint) => {
+    try {
+      return [{ pattern: new RegExp(hint.pattern, 'i'), category: hint.category }];
+    } catch (err) {
+      console.warn(`[Router] ignoring invalid keywordHints pattern ${JSON.stringify(hint.pattern)}: ${err instanceof Error ? err.message : err}`);
+      return [];
+    }
+  });
+}
+
+/** The option text the decision model reads: category name → description. Uses the
+ *  configured categories when present, else the default ROUTER_CATEGORIES — the model
+ *  was trained on these exact description strings, so they must not be paraphrased. */
+function decisionCategories(config: RouterConfig): Record<string, string> {
+  const cats = Object.keys(config.categories).length > 0 ? config.categories : ROUTER_CATEGORIES;
+  const out: Record<string, string> = {};
+  for (const [name, cat] of Object.entries(cats)) out[name] = cat.description ?? name;
+  return out;
+}
+
+let systemOneCache: { key: string; router: SystemOneRouter | null } = { key: '', router: null };
+
+/** One live decision-model client per config identity (classifier is a free function
+ *  called with config each time, so the instance is memoized on the fields that define
+ *  it — same pattern as routerShadowFor). Active only when router.mode === 'systemone' —
+ *  the generative classifier stays reachable as the default 'generative' mode. Exported
+ *  for tests. */
+export function routerSystemOneFor(config: RouterConfig): SystemOneRouter | null {
+  const s = config.systemone;
+  if (config.mode !== 'systemone' || !s?.url) return null;
+  const key = `${s.url}|${s.timeoutMs}|${s.highConfidence}|${s.lowConfidenceFallback ?? ''}`;
+  if (systemOneCache.key !== key) {
+    systemOneCache = {
+      key,
+      router: {
+        client: new SystemOneClient(s.url, s.timeoutMs),
+        highConfidence: s.highConfidence,
+        lowConfidenceFallback: s.lowConfidenceFallback,
+      },
+    };
+  }
+  return systemOneCache.router;
+}
+
+interface SystemOneRouter {
+  client: SystemOneClient;
+  highConfidence: number;
+  lowConfidenceFallback?: string;
 }

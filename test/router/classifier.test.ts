@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifyMessage, capForClassification } from '../../src/router/classifier.js';
+import { classifyMessage, capForClassification, routerSystemOneFor } from '../../src/router/classifier.js';
+import { RouterConfigSchema } from '../../src/config/schema.js';
+import { SystemOneClient } from '../../src/router/systemone-client.js';
 import type { OllamaClient } from '../../src/ollama/client.js';
 import type { RouterConfig } from '../../src/config/types.js';
 
@@ -199,5 +201,95 @@ describe('memory is not sticky (2026-09-26)', () => {
     const client = { generate: vi.fn().mockResolvedValue({ response: 'web_search' }) } as unknown as OllamaClient;
     expect((await classifyMessage(client, defaultConfig, 'what about the pricing?', 'chat')).confidence).toBe('sticky');
     expect((await classifyMessage(client, defaultConfig, 'did we do all three?', 'cron')).confidence).toBe('sticky');
+  });
+});
+
+/**
+ * Mode-toggle unit tests for the selectable decision-model harness. routerSystemOneFor
+ * decides WHICH engine classifies: it activates the systemone decision-model line only
+ * when router.mode === 'systemone' AND a url is set; otherwise the generative classifier
+ * path stays authoritative. No network is touched (SystemOneClient is constructed, never
+ * routed). The routing ORDER under systemone (Layer-0 keywordHints hits before the model)
+ * is covered by the routing-eval corpus fixtures; here we pin the engine-availability
+ * toggle and the config shapes it wires together.
+ */
+describe('routerSystemOneFor — routing-engine mode toggle', () => {
+  it('defaults to the generative engine (no systemone client)', () => {
+    const cfg = RouterConfigSchema.parse({});
+    expect(cfg.mode).toBe('generative');
+    expect(routerSystemOneFor(cfg)).toBeNull();
+  });
+
+  it('activates the systemone engine only when mode is "systemone" with a url', () => {
+    const cfg = RouterConfigSchema.parse({
+      mode: 'systemone',
+      systemone: { url: 'http://127.0.0.1:8082' },
+    });
+    const active = routerSystemOneFor(cfg);
+    expect(active).not.toBeNull();
+    expect(active!.client).toBeInstanceOf(SystemOneClient);
+    // highConfidence default comes from the schema (0.6) when not overridden.
+    expect(active!.highConfidence).toBe(0.6);
+    // lowConfidenceFallback defaults to undefined → escalates to router.defaultCategory.
+    expect(active!.lowConfidenceFallback).toBeUndefined();
+  });
+
+  it('stays on generative even with a systemone url configured when mode is "generative"', () => {
+    const cfg = RouterConfigSchema.parse({
+      mode: 'generative',
+      systemone: { url: 'http://127.0.0.1:8082' },
+    });
+    expect(routerSystemOneFor(cfg)).toBeNull();
+  });
+
+  it('returns null under mode "systemone" when no url is configured (misconfiguration)', () => {
+    const cfg = RouterConfigSchema.parse({ mode: 'systemone' });
+    expect(routerSystemOneFor(cfg)).toBeNull();
+  });
+
+  it('honours an explicit highConfidence override from config', () => {
+    const cfg = RouterConfigSchema.parse({
+      mode: 'systemone',
+      systemone: { url: 'http://127.0.0.1:8082', highConfidence: 0.85 },
+    });
+    expect(routerSystemOneFor(cfg)!.highConfidence).toBe(0.85);
+  });
+
+  it('surfaces lowConfidenceFallback as the gate escalation target', () => {
+    const cfg = RouterConfigSchema.parse({
+      mode: 'systemone',
+      systemone: { url: 'http://127.0.0.1:8082', lowConfidenceFallback: 'exec' },
+    });
+    expect(routerSystemOneFor(cfg)!.lowConfidenceFallback).toBe('exec');
+  });
+});
+
+describe('router.keywordHints schema', () => {
+  it('defaults to an empty list', () => {
+    const cfg = RouterConfigSchema.parse({});
+    expect(cfg.keywordHints).toEqual([]);
+  });
+
+  it('accepts per-install extra keyword→category patterns', () => {
+    const cfg = RouterConfigSchema.parse({
+      keywordHints: [
+        { pattern: '\\b(f(ü|ue)hr\\w*)\\b.*\\b(terminal|shell)\\b', category: 'exec' },
+        { pattern: '\\bsuch\\w*\\s+(?:im\\s+)?(?:internet|web)\\s+nach\\b', category: 'web_search' },
+      ],
+    });
+    expect(cfg.keywordHints).toHaveLength(2);
+    expect(cfg.keywordHints[0].category).toBe('exec');
+  });
+
+  it('wires together with systemone without error', () => {
+    // keywordHints + systemone mode coexist; L0 keywords run before the decision model.
+    // (The routing order itself is covered by the routing-eval fixtures.)
+    const cfg = RouterConfigSchema.parse({
+      mode: 'systemone',
+      systemone: { url: 'http://127.0.0.1:8082' },
+      keywordHints: [{ pattern: 'erinnere mich', category: 'cron' }],
+    });
+    expect(routerSystemOneFor(cfg)).not.toBeNull();
+    expect(cfg.keywordHints).toHaveLength(1);
   });
 });
