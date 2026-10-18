@@ -12,6 +12,7 @@ import { detect, type DetectReport } from './detect.js';
 import { foregroundTier } from './measured-models.js';
 import { memoryBackend, embeddingsEnabled, okfEnabled } from '../memory/policy.js';
 import { checkBundle } from '../knowledge/okf.js';
+import { getValidCategories } from '../router/classifier.js';
 
 /** Written by scripts/supervisor.sh when a rollback's dependency reinstall fails. */
 export const SUPERVISOR_HALT = 'data/supervisor-halt.json';
@@ -112,6 +113,26 @@ export function doctorChecks(report: DetectReport, config: InvarailConfig | null
       if (tier === profile) push('Prompt profile', 'PASS', `${profile} — matches ${fg}${size ? ` (${(size / 1e9).toFixed(1)}GB)` : ''}`);
       else if (tier === 'small') push('Prompt profile', 'WARN', `${fg} is small-tier but promptProfile is "${profile}": chat carries the full workspace set and a 32K history budget it cannot afford`, 'set promptProfile: "small" and session.contextSize / router.contextSize / memory.extractionContextSize to 16384 (evals/2026-09-e2e)');
       else push('Prompt profile', 'WARN', `${fg} is a full-tier model but promptProfile is "small": chat is missing TOOLS.md/USER.md/AGENTS.md it could carry`, 'set promptProfile: "full"');
+    }
+  }
+
+  // Every category the router can pick needs a specialist under the same key. A miss is
+  // silent at runtime: dispatch finds no specialist and the message runs as tool-less chat,
+  // so the model answers "I have no terminal" or invents tool names (issue #28 — specialists
+  // keyed by retired names general/creative/hard on an outside install). Specialists the
+  // router never picks are legitimate when a command reaches them (`!blender`), so they are
+  // only named here as the likely renamed keys, never warned about on their own.
+  if (config) {
+    const routable = [...getValidCategories(config.router)];
+    const missing = routable.filter(cat => cat !== 'chat' && !config.specialists[cat]);
+    if (missing.length === 0) {
+      push('Specialists', 'PASS', `every routed category has a specialist (${routable.length})`);
+    } else {
+      const unrouted = Object.keys(config.specialists).filter(k => !routable.includes(k));
+      push('Specialists', 'WARN',
+        `no specialist for routed categor${missing.length === 1 ? 'y' : 'ies'} ${missing.join(', ')} — messages routed there run as chat with NO tools`
+          + (unrouted.length ? `; specialists the router never picks: ${unrouted.join(', ')}` : ''),
+        `key each specialist by its router category (specialists.${missing[0]}: { … })${unrouted.length ? ' — the unrouted ones look like old names' : ''}, or drop the category from router.categories`);
     }
   }
 

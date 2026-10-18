@@ -141,3 +141,43 @@ describe('supervisor halt marker (third review N06)', () => {
     } finally { process.chdir(prev); }
   });
 });
+
+describe('doctor: specialists keyed by router category (issue #28)', () => {
+  const spec = { model: 'qwen3:8b', tools: ['exec'] };
+  const check = (over: Record<string, unknown>) => doctorChecks(base, cfg(over)).find(c => c.name === 'Specialists')!;
+
+  it('passes when every routed category has a specialist; chat needs none (it has a built-in default)', () => {
+    const c = check({
+      router: { model: 'phi4:latest', categories: { chat: { description: 'talk' }, exec: { description: 'run' } } },
+      specialists: { exec: spec },
+    });
+    expect(c.status).toBe('PASS');
+  });
+
+  it('a specialist the router never picks is fine on its own (commands reach it: !blender)', () => {
+    const c = check({
+      router: { model: 'phi4:latest', categories: { chat: { description: 'talk' }, exec: { description: 'run' } } },
+      specialists: { exec: spec, blender: spec },
+    });
+    expect(c.status).toBe('PASS');
+  });
+
+  it('the #28 install: specialists under retired names WARN, naming the missing categories and the stray keys', () => {
+    const c = check({
+      router: { model: 'phi4:latest', categories: { chat: { description: 'talk' }, exec: { description: 'run' }, multi: { description: 'mail' } } },
+      specialists: { general: spec, creative: spec, hard: spec },
+    });
+    expect(c.status).toBe('WARN');
+    expect(c.detail).toMatch(/exec, multi/);
+    expect(c.detail).toMatch(/NO tools/);
+    expect(c.detail).toMatch(/general, creative, hard/);
+    expect(c.fix).toMatch(/specialists\.exec/);
+  });
+
+  it('with no router.categories the built-in set is what routes — a chat-only config WARNs', () => {
+    const c = check({ router: { model: 'phi4:latest', categories: {} }, specialists: { chat: spec } });
+    expect(c.status).toBe('WARN');
+    expect(c.detail).toMatch(/exec/);
+    expect(c.detail).not.toMatch(/never picks/);
+  });
+});

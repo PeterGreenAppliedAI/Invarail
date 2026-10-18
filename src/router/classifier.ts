@@ -337,7 +337,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-function getValidCategories(config: RouterConfig): Set<string> {
+/** The categories the router can answer with — the configured ones, else the built-in set.
+ *  Exported for the doctor, which checks each one has a specialist to land on. */
+export function getValidCategories(config: RouterConfig): Set<string> {
   if (Object.keys(config.categories).length > 0) {
     return new Set(Object.keys(config.categories));
   }
