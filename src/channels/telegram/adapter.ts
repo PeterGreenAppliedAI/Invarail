@@ -194,7 +194,7 @@ export class TelegramAdapter implements ChannelAdapter {
   private async withTyping(chatId: string | undefined, work: () => Promise<void>): Promise<void> {
     const ping = () => {
       if (!chatId) return;
-      this.bot?.api?.sendChatAction(chatId, 'typing')?.catch(() => {});
+      this.bot?.api?.sendChatAction(chatId, 'typing')?.catch((err: unknown) => console.warn('[Telegram] typing indicator failed:', err instanceof Error ? err.message : err));
     };
     ping();
     const timer = setInterval(ping, 4000);
