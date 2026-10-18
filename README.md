@@ -205,7 +205,7 @@ Coding substrate: **[Pi](https://pi.dev)** by Earendil Works (MIT, embedded via 
 
 ## Contributors
 
-- **[@dropicallus](https://github.com/dropicallus)**, the project's first outside contributor, who ran Invarail in German on Telegram with a 1-bit quantized model and sent the fixes back: the opt-in System-One router mode with per-install `router.keywordHints` ([#26](https://github.com/PeterGreenAppliedAI/Invarail/pull/26)), the Telegram typing indicator ([#31](https://github.com/PeterGreenAppliedAI/Invarail/pull/31)) and `router.maxPredict` ([#32](https://github.com/PeterGreenAppliedAI/Invarail/pull/32)). Their reports also led to two new doctor checks and a `read_file` containment fix.
+- **[@dropicallus](https://github.com/dropicallus)**, the project's first outside contributor, who ran Invarail in German on Telegram with a 1-bit quantized model and sent the fixes back: the opt-in System-One router mode with per-install `router.keywordHints` ([#26](https://github.com/PeterGreenAppliedAI/Invarail/pull/26)), the Telegram typing indicator ([#31](https://github.com/PeterGreenAppliedAI/Invarail/pull/31)), the owner-gated Telegram `/` menu answered from the real tool registry ([#27](https://github.com/PeterGreenAppliedAI/Invarail/pull/27)) and `router.maxPredict` ([#32](https://github.com/PeterGreenAppliedAI/Invarail/pull/32)). Their reports also led to two new doctor checks and a `read_file` containment fix.
 
 Contributions are welcome. Security boundaries (sandbox, workspace containment, confirm gates, identity files) stay on by default, and prompt changes ship with eval numbers. [DECISIONS.md](DECISIONS.md) explains why.
 
