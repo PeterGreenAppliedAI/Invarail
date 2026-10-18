@@ -287,19 +287,17 @@ export class TelegramAdapter implements ChannelAdapter {
    * and travels to the model as a normal message.
    */
   private async handleSlash(text: string, msg: any): Promise<boolean> {
-    const first = text.split(/\s+/)[0] ?? '';
-    const name = first.replace(/^\//, '').split('@')[0].toLowerCase();
-    const bang = SLASH_TO_BANG[name];
+    const name = (text.split(/\s+/)[0] ?? '').replace(/^\//, '').split('@')[0].toLowerCase();
+    // The tested translation is the one that runs (it keeps arguments: `/forget coffee` →
+    // `!forget coffee`, and drops the @bot suffix).
+    const translated = translateSlashCommand(text);
     const local = this.localCommands?.get(name);
-    if (!bang && !local) return false;
+    if (!translated && !local) return false;
 
-    if (bang && !local) {
+    if (translated && !local) {
       if (!this.handler) return true;
-      console.log(`[Telegram] /${name} → ${bang} (harness command)`);
-      // Carry the rest through: `/forget coffee` must arrive at !forget as `!forget coffee`
-      // (it reads its argument from the message), and `/forget@yourbot term` keeps working —
-      // only the first whitespace token is consumed, so the @suffix never leaks into the term.
-      await this.handler(this.inboundFrom(msg, bang + text.slice(first.length)));
+      console.log(`[Telegram] /${name} → ${translated.bang} (harness command)`);
+      await this.handler(this.inboundFrom(msg, translated.content));
       return true;
     }
 
