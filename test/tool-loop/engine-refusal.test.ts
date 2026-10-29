@@ -110,3 +110,37 @@ describe('premature-refusal repair prompt', () => {
     expect(result.answer).toContain('42');
   });
 });
+
+// #35: specialists can opt out of the repair (a router that keeps sending conversational
+// turns to a tool specialist pushed a 1-bit model into inventing a tool call to escape it).
+describe('prematureAnswerRepair switch', () => {
+  const run = (prematureAnswerRepair?: boolean) => {
+    const { client, calls } = mockClient([
+      () => answerResponse('That sounds frustrating, I understand.'),
+      () => answerResponse('That sounds frustrating, I understand.'),
+    ]);
+    const done = runToolLoop({
+      client,
+      config: { model: 'test', maxIterations: 4, temperature: 0.3, maxTokens: 256, toolStyle: 'native', prematureAnswerRepair },
+      tools: TOOLS,
+      executor: async () => 'unused',
+      toolContext: { agentId: 't', sessionKey: 't' } as ToolContext,
+      userMessage: 'Yes, that is a real problem and it is exhausting to deal with.',
+    });
+    return { done, calls };
+  };
+
+  it('false: the first answer stands, no repair message is sent', async () => {
+    const { done, calls } = run(false);
+    const result = await done;
+    expect(calls.length).toBe(1);
+    expect(result.answer).toContain('I understand');
+  });
+
+  it('unset (the default): the repair still fires once', async () => {
+    const { done, calls } = run(undefined);
+    await done;
+    expect(calls.length).toBe(2);
+    expect(calls[1].messages[calls[1].messages.length - 1].content).toContain('If NO tool is relevant');
+  });
+});
