@@ -1408,7 +1408,20 @@ export class Orchestrator {
 
     } catch (err) {
       const wrapped = err instanceof InvarailError ? err : new InvarailError('TOOL_EXECUTION_ERROR', 'Message handling failed', err);
-      console.error(`[Orchestrator] ${wrapped.code}: ${wrapped.message}`);
+      // Log BOTH the wrapped code AND the original cause/stack — the generic
+      // "Message handling failed" swallows the real reason (e.g. REACT_MAX_ITERATIONS,
+      // REACT_PARSE_FAILURE), which made this error undiagnosable in production.
+      const causeDesc =
+        wrapped.cause instanceof Error
+          ? `${wrapped.cause.name}: ${wrapped.cause.message}`
+          : wrapped.cause !== undefined
+            ? String(wrapped.cause)
+            : '(none)';
+      console.error(
+        `[Orchestrator] ${wrapped.code}: ${wrapped.message} | cause: ${causeDesc}${
+          wrapped.cause instanceof Error && wrapped.cause.stack ? ' | ' + wrapped.cause.stack.split('\n').slice(0, 3).join(' → ') : ''
+        }`,
+      );
       try {
         await this.channelRegistry.send(
           {
