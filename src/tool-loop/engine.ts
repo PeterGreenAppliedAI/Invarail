@@ -935,7 +935,8 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
     // acknowledgment and, with the stream race, a duplicated reply (2026-09-20).
     // Same 30-char heuristic the router's conversational guard uses.
     const shortFollowUp = (history?.length ?? 0) > 0 && userMessage.trim().length < 30;
-    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted && !shortFollowUp) {
+    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted && !shortFollowUp
+        && config.prematureAnswerRepair !== false) {
       console.log(`[ReAct] Step ${i + 1}: premature answer without tool use — "${answer.slice(0, 80)}..."`);
       if (answer.trim()) lastRejectedAnswer = answer;
       messages.push(msg);
