@@ -154,6 +154,11 @@ export const SpecialistConfigSchema = z.object({
   /** Sampling: repetition penalty (Ollama default: 1.1). Higher = less repetition. */
   repeatPenalty: z.number().optional(),
   maxIterations: z.number().default(10),
+  /** Disable the premature-answer repair for this specialist. Default true (repair
+   *  active). Set false on specialists whose router keeps mis-routing plain
+   *  conversational replies into the tool arena — the repair then never fires for
+   *  that specialist, so no invented tool call can be forced. (2026-10-29) */
+  prematureAnswerRepair: z.boolean().default(true),
   tools: z.array(z.string()).default([]),
   /** 'arena' forces the open ReAct loop (natural stop, dispatch skips pipelines AND the
    *  legacy multi-orchestration) — the measured winner of the 2026-08-20 arena duel.

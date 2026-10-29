@@ -20,6 +20,9 @@ export interface ReActResult {
 
 export interface ReActConfig {
   maxIterations: number;
+  /** If false, the premature-answer repair never fires for this loop. Passed through
+   *  from the specialist config (default true). See engine.ts premature-answer guard. */
+  prematureAnswerRepair?: boolean;
   model: string;
   temperature: number;
   maxTokens: number;

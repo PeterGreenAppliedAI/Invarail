@@ -1255,6 +1255,7 @@ RULES:
       model: specialist.model,
       maxIterations: specialist.maxIterations,
       temperature: specialist.temperature,
+      prematureAnswerRepair: specialist.prematureAnswerRepair,
       maxTokens: specialist.maxTokens,
       // Browser control: skip growing-text drift detection (model needs room for long answers)
       // Repeat detection still active via action dedup in engine
@@ -1877,6 +1878,7 @@ function getDefaultSpecialist(config: InvarailConfig, category: string): Special
       maxTokens: 2048,
       temperature: 0.8,
       maxIterations: 1,
+      prematureAnswerRepair: true,
       tools: [],
       toolStyle: 'native',
     };
