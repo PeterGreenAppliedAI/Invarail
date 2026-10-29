@@ -935,7 +935,22 @@ async function runToolLoopInner(params: RunReActLoopParams, journal: RunJournal)
     // acknowledgment and, with the stream race, a duplicated reply (2026-09-20).
     // Same 30-char heuristic the router's conversational guard uses.
     const shortFollowUp = (history?.length ?? 0) > 0 && userMessage.trim().length < 30;
-    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted && !shortFollowUp) {
+    // Don't force tool calls when the user is just talking. The old guard treated
+    // any first-step final answer on a >30-char message as a refusal, so a plain
+    // conversational reply ("Ja, das ist ein echtes Problem — ich verstehe, dass es
+    // anstrengend ist. ") got a repair that made small models invent a fake
+    // `terminal` call to escape the order (reproduced with `echo SessionFrisch`).
+    // The genuine case this guard exists for is the opposite: the user ASKED for a
+    // tool action and the model answered with a bare result, never running it
+    // (`iterations:1`, "Ergebnis: …" with no tool step — a hallucination). So only
+    // repair when the user message actually solicits a tool: name one of our tools
+    // or use an imperative that implies running the tools.
+    const userAsksToolWork =
+      userMessage.trim().length >= 30
+      && (tools.some(t => userMessage.toLowerCase().includes(t.name.toLowerCase()))
+          || /\b(?:benutze|verwende|fuhre|führe|run|execute|use|check|look\s*up|search|create|schreib|erstelle|mach|tu|rechne|berechne|lies|öffne|öffne)\b/i.test(userMessage));
+    if (hasToolAccess && steps.length === 0 && !refusalRepairAttempted && !shortFollowUp
+        && userAsksToolWork) {
       console.log(`[ReAct] Step ${i + 1}: premature answer without tool use — "${answer.slice(0, 80)}..."`);
       if (answer.trim()) lastRejectedAnswer = answer;
       messages.push(msg);
