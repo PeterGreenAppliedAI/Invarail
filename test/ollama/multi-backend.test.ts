@@ -11,7 +11,7 @@ describe('MultiBackendClient routing', () => {
     );
   }
 
-  it('routes by model id: OpenAI-compat, Ollama-native host, and gateway fallthrough', async () => {
+  it('routes by model id: OpenAI-compat, Ollama-native host, and OpenAI fallthrough', async () => {
     const c = build();
     const seen: string[] = [];
     // Stub each destination so we can observe which one a model reaches.
@@ -19,16 +19,46 @@ describe('MultiBackendClient routing', () => {
       const route = (c as any).routes.get(model);
       route.chat = vi.fn(async () => { seen.push(label); return { message: { role: 'assistant', content: label } }; });
     }
-    // Gateway fallthrough = the inherited OllamaClient.chat
-    const superChat = vi.spyOn(OllamaClient.prototype, 'chat').mockImplementation(async () => {
-      seen.push('gateway'); return { message: { role: 'assistant', content: 'gateway' } } as any;
+    // Unrouted fallthrough = the first OpenAI-compatible backend, NOT the
+    // inherited Ollama gateway (shim removal — see multi-backend.ts).
+    const fallbackChat = vi.spyOn((c as any).fallback, 'chat').mockImplementation(async () => {
+      seen.push('openai'); return { message: { role: 'assistant', content: 'openai' } } as any;
     });
+    const superChat = vi.spyOn(OllamaClient.prototype, 'chat');
+    const gatewayChat = vi.spyOn(OllamaClient.prototype, 'chatStream');
 
     await c.chat({ model: 'glm-5.3-flash', messages: [] } as any);
     await c.chat({ model: 'gemma4:12b-mlx', messages: [] } as any);
-    await c.chat({ model: 'phi4:14b', messages: [] } as any);   // utility tier → gateway
-    expect(seen).toEqual(['vllm', 'mini', 'gateway']);
+    await c.chat({ model: 'phi4:14b', messages: [] } as any);   // unrouted → OpenAI fallback
+    expect(seen).toEqual(['vllm', 'mini', 'openai']);
+    expect(superChat).not.toHaveBeenCalled();
+    expect(gatewayChat).not.toHaveBeenCalled();
+    fallbackChat.mockRestore();
     superChat.mockRestore();
+    gatewayChat.mockRestore();
+  });
+
+  it('chatStream unrouted goes to the OpenAI fallback, not the Ollama gateway', async () => {
+    const c = build();
+    const fallbackStream = vi.spyOn((c as any).fallback, 'chatStream').mockImplementation(async () => {
+      return { message: { role: 'assistant', content: 'openai-stream' } } as any;
+    });
+    const gatewayStream = vi.spyOn(OllamaClient.prototype, 'chatStream');
+    await c.chatStream({ model: 'phi4:14b', messages: [] } as any, () => undefined);
+    expect(fallbackStream).toHaveBeenCalledOnce();
+    expect(gatewayStream).not.toHaveBeenCalled();
+  });
+
+  it('isAvailable/listModels probe the OpenAI fallback, not the Ollama gateway', async () => {
+    const c = build();
+    const fallbackAvail = vi.spyOn((c as any).fallback, 'isAvailable').mockResolvedValue(true);
+    const fallbackList = vi.spyOn((c as any).fallback, 'listModels').mockResolvedValue([{ name: 'swift15-iq3s' } as any]);
+    const gateway = vi.spyOn(OllamaClient.prototype, 'isAvailable');
+
+    expect(await c.isAvailable()).toBe(true);
+    const models = await c.listModels();
+    expect(models.map(m => m.name)).toEqual(['swift15-iq3s']);
+    expect(gateway).not.toHaveBeenCalled();
   });
 
   it('an Ollama-native backend alone still builds a routing client (no OpenAI backends required)', () => {
